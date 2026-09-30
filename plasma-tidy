@@ -1,0 +1,1093 @@
+#!/usr/bin/python3
+"""Tidy (plasma-tidy): houdt je KDE Plasma-bureaublad opgeruimd (Wayland).
+
+Bureaublad:
+
+Verbergt de bureaubladpictogrammen (en optioneel het paneel) na een instelbare
+tijd zonder activiteit. Ze komen terug bij elke muisbeweging/toets, of alleen
+bij een klik op het bureaublad, een schermhoek of een sneltoets.
+
+- Inactiviteit komt van swayidle (Wayland-protocol ext_idle_notifier_v1). Het
+  meldt na 1 s stilte; vanaf daar telt het programma zelf verder.
+- Verbergen = de mapweergave van het bureaublad op een lege map zetten;
+  de oorspronkelijke map wordt eerst opgeslagen en daarna teruggezet.
+- Klikken op het bureaublad: zolang de pictogrammen verborgen zijn ligt er per
+  scherm een onzichtbaar "klikvenster" net boven het bureaublad en onder alle
+  andere vensters. Een klein KWin-script houdt het daar en uit taakbalk/Alt+Tab,
+  en regelt ook de schermhoek.
+- Bureaublad tonen (Meta+D) verbergt ook het klikvenster; daarom haalt Meta+D de
+  pictogrammen zelf terug en telt in die weergave elke activiteit.
+Systeemvak:
+- Per pictogram kiezen: automatisch, tonen, verbergen (onder ^) of uit.
+
+- Er draait altijd maar één kopie. Een tweede aanroep (bijv. met --show vanuit
+  een sneltoets) geeft zijn opdracht via D-Bus door aan de draaiende kopie.
+"""
+
+import json
+import os
+import re
+import shutil
+import signal
+import sys
+import time
+
+from PyQt6.QtCore import (QObject, QProcess, QSettings, Qt, QTimer, pyqtClassInfo,
+                          pyqtSlot)
+from PyQt6.QtDBus import (QDBusAbstractAdaptor, QDBusConnection, QDBusInterface,
+                          QDBusMessage, QDBusServiceWatcher)
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QPainter
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
+                             QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout,
+                             QLabel, QMenu, QMessageBox, QProgressBar, QPushButton,
+                             QScrollArea, QSpinBox, QSystemTrayIcon, QTabWidget,
+                             QVBoxLayout, QWidget)
+
+APP = "plasma-tidy"
+APP_NAME = "Tidy"
+OLD_APP = "autohide-desktop-icons"  # vorige naam, voor het overnemen van instellingen
+VERSION = "0.1.0"
+AUTHOR = "Ivar"
+DESCRIPTION = "Houdt je KDE Plasma-bureaublad en systeemvak opgeruimd."
+# Nog in te vullen bij de eerste publicatie; zolang ze leeg zijn, tonen we een nette placeholder.
+LICENSE = ""        # gepland: GPL-3.0-or-later
+WEBSITE_URL = ""    # gepland: GitHub-pagina van het project
+BUGS_URL = ""       # gepland: <website>/issues
+DONATE_URL = ""     # gepland: Ko-fi-pagina
+DBUS_NAME = "io.github.BatzZie.PlasmaTidy"
+DATA_DIR = os.path.expanduser(f"~/.local/share/{APP}")
+EMPTY_DIR = os.path.join(DATA_DIR, "empty")
+EMPTY_URL = "file://" + EMPTY_DIR
+KWIN_SCRIPT = os.path.join(DATA_DIR, "kwin-helper.js")
+KWIN_SCRIPT_NAME = APP + "-helper"
+AUTOSTART = os.path.expanduser(f"~/.config/autostart/{APP}.desktop")
+CATCHER_PREFIX = "tidy-catcher:"
+IDLE_STEP = 1  # seconden stilte voordat swayidle "idle" meldt
+
+MODE_ACTIVITY = "activity"
+MODE_CLICK = "click"
+REHIDE_IDLE = "idle"
+REHIDE_FIXED = "fixed"
+BUTTONS = {"left": Qt.MouseButton.LeftButton,
+           "right": Qt.MouseButton.RightButton,
+           "middle": Qt.MouseButton.MiddleButton}
+CORNERS = [("none", "Geen", None),
+           ("topleft", "Linksboven", "KWin.ElectricTopLeft"),
+           ("topright", "Rechtsboven", "KWin.ElectricTopRight"),
+           ("bottomleft", "Linksonder", "KWin.ElectricBottomLeft"),
+           ("bottomright", "Rechtsonder", "KWin.ElectricBottomRight")]
+
+TRAY_AUTO = "auto"
+TRAY_SHOWN = "shown"
+TRAY_HIDDEN = "hidden"
+TRAY_DISABLED = "disabled"
+TRAY_MODES = [(TRAY_AUTO, "Automatisch", "Alleen zichtbaar als het relevant is"),
+              (TRAY_SHOWN, "Tonen", "Altijd zichtbaar in de taakbalk"),
+              (TRAY_HIDDEN, "Verbergen", "Alleen bereikbaar via het pijltje ^"),
+              (TRAY_DISABLED, "Uit", "Helemaal uitgeschakeld")]
+TRAY_NAMES = {
+    "org.kde.plasma.battery": "Batterij",
+    "org.kde.plasma.bluetooth": "Bluetooth",
+    "org.kde.plasma.brightness": "Helderheid",
+    "org.kde.plasma.cameraindicator": "Camera-indicator",
+    "org.kde.plasma.clipboard": "Klembord",
+    "org.kde.plasma.devicenotifier": "Apparaten (usb)",
+    "org.kde.plasma.keyboardindicator": "Caps Lock-indicator",
+    "org.kde.plasma.keyboardlayout": "Toetsenbordindeling",
+    "org.kde.plasma.manage-inputmethod": "Invoermethode",
+    "org.kde.plasma.networkmanagement": "Netwerk (wifi)",
+    "org.kde.plasma.notifications": "Meldingen",
+    "org.kde.plasma.printmanager": "Printers",
+    "org.kde.plasma.vault": "Kluizen",
+    "org.kde.plasma.weather": "Weer",
+    "org.kde.kscreen": "Beeldschermen",
+    "org.kde.plasma.mediacontroller": "Mediabediening",
+    "org.kde.plasma.volume": "Volume",
+    "org.kde.kdeconnect": "KDE Connect",
+    "Discover Notifier_org.kde.DiscoverNotifier": "Discover (updates)",
+    "Xwayland Video Bridge": "Xwayland-schermdelen",
+    "spotify-client": "Spotify",
+    APP: "Tidy (dit programma)",
+}
+# Voorinstelling "Minimaal": alleen het hoognodige in beeld, de rest onder ^.
+TRAY_MINIMAL_SHOWN = ["org.kde.plasma.networkmanagement", "org.kde.plasma.volume",
+                      "org.kde.plasma.battery"]
+TRAY_MINIMAL_AUTO = ["org.kde.plasma.notifications", "org.kde.plasma.devicenotifier",
+                     "org.kde.plasma.cameraindicator", "org.kde.plasma.keyboardindicator"]
+
+KWIN_JS = """
+function isCatcher(w) {
+    return w && w.resourceClass == "%(app)s" && w.caption.indexOf("%(prefix)s") == 0;
+}
+
+// Laatste echte actieve venster, om de focus terug te geven als een klikvenster hem pakt.
+var lastActive = workspace.activeWindow;
+var freshUntil = 0;  // klikvenster net verschenen: focus-overname is dan nooit door een klik
+
+function giveFocusBack() {
+    if (lastActive && !lastActive.deleted && !lastActive.minimized && !isCatcher(lastActive))
+        workspace.activeWindow = lastActive;
+}
+
+// Klik op een klikvenster = klik op het bureaublad: daarna hoort het bureaublad
+// van dat scherm actief te zijn, niet het venster waar je eerder in zat.
+var clicked = false;
+
+function activateDesktop(output) {
+    var desk = workspace.windowList().find(function (d) {
+        return d.desktopWindow && (!output || d.output === output);
+    });
+    if (desk) workspace.activeWindow = desk;
+}
+
+function setup(w) {
+    if (!isCatcher(w)) return;
+    freshUntil = Date.now() + 1000;
+    if (workspace.activeWindow === w) giveFocusBack();
+    w.closed.connect(function () {
+        if (clicked) {
+            clicked = false;
+            activateDesktop(w.output);
+        }
+    });
+    var name = w.caption.substring("%(prefix)s".length);
+    w.keepBelow = true;
+    w.skipTaskbar = true;
+    w.skipSwitcher = true;
+    w.skipPager = true;
+    w.onAllDesktops = true;
+    w.noBorder = true;
+    var out = workspace.screens.find(function (s) { return s.name == name; });
+    if (out) {
+        var g = out.geometry;
+        w.frameGeometry = {x: g.x, y: g.y, width: g.width, height: g.height};
+    }
+}
+workspace.windowList().forEach(setup);
+workspace.windowAdded.connect(setup);
+
+function reportActive() {
+    var w = workspace.activeWindow;
+    if (isCatcher(w) && (Date.now() < freshUntil || !w.readyForPainting)) {
+        // Vangnet: een net verschenen klikvenster mag de focus niet houden.
+        giveFocusBack();
+        return;
+    }
+    if (isCatcher(w)) clicked = true;  // actief geworden door een klik van de gebruiker
+    if (w && !isCatcher(w)) lastActive = w;
+    var desktop = !w || w.desktopWindow ||
+        (w.resourceClass == "%(app)s" && w.caption.indexOf("%(prefix)s") == 0);
+    callDBus("%(name)s", "/", "%(name)s", "DesktopActive", desktop);
+}
+workspace.windowActivated.connect(reportActive);
+reportActive();
+
+var popups = 0;
+function reportPopups() {
+    callDBus("%(name)s", "/", "%(name)s", "PopupOpen", popups > 0);
+}
+function trackPopup(w) {
+    if (!w.popupWindow) return;
+    popups++;
+    reportPopups();
+    w.closed.connect(function () { popups = Math.max(0, popups - 1); reportPopups(); });
+}
+workspace.windowList().forEach(trackPopup);
+workspace.windowAdded.connect(trackPopup);
+reportPopups();
+"""
+
+KWIN_EDGE_JS = """
+registerScreenEdge(%(edge)s, function () {
+    callDBus("%(name)s", "/", "%(name)s", "Show");
+});
+"""
+
+
+class Plasma:
+    """Praat met plasmashell via zijn scriptinterface."""
+
+    def __init__(self):
+        self.iface = QDBusInterface("org.kde.plasmashell", "/PlasmaShell",
+                                    "org.kde.PlasmaShell", QDBusConnection.sessionBus())
+
+    def run(self, script):
+        reply = self.iface.call("evaluateScript", script)
+        args = reply.arguments()
+        return args[0] if args else ""
+
+    def desktop_urls(self):
+        out = self.run("""
+            var r = {};
+            desktops().forEach(function (d) {
+                if (d.type != "org.kde.plasma.folder") return;
+                d.currentConfigGroup = ["General"];
+                r[d.id] = d.readConfig("url") || "desktop:/";
+            });
+            print(JSON.stringify(r));""")
+        try:
+            return {int(k): v for k, v in json.loads(out).items()}
+        except ValueError:
+            return {}
+
+    def set_desktop_urls(self, urls):
+        self.run("var urls = %s;" % json.dumps({str(k): v for k, v in urls.items()}) + """
+            desktops().forEach(function (d) {
+                if (!(d.id in urls)) return;
+                d.currentConfigGroup = ["General"];
+                d.writeConfig("url", urls[d.id]);
+                d.reloadConfig();
+            });""")
+
+    def panel_modes(self):
+        out = self.run("""
+            var r = {};
+            panels().forEach(function (p) { r[p.id] = p.hiding; });
+            print(JSON.stringify(r));""")
+        try:
+            return {int(k): v for k, v in json.loads(out).items()}
+        except ValueError:
+            return {}
+
+    def tray_config(self):
+        """Instellingen van het systeemvak: plasmoids en de lijsten tonen/verbergen."""
+        out = self.run("""
+            var r = null;
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (r || w.type != "org.kde.plasma.systemtray") return;
+                w.currentConfigGroup = ["General"];
+                var get = function (k) {
+                    var v = w.readConfig(k);
+                    if (!v) return [];
+                    return Array.isArray(v) ? v : String(v).split(",");
+                };
+                r = {extra: get("extraItems"), known: get("knownItems"),
+                     shown: get("shownItems"), hidden: get("hiddenItems")};
+            }); });
+            print(JSON.stringify(r));""")
+        try:
+            return json.loads(out) or None
+        except ValueError:
+            return None
+
+    def set_tray_config(self, extra, shown, hidden):
+        self.run("var c = %s;" % json.dumps({"extra": extra, "shown": shown, "hidden": hidden}) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type != "org.kde.plasma.systemtray") return;
+                w.currentConfigGroup = ["General"];
+                w.writeConfig("extraItems", c.extra);
+                w.writeConfig("shownItems", c.shown);
+                w.writeConfig("hiddenItems", c.hidden);
+                w.reloadConfig();
+            }); });""")
+
+    def set_panel_modes(self, modes):
+        self.run("var m = %s;" % json.dumps({str(k): v for k, v in modes.items()}) + """
+            panels().forEach(function (p) { if (p.id in m) p.hiding = m[p.id]; });""")
+
+
+class KWin:
+    """Laadt het KWin-script voor de klikvensters en de schermhoek."""
+
+    def __init__(self):
+        bus = QDBusConnection.sessionBus()
+        self.scripting = QDBusInterface("org.kde.KWin", "/Scripting",
+                                        "org.kde.kwin.Scripting", bus)
+        self.kwin = QDBusInterface("org.kde.KWin", "/KWin", "org.kde.KWin", bus)
+
+    def load(self, corner):
+        script = KWIN_JS % {"app": APP, "prefix": CATCHER_PREFIX, "name": DBUS_NAME}
+        edge = dict((key, js) for key, _, js in CORNERS).get(corner)
+        if edge:
+            script += KWIN_EDGE_JS % {"edge": edge, "name": DBUS_NAME}
+        with open(KWIN_SCRIPT, "w") as f:
+            f.write(script)
+        self.unload()
+        self.scripting.call("loadScript", KWIN_SCRIPT, KWIN_SCRIPT_NAME)
+        self.scripting.call("start")
+
+    def unload(self):
+        self.scripting.call("unloadScript", KWIN_SCRIPT_NAME)
+
+    def showing_desktop(self):
+        return bool(self.kwin.property("showingDesktop"))
+
+
+class Catcher(QWidget):
+    """Onzichtbaar venster over het bureaublad van één scherm dat klikken opvangt."""
+
+    def __init__(self, screen, on_click):
+        # Mag nooit de focus krijgen: anders sluiten menu's en onderbreekt het je typen.
+        super().__init__(flags=Qt.WindowType.FramelessWindowHint
+                         | Qt.WindowType.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.on_click = on_click
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowTitle(CATCHER_PREFIX + screen.name())
+        self.setScreen(screen)
+        self.resize(screen.geometry().size())
+
+    def paintEvent(self, event):
+        # Bijna volledig doorzichtig: zo blijft het venster klikken ontvangen.
+        QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 1))
+
+    def mousePressEvent(self, event):
+        self.on_click(event.button())
+
+
+@pyqtClassInfo("D-Bus Interface", DBUS_NAME)
+class DBusAdaptor(QDBusAbstractAdaptor):
+    """Opdrachten van buitenaf: sneltoetsen, schermhoek, tweede aanroep."""
+
+    def __init__(self, autohide):
+        super().__init__(autohide)
+        self.autohide = autohide
+
+    @pyqtSlot()
+    def Show(self):
+        self.autohide.show()
+
+    @pyqtSlot()
+    def Hide(self):
+        self.autohide.hide()
+
+    @pyqtSlot(bool)
+    def DesktopActive(self, active):
+        self.autohide.on_desktop_active(active)
+
+    @pyqtSlot(bool)
+    def PopupOpen(self, open_):
+        self.autohide.popup_open = open_
+
+    @pyqtSlot()
+    def Toggle(self):
+        self.autohide.enabled_action.toggle()
+
+    @pyqtSlot()
+    def Settings(self):
+        # Via de event-loop, zodat de D-Bus-aanroep niet wacht tot het venster sluit.
+        QTimer.singleShot(0, self.autohide.show_settings)
+
+
+def tray_app_items():
+    """Pictogrammen van programma's (StatusNotifierItems) die nu in het systeemvak staan."""
+    bus = QDBusConnection.sessionBus()
+    def get(service, path, interface, name):
+        props = QDBusInterface(service, path, "org.freedesktop.DBus.Properties", bus)
+        props.setTimeout(500)  # een hangend programma mag het venster niet ophouden
+        reply = props.call("Get", interface, name)
+        if reply.type() != QDBusMessage.MessageType.ReplyMessage:
+            return None  # foutantwoord: niet als naam gebruiken
+        args = reply.arguments()
+        return args[0] if args else None
+
+    items = {}
+    entries = get("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+                  "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems") or []
+    for entry in entries:
+        service, _, path = entry.partition("/")
+        path = "/" + (path or "StatusNotifierItem")
+        item_id = get(service, path, "org.kde.StatusNotifierItem", "Id")
+        if item_id:
+            items[item_id] = get(service, path, "org.kde.StatusNotifierItem", "Title") or item_id
+    return items
+
+
+class TrayTab(QWidget):
+    """Tabblad om per pictogram te kiezen hoe het in het systeemvak staat."""
+
+    def __init__(self, plasma):
+        super().__init__()
+        self.plasma = plasma
+        self.config = plasma.tray_config()
+        layout = QVBoxLayout(self)
+        if self.config is None:
+            layout.addWidget(QLabel("Geen systeemvak gevonden in het paneel."))
+            return
+
+        intro = QLabel("Kies per pictogram hoe het rechts in de taakbalk staat.\n"
+                       "Automatisch: alleen als het relevant is · Verbergen: onder het pijltje ^")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        apps = tray_app_items()
+        plasmoids = list(dict.fromkeys(self.config["known"] + [
+            i for i in self.config["extra"] if i.startswith("org.kde.")]))
+        app_ids = list(dict.fromkeys(list(apps) + [
+            i for i in self.config["shown"] + self.config["hidden"] + self.config["extra"]
+            if i not in plasmoids]))
+        self.plasmoids = set(plasmoids)
+
+        area = QScrollArea(widgetResizable=True)
+        inner = QWidget()
+        form = QFormLayout(inner)
+        self.combos = {}
+        for section, ids in (("Systeemonderdelen", plasmoids), ("Programma's", app_ids)):
+            header = QLabel(f"<b>{section}</b>")
+            form.addRow(header)
+            for item_id in sorted(ids, key=lambda i: self.label(i, apps).lower()):
+                combo = QComboBox()
+                for key, text, tip in TRAY_MODES:
+                    if key == TRAY_DISABLED and item_id not in self.plasmoids:
+                        continue  # programma's kun je alleen tonen/verbergen
+                    combo.addItem(text, key)
+                    combo.setItemData(combo.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+                combo.setCurrentIndex(combo.findData(self.mode_of(item_id)))
+                self.combos[item_id] = combo
+                form.addRow(self.label(item_id, apps) + ":", combo)
+        area.setWidget(inner)
+        # Breed genoeg voor de hele lijst: alleen verticaal scrollen.
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        area.setMinimumWidth(inner.sizeHint().width()
+                             + area.verticalScrollBar().sizeHint().width()
+                             + 2 * area.frameWidth())
+        layout.addWidget(area, 1)
+
+        row = QHBoxLayout()
+        minimal = QPushButton(QIcon.fromTheme("games-config-theme"), "Minimaal")
+        minimal.setToolTip("Alleen netwerk, volume en batterij in beeld; meldingen en "
+                           "apparaten als ze relevant zijn; de rest onder ^.")
+        minimal.clicked.connect(self.apply_minimal)
+        row.addWidget(minimal)
+        row.addStretch()
+        layout.addLayout(row)
+
+    @staticmethod
+    def label(item_id, apps):
+        if item_id in TRAY_NAMES:
+            return TRAY_NAMES[item_id]
+        # Chromium/Electron-apps heten "<Naam>_status_icon_<n>".
+        name = re.sub(r"_status_icon_\d+$", "", item_id)
+        return name if name != item_id else apps.get(item_id) or item_id
+
+    def mode_of(self, item_id):
+        if item_id in self.config["shown"]:
+            return TRAY_SHOWN
+        if item_id in self.config["hidden"]:
+            return TRAY_HIDDEN
+        if item_id in self.plasmoids and item_id not in self.config["extra"]:
+            return TRAY_DISABLED
+        return TRAY_AUTO
+
+    def apply_minimal(self):
+        for item_id, combo in self.combos.items():
+            if item_id in TRAY_MINIMAL_SHOWN:
+                mode = TRAY_SHOWN
+            elif item_id in TRAY_MINIMAL_AUTO:
+                mode = TRAY_AUTO
+            elif item_id in self.plasmoids and item_id not in self.config["extra"]:
+                mode = TRAY_DISABLED  # wat al uit stond, blijft uit
+            else:
+                mode = TRAY_HIDDEN
+            combo.setCurrentIndex(combo.findData(mode))
+
+    def apply(self):
+        if self.config is None:
+            return
+        modes = {i: c.currentData() for i, c in self.combos.items()}
+        if modes == {i: self.mode_of(i) for i in self.combos}:
+            return  # niets veranderd
+        extra = [i for i in self.config["extra"] if modes.get(i) != TRAY_DISABLED]
+        extra += [i for i, m in modes.items()
+                  if i in self.plasmoids and m != TRAY_DISABLED and i not in extra]
+        shown = [i for i, m in modes.items() if m == TRAY_SHOWN]
+        hidden = [i for i, m in modes.items() if m == TRAY_HIDDEN]
+        self.plasma.set_tray_config(extra, shown, hidden)
+
+
+def open_donate():
+    if DONATE_URL:
+        QDesktopServices.openUrl(QUrl(DONATE_URL))
+
+
+class AboutTab(QWidget):
+    """Over Tidy: versie, auteur, licentie, links en de doneerknop."""
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        head = QHBoxLayout()
+        icon = QLabel()
+        icon.setPixmap(QIcon.fromTheme("view-visible").pixmap(64, 64))
+        head.addWidget(icon)
+        title = QLabel(f"<span style='font-size:20pt; font-weight:600'>{APP_NAME}</span><br>"
+                       f"Versie {VERSION}")
+        head.addWidget(title, 1)
+        layout.addLayout(head)
+
+        about = QLabel(f"{DESCRIPTION}<br><br>"
+                       "Verbergt je bureaubladpictogrammen als je ze niet nodig hebt, "
+                       "en laat je per pictogram kiezen wat er in het systeemvak staat.")
+        about.setWordWrap(True)
+        layout.addWidget(about)
+
+        def link(url, text):
+            return f"<a href='{url}'>{text}</a>" if url else f"{text} <i>(volgt bij de eerste release)</i>"
+
+        info = QLabel(f"Gemaakt door {AUTHOR}<br>"
+                      f"Licentie: {LICENSE or '<i>volgt bij de eerste release</i>'}<br><br>"
+                      f"{link(WEBSITE_URL, 'Website en broncode')}<br>"
+                      f"{link(BUGS_URL, 'Probleem melden of idee delen')}")
+        info.setOpenExternalLinks(True)
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        layout.addStretch()
+
+        donate_box = QGroupBox("Steun Tidy")
+        donate_layout = QVBoxLayout(donate_box)
+        text = QLabel(f"{APP_NAME} is gratis en open source. Vind je het handig? "
+                      "Met een kleine donatie help je de verdere ontwikkeling.")
+        text.setWordWrap(True)
+        donate_layout.addWidget(text)
+        self.donate = QPushButton("♥  Doneren")
+        font = QFont(self.donate.font())
+        font.setBold(True)
+        self.donate.setFont(font)
+        self.donate.setMinimumHeight(36)
+        self.donate.clicked.connect(open_donate)
+        if not DONATE_URL:
+            self.donate.setEnabled(False)
+            self.donate.setToolTip("De doneerpagina volgt bij de eerste release.")
+        donate_layout.addWidget(self.donate)
+        layout.addWidget(donate_box)
+
+
+class SettingsDialog(QDialog):
+    def __init__(self, autohide):
+        super().__init__()
+        self.autohide = autohide
+        settings = autohide.settings
+        self.setWindowTitle(f"{APP_NAME} — instellingen")
+        self.setWindowIcon(QIcon.fromTheme("view-visible"))
+        outer = QVBoxLayout(self)
+        tabs = QTabWidget()
+        outer.addWidget(tabs)
+        desktop_tab = QWidget()
+        layout = QVBoxLayout(desktop_tab)
+        tabs.addTab(desktop_tab, QIcon.fromTheme("user-desktop"), "Bureaublad")
+        self.tray_tab = TrayTab(autohide.plasma)
+        tabs.addTab(self.tray_tab, QIcon.fromTheme("preferences-desktop-notification"), "Systeemvak")
+        self.about_tab = AboutTab()
+        tabs.addTab(self.about_tab, QIcon.fromTheme("help-about"), f"Over {APP_NAME}")
+        self.tabs = tabs
+
+        # --- live status ---
+        status = QGroupBox("Status")
+        status_layout = QVBoxLayout(status)
+        self.status_label = QLabel()
+        self.bar = QProgressBar(minimum=0, maximum=1000)
+        row = QHBoxLayout()
+        row.addWidget(self.bar, 1)
+        hide_now = QPushButton(QIcon.fromTheme("view-hidden"), "Nu verbergen")
+        hide_now.clicked.connect(autohide.hide)
+        row.addWidget(hide_now)
+        status_layout.addWidget(self.status_label)
+        status_layout.addLayout(row)
+        layout.addWidget(status)
+
+        # --- instellingen ---
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.timeout = QSpinBox(suffix=" s", minimum=3, maximum=3600)
+        self.timeout.setValue(settings.value("timeout", 10, int))
+        form.addRow("Verbergen na:", self.timeout)
+
+        self.mode = QComboBox()
+        self.mode.addItem("Bij elke muisbeweging of toets", MODE_ACTIVITY)
+        self.mode.addItem("Alleen bij een klik op het bureaublad", MODE_CLICK)
+        self.mode.setCurrentIndex(self.mode.findData(settings.value("mode", MODE_ACTIVITY)))
+        form.addRow("Weer tonen:", self.mode)
+
+        chosen = settings.value("buttons", "left,right,middle").split(",")
+        self.buttons = {}
+        row = QHBoxLayout()
+        for key, label in (("left", "Links"), ("middle", "Midden"), ("right", "Rechts")):
+            box = QCheckBox(label)
+            box.setChecked(key in chosen)
+            box.toggled.connect(self.update_enabled)
+            self.buttons[key] = box
+            row.addWidget(box)
+        form.addRow("Met muisknop:", row)
+
+        self.rehide = QComboBox()
+        self.rehide.addItem("Na die tijd stilstand (bewegen stelt uit)", REHIDE_IDLE)
+        self.rehide.addItem("Na die tijd, ook als je beweegt", REHIDE_FIXED)
+        self.rehide.setCurrentIndex(self.rehide.findData(settings.value("rehide", REHIDE_IDLE)))
+        self.rehide.setToolTip("Bij een vaste tijd kunnen de pictogrammen verdwijnen terwijl je "
+                               "net iets wilt aanklikken; 10 s of meer is prettig.")
+        form.addRow("Weer verbergen:", self.rehide)
+
+        self.corner = QComboBox()
+        for key, label, _ in CORNERS:
+            self.corner.addItem(label, key)
+        self.corner.setCurrentIndex(self.corner.findData(settings.value("corner", "none")))
+        self.corner.setToolTip("Muis in deze schermhoek haalt de pictogrammen terug.\n"
+                               "Let op: KDE kan zelf al een actie op die hoek hebben "
+                               "(Systeeminstellingen → Schermranden).")
+        form.addRow("Schermhoek toont:", self.corner)
+
+        self.only_desktop = QCheckBox("Activiteit in andere vensters telt niet mee")
+        self.only_desktop.setChecked(settings.value("only_desktop", True, bool))
+        self.only_desktop.setToolTip("Aan: werk je in een ander venster, dan loopt de teller door "
+                                     "en verdwijnen de pictogrammen achter je venster.\n"
+                                     "Uit: elke muisbeweging of toets, waar dan ook, telt.")
+        form.addRow(self.only_desktop)
+
+        self.panel = QCheckBox("Paneel (taakbalk) ook verbergen")
+        self.panel.setChecked(settings.value("hide_panel", False, bool))
+        form.addRow(self.panel)
+
+        self.autostart = QCheckBox("Starten bij inloggen")
+        self.autostart.setChecked(os.path.exists(AUTOSTART))
+        form.addRow(self.autostart)
+
+        hint = QLabel("Sneltoetsen instellen: Systeeminstellingen → Toetsenbord → Sneltoetsen → "
+                      "Nieuwe toevoegen → Toepassing… → Tidy.")
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        layout.addWidget(hint)
+        layout.addStretch()
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                           | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        footer = QHBoxLayout()
+        support = QLabel(f"<a href='#'>♥ Steun {APP_NAME}</a>")
+        support.setToolTip("Doneren of meer informatie")
+        support.linkActivated.connect(self.on_support)
+        footer.addWidget(support)
+        footer.addStretch()
+        footer.addWidget(self.button_box)
+        outer.addLayout(footer)
+
+        self.mode.currentIndexChanged.connect(self.update_enabled)
+        self.update_enabled()
+
+        self.ticker = QTimer(self, interval=100)
+        self.ticker.timeout.connect(self.update_status)
+        self.ticker.start()
+        self.update_status()
+
+    def on_support(self, _link):
+        # Met doneerpagina: direct daarheen. Anders naar het tabblad Over.
+        if DONATE_URL:
+            open_donate()
+        else:
+            self.tabs.setCurrentWidget(self.about_tab)
+
+    def update_enabled(self):
+        click = self.mode.currentData() == MODE_CLICK
+        for box in self.buttons.values():
+            box.setEnabled(click)
+        self.rehide.setEnabled(click)
+        # In klikmodus moet er minstens één knop gekozen zijn.
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
+            not click or any(b.isChecked() for b in self.buttons.values()))
+
+    def update_status(self):
+        a = self.autohide
+        remaining = a.remaining()
+        total = a.settings.value("timeout", 10, int)
+        if not a.enabled_action.isChecked():
+            self.status_label.setText("Uitgeschakeld")
+            self.bar.setValue(0)
+            self.bar.setFormat("—")
+        elif a.hidden:
+            wait = "een klik op het bureaublad" if a.mode() == MODE_CLICK else "een muisbeweging of toets"
+            self.status_label.setText(f"Verborgen — wacht op {wait}")
+            self.bar.setValue(0)
+            self.bar.setFormat("0 s")
+        elif a.busy():
+            self.status_label.setText("Gepauzeerd — menu open of Plasma in bewerkingsmodus")
+            self.bar.setValue(1000)
+            self.bar.setFormat("pauze")
+        else:
+            self.status_label.setText("Zichtbaar — verbergen over:")
+            self.bar.setValue(int(1000 * remaining / total))
+            self.bar.setFormat(f"{remaining:.0f} s")
+
+    def chosen_buttons(self):
+        return ",".join(k for k, b in self.buttons.items() if b.isChecked())
+
+
+class Tidy(QObject):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.settings = QSettings(APP, APP)
+        self.plasma = Plasma()
+        self.kwin = KWin()
+        self.hidden = False
+        self.idle = None
+        self.idle_since = None      # moment waarop de huidige stilte begon
+        self.desktop_active = True  # is het bureaublad het actieve venster?
+        self.popup_open = False     # staat er ergens een menu/pop-up open?
+        self.plasma_shell = QDBusInterface("org.kde.plasmashell", "/PlasmaShell",
+                                           "org.kde.PlasmaShell", QDBusConnection.sessionBus())
+        self.shown_at = time.monotonic()
+        self.catchers = []
+        self.dialog = None
+        os.makedirs(EMPTY_DIR, exist_ok=True)
+
+        self.recover_after_crash()
+        self.showing_desktop = self.kwin.showing_desktop()
+        bus = QDBusConnection.sessionBus()
+        bus.connect("org.kde.KWin", "/KWin", "org.kde.KWin",
+                    "showingDesktopChanged", self.on_showing_desktop)
+
+        # Plasma herstart: daarna opnieuw nakijken of alles klopt.
+        self.plasma_watcher = QDBusServiceWatcher(
+            "org.kde.plasmashell", bus, QDBusServiceWatcher.WatchModeFlag.WatchForRegistration)
+        self.plasma_watcher.serviceRegistered.connect(
+            lambda _: QTimer.singleShot(3000, self.on_plasma_restarted))
+
+        # Scherm aangesloten/losgekoppeld: klikvensters opnieuw opbouwen.
+        app.screenAdded.connect(self.on_screens_changed)
+        app.screenRemoved.connect(self.on_screens_changed)
+
+        self.tray = QSystemTrayIcon()
+        menu = QMenu()
+        self.enabled_action = QAction("Ingeschakeld", menu, checkable=True)
+        self.enabled_action.setChecked(self.settings.value("enabled", True, bool))
+        self.enabled_action.toggled.connect(self.set_enabled)
+        menu.addAction(self.enabled_action)
+        menu.addAction(QIcon.fromTheme("configure"), "Instellingen…", self.show_settings)
+        menu.addAction(QIcon.fromTheme("help-about"), f"Over {APP_NAME}",
+                       lambda: self.show_settings(about=True))
+        menu.addAction("♥ Doneren…", self.on_donate)
+        menu.addSeparator()
+        menu.addAction("Afsluiten", self.quit)
+        self.tray.setContextMenu(menu)
+        self.tray.activated.connect(self.on_tray_click)
+        self.update_icon()
+        self.tray.show()
+
+        self.tick = QTimer(self, interval=250)
+        self.tick.timeout.connect(self.on_tick)
+        self.tick.start()
+
+        if self.enabled_action.isChecked():
+            self.start_idle()
+
+    def mode(self):
+        return self.settings.value("mode", MODE_ACTIVITY)
+
+    def fixed_rehide(self):
+        return self.mode() == MODE_CLICK and self.settings.value("rehide", REHIDE_IDLE) == REHIDE_FIXED
+
+    def counts_activity(self):
+        """Telt muis/toetsenbord nu mee? Niet als je in een ander venster werkt."""
+        return self.desktop_active or not self.settings.value("only_desktop", True, bool)
+
+    def on_desktop_active(self, active):
+        was = self.desktop_active
+        self.desktop_active = active
+        if active and not was:
+            # Naar het bureaublad gaan is zelf activiteit.
+            self.idle_since = None
+            if self.hidden and self.mode() == MODE_ACTIVITY:
+                self.show()
+        elif not active and was and self.idle_since is None:
+            # Weg van het bureaublad: vanaf nu telt de teller door.
+            self.idle_since = time.monotonic()
+
+    def remaining(self):
+        """Seconden tot het verbergen (alleen zinvol als ze zichtbaar zijn)."""
+        timeout = self.settings.value("timeout", 10, int)
+        now = time.monotonic()
+        if self.fixed_rehide():
+            left = timeout - (now - self.shown_at)
+        elif self.idle_since is None:
+            left = timeout
+        else:
+            left = timeout - (now - self.idle_since)
+        return max(0.0, left)
+
+    def busy(self):
+        """Niet verbergen terwijl je Plasma aan het bewerken bent of een menu open hebt:
+        verbergen herlaadt het bureaublad en dat sluit de bewerkingsmodus en menu's."""
+        return self.popup_open or bool(self.plasma_shell.property("editMode"))
+
+    def on_tick(self):
+        if self.enabled_action.isChecked() and not self.hidden and self.remaining() <= 0:
+            if self.busy():
+                # Uitstellen: de teller begint opnieuw zodra je klaar bent.
+                self.shown_at = time.monotonic()
+                self.idle_since = time.monotonic()
+                return
+            self.hide()
+
+    # --- verbergen / tonen ------------------------------------------------
+
+    def hide(self):
+        if self.hidden:
+            return
+        urls = {k: v for k, v in self.plasma.desktop_urls().items() if v != EMPTY_URL}
+        if not urls:
+            return  # plasmashell niet bereikbaar (bijv. net aan het herstarten)
+        state = {"urls": urls}
+        if self.settings.value("hide_panel", False, bool):
+            modes = self.plasma.panel_modes()
+            state["panels"] = modes
+            self.plasma.set_panel_modes({k: "autohide" for k in modes})
+        # Eerst opslaan, dan pas verbergen: zo kan een crash nooit iets kwijtraken.
+        self.settings.setValue("saved_state", json.dumps(state))
+        self.settings.sync()
+        self.plasma.set_desktop_urls({k: EMPTY_URL for k in urls})
+        self.hidden = True
+        self.update_icon()
+        if self.mode() == MODE_CLICK:
+            self.show_catchers()
+
+    def show(self):
+        self.hide_catchers()
+        raw = self.settings.value("saved_state", "")
+        if raw:
+            state = json.loads(raw)
+            self.plasma.set_desktop_urls({int(k): v for k, v in state.get("urls", {}).items()})
+            if "panels" in state:
+                self.plasma.set_panel_modes({int(k): v for k, v in state["panels"].items()})
+            self.settings.remove("saved_state")
+            self.settings.sync()
+        self.hidden = False
+        self.shown_at = time.monotonic()
+        self.idle_since = None if self.counts_activity() else time.monotonic()
+        if hasattr(self, "tray"):
+            self.update_icon()
+
+    def recover_after_crash(self):
+        """Stond het bureaublad nog op de lege map (crash, uitloggen)? Zet het terug."""
+        if self.settings.value("saved_state", ""):
+            self.show()
+        stuck = {k: "desktop:/" for k, v in self.plasma.desktop_urls().items() if v == EMPTY_URL}
+        if stuck:
+            self.plasma.set_desktop_urls(stuck)
+
+    def on_plasma_restarted(self):
+        if not self.hidden:
+            self.recover_after_crash()
+
+    # --- klikvensters -----------------------------------------------------
+
+    def show_catchers(self):
+        self.hide_catchers()
+        for screen in self.app.screens():
+            catcher = Catcher(screen, self.on_catcher_click)
+            catcher.show()
+            self.catchers.append(catcher)
+
+    def hide_catchers(self):
+        for catcher in self.catchers:
+            catcher.close()
+            catcher.deleteLater()
+        self.catchers = []
+
+    def on_screens_changed(self, _screen):
+        if self.catchers:
+            self.show_catchers()
+
+    def on_catcher_click(self, button):
+        chosen = self.settings.value("buttons", "left,right,middle").split(",")
+        if any(BUTTONS[k] == button for k in chosen if k in BUTTONS):
+            self.show()
+
+    @pyqtSlot(bool)
+    def on_showing_desktop(self, showing):
+        self.showing_desktop = showing
+        if showing and self.hidden:
+            self.show()
+
+    # --- inactiviteit -----------------------------------------------------
+
+    def start_idle(self):
+        self.stop_idle()
+        self.idle_since = None
+        self.idle = QProcess()
+        self.idle.readyReadStandardOutput.connect(self.on_idle_output)
+        self.idle.finished.connect(self.on_idle_died)
+        self.idle.start("swayidle", ["-w", "timeout", str(IDLE_STEP), "echo idle",
+                                     "resume", "echo active"])
+
+    def stop_idle(self):
+        if self.idle:
+            self.idle.readyReadStandardOutput.disconnect()
+            self.idle.finished.disconnect()
+            self.idle.kill()
+            self.idle.waitForFinished(1000)
+            self.idle = None
+
+    def on_idle_died(self):
+        # swayidle onverwacht gestopt: na even wachten opnieuw starten.
+        self.idle = None
+        if self.enabled_action.isChecked():
+            QTimer.singleShot(2000, self.start_idle)
+
+    def on_idle_output(self):
+        for line in bytes(self.idle.readAllStandardOutput()).decode().split():
+            if line == "idle":
+                since = time.monotonic() - IDLE_STEP
+                if self.idle_since is None or self.counts_activity():
+                    self.idle_since = since
+            elif line == "active":
+                if not self.counts_activity():
+                    continue
+                self.idle_since = None
+                if self.hidden and (self.mode() == MODE_ACTIVITY or self.showing_desktop):
+                    self.show()
+
+    # --- tray -------------------------------------------------------------
+
+    def update_icon(self):
+        if not self.enabled_action.isChecked():
+            pixmap = QIcon.fromTheme("view-visible").pixmap(64, QIcon.Mode.Disabled)
+            self.tray.setIcon(QIcon(pixmap))
+            status = "uitgeschakeld"
+        elif self.hidden:
+            self.tray.setIcon(QIcon.fromTheme("view-hidden"))
+            status = "pictogrammen verborgen"
+        else:
+            self.tray.setIcon(QIcon.fromTheme("view-visible"))
+            status = "pictogrammen zichtbaar"
+        self.tray.setToolTip(f"{APP_NAME} — {status}")
+
+    def set_enabled(self, on):
+        self.settings.setValue("enabled", on)
+        self.update_icon()
+        if on:
+            self.shown_at = time.monotonic()
+            self.start_idle()
+        else:
+            self.stop_idle()
+            self.show()
+
+    def on_tray_click(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.show_settings()
+
+    def on_donate(self):
+        if DONATE_URL:
+            open_donate()
+        else:
+            self.show_settings(about=True)
+
+    def show_settings(self, about=False):
+        if self.dialog:
+            if about:
+                self.dialog.tabs.setCurrentWidget(self.dialog.about_tab)
+            self.dialog.raise_()
+            self.dialog.activateWindow()
+            return
+        # Niet-modaal: een modaal venster zou de klikken op onze eigen
+        # klikvensters blokkeren, en dus het testen van de klikmodus.
+        self.dialog = SettingsDialog(self)
+        self.dialog.accepted.connect(lambda dlg=self.dialog: self.apply_settings(dlg))
+        self.dialog.finished.connect(self.on_dialog_closed)
+        if about:
+            self.dialog.tabs.setCurrentWidget(self.dialog.about_tab)
+        self.dialog.show()
+
+    def on_dialog_closed(self):
+        self.dialog.deleteLater()
+        self.dialog = None
+
+    def apply_settings(self, dlg):
+        self.show()  # nieuwe instellingen gaan in vanaf nu
+        old_corner = self.settings.value("corner", "none")
+        self.settings.setValue("timeout", dlg.timeout.value())
+        self.settings.setValue("mode", dlg.mode.currentData())
+        self.settings.setValue("buttons", dlg.chosen_buttons())
+        self.settings.setValue("rehide", dlg.rehide.currentData())
+        self.settings.setValue("corner", dlg.corner.currentData())
+        self.settings.setValue("hide_panel", dlg.panel.isChecked())
+        self.settings.setValue("only_desktop", dlg.only_desktop.isChecked())
+        self.set_autostart(dlg.autostart.isChecked())
+        dlg.tray_tab.apply()
+        if dlg.corner.currentData() != old_corner:
+            self.kwin.load(dlg.corner.currentData())
+
+    def set_autostart(self, on):
+        if on:
+            os.makedirs(os.path.dirname(AUTOSTART), exist_ok=True)
+            with open(AUTOSTART, "w") as f:
+                f.write(f"[Desktop Entry]\nType=Application\nName={APP_NAME}\n"
+                        f"Exec={os.path.abspath(sys.argv[0])}\nIcon=view-visible\n"
+                        "X-KDE-autostart-after=panel\n")
+        elif os.path.exists(AUTOSTART):
+            os.remove(AUTOSTART)
+
+    def quit(self):
+        if self.dialog:
+            self.dialog.reject()
+        self.stop_idle()
+        self.show()
+        self.kwin.unload()
+        self.app.quit()
+
+
+def migrate_old_config():
+    """Eenmalig: instellingen van de oude naam (AutoHide Desktop Icons) overnemen."""
+    old = os.path.expanduser(f"~/.config/{OLD_APP}/{OLD_APP}.conf")
+    new = os.path.expanduser(f"~/.config/{APP}/{APP}.conf")
+    if os.path.exists(old) and not os.path.exists(new):
+        os.makedirs(os.path.dirname(new), exist_ok=True)
+        shutil.copy2(old, new)
+
+
+COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--settings": "Settings"}
+USAGE = "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --version]"
+
+
+def main():
+    command = None
+    for arg in sys.argv[1:]:
+        if arg == "--version":
+            print(f"{APP_NAME} (plasma-tidy) {VERSION}")
+            return 0
+        if arg in COMMANDS:
+            command = COMMANDS[arg]
+        else:
+            print(USAGE, file=sys.stderr)
+            return 2
+
+    migrate_old_config()
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP)
+    app.setDesktopFileName(APP)
+    app.setQuitOnLastWindowClosed(False)
+
+    bus = QDBusConnection.sessionBus()
+    if not bus.registerService(DBUS_NAME):
+        # Er draait al een kopie: geef de opdracht door (standaard: instellingen openen).
+        QDBusInterface(DBUS_NAME, "/", DBUS_NAME, bus).call(command or "Settings")
+        return 0
+
+    if not shutil.which("swayidle"):
+        QMessageBox.critical(None, APP_NAME,
+                             "swayidle ontbreekt.\n\nInstalleer het met:\nsudo dnf install swayidle")
+        return 1
+
+    autohide = Tidy(app)
+    adaptor = DBusAdaptor(autohide)
+    bus.registerObject("/", autohide)
+    # Pas nu laden: het KWin-script meldt meteen het actieve venster via D-Bus.
+    autohide.kwin.load(autohide.settings.value("corner", "none"))
+    if command in ("Show", "Hide", "Settings"):
+        QTimer.singleShot(0, getattr(adaptor, command))
+
+    # Netjes terugzetten bij uitloggen/afsluiten (SIGTERM) of Ctrl+C.
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: autohide.quit())
+    tick = QTimer()  # laat Python signalen verwerken terwijl Qt draait
+    tick.start(500)
+    tick.timeout.connect(lambda: None)
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
