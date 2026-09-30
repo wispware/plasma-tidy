@@ -10,4 +10,5 @@ Tidy keeps your KDE Plasma desktop and system tray clean.
 
 Requires KDE Plasma 6 on Wayland, `python3-pyqt6` and `swayidle`.
 
-Made by Ivar. Free and open source; a donate link will follow with the first release.
+Made by Ivar. Free and open source under the GNU GPL v3 or later (see `LICENSE`);
+a donate link will follow with the first release.

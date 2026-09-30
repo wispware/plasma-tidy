@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+# SPDX-FileCopyrightText: 2026 Ivar
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Tidy (plasma-tidy): houdt je KDE Plasma-bureaublad opgeruimd (Wayland).
 
 Bureaublad:
@@ -51,7 +53,7 @@ VERSION = "0.1.0"
 AUTHOR = "Ivar"
 DESCRIPTION = "Houdt je KDE Plasma-bureaublad en systeemvak opgeruimd."
 # Nog in te vullen bij de eerste publicatie; zolang ze leeg zijn, tonen we een nette placeholder.
-LICENSE = ""        # gepland: GPL-3.0-or-later
+LICENSE = "GPL-3.0-or-later"
 WEBSITE_URL = ""    # gepland: GitHub-pagina van het project
 BUGS_URL = ""       # gepland: <website>/issues
 DONATE_URL = ""     # gepland: Ko-fi-pagina
