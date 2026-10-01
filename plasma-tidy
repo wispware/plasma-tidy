@@ -85,12 +85,15 @@ TASKS_ALL = "all"
 TASKS_PINNED = "pinned"
 OPEN_CLICK = "click"
 OPEN_HOVER = "hover"
+SCOPE_DRAWER = "drawer"
+SCOPE_PANEL = "panel"
 PLACE_BEFORE = "before"
 PLACE_AFTER = "after"
 PLACE_MANUAL = "manual"
 # The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
 DRAWER_DEFAULTS = {"closed": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
+                   "closeScope": SCOPE_DRAWER,
                    "openOnAttention": True, "animate": True, "reverseArrow": False,
                    "place": PLACE_BEFORE}
 
@@ -269,6 +272,7 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="hoverDelay" type="Int"><default>200</default></entry>
     <entry name="autoClose" type="Bool"><default>false</default></entry>
     <entry name="closeDelay" type="Int"><default>2000</default></entry>
+    <entry name="closeScope" type="String"><default>drawer</default></entry>
     <entry name="openOnAttention" type="Bool"><default>true</default></entry>
     <entry name="animate" type="Bool"><default>true</default></entry>
     <entry name="reverseArrow" type="Bool"><default>false</default></entry>
@@ -375,7 +379,8 @@ PlasmoidItem {
     function report() {
         console.warn("TIDYDRAWER " + JSON.stringify({
             own: ownPos, closed: cfg.closed, mode: cfg.taskMode, hover: panelHover !== null,
-            inPanel: pointerInPanel, popup: popupOpen, saved: cfg.savedLaunchers,
+            inPanel: pointerInPanel, inDrawer: pointerInDrawer, arrow: arrowHovered,
+            popup: popupOpen, saved: cfg.savedLaunchers,
             siblings: siblings.map(s => s.plugin.replace("org.kde.plasma.", "") + "#" + s.id + "@" + s.pos
                                         + (s.item.visible ? "" : "/hidden") + "/o" + s.item.opacity
                                         + "/w" + Math.round(s.item.width)
@@ -574,10 +579,10 @@ PlasmoidItem {
 
     function toggle() { cfg.closed = !cfg.closed; }
 
-    // Is the pointer over the panel? Watched on the panel's layout, so moving from the
-    // arrow onto the revealed icons keeps the drawer open.
-    property var panelHover: null
+    // Where is the pointer? Over the panel is watched on the panel's layout; over the
+    // drawer itself means over the arrow or over one of its widgets.
     Component { id: hoverComponent; HoverHandler {} }
+    property var panelHover: null
     onContainerChanged: {
         // The old one may be gone already, together with the panel it was watching.
         try { if (panelHover) panelHover.destroy(); } catch (e) {}
@@ -586,20 +591,65 @@ PlasmoidItem {
             panelHover = hoverComponent.createObject(container.parent);
     }
     readonly property bool pointerInPanel: (panelHover ? panelHover.hovered : false) || arrowHovered
-    // A pop-up of one of the widgets (menu, calendar, ...) counts as "still busy here".
+
+    readonly property var drawerItems: siblings.filter(s => inTargets(s.id))
+    property bool itemsHovered: false
+    function updateItemsHovered() {
+        var any = false;
+        for (var i = 0; i < watchers.count; i++) {
+            var w = watchers.objectAt(i);
+            if (w && w.inside) { any = true; break; }
+        }
+        itemsHovered = any;
+    }
+    Instantiator {
+        id: watchers
+        model: root.drawerItems
+        onObjectAdded: root.updateItemsHovered()
+        onObjectRemoved: root.updateItemsHovered()
+        delegate: QtObject {
+            id: watcher
+            required property var modelData
+            readonly property Item item: modelData ? modelData.item : null
+            property var handler: null
+            // A widget that fills the panel is mostly empty space: only the part that holds
+            // its contents counts as the drawer.
+            readonly property real extent: {
+                if (!item || !item.applet) return 0;
+                var full = root.vertical ? item.height : item.width;
+                var wanted = root.vertical ? item.applet.Layout.preferredHeight
+                                           : item.applet.Layout.preferredWidth;
+                return (wanted > 0 && wanted < full) ? wanted : full;
+            }
+            readonly property bool inside: {
+                if (!handler || !handler.hovered || !item) return false;
+                var pos = root.vertical ? handler.point.position.y : handler.point.position.x;
+                var full = root.vertical ? item.height : item.width;
+                var mirrored = !root.vertical && Qt.application.layoutDirection === Qt.RightToLeft;
+                return mirrored ? pos >= full - extent : pos <= extent;
+            }
+            onInsideChanged: root.updateItemsHovered()
+            Component.onCompleted: if (item) handler = hoverComponent.createObject(item)
+            Component.onDestruction: { try { if (handler) handler.destroy(); } catch (e) {} }
+        }
+    }
+    readonly property bool pointerInDrawer: arrowHovered || itemsHovered
+    readonly property bool pointerHere: cfg.closeScope === "panel" ? pointerInPanel : pointerInDrawer
     function hasPopupOpen(applet) {
         // Widgets shown in full in the panel (task manager, pager, ...) always count as
         // "expanded"; only a widget with an icon in the panel has a real pop-up.
         return applet && applet.expanded && applet.compactRepresentationItem !== null
             && applet.compactRepresentationItem.visible;
     }
+    // A pop-up of one of the widgets (menu, calendar, ...) counts as "still busy here".
     readonly property bool popupOpen: siblings.some(s => hasPopupOpen(s.item.applet))
 
     Timer {
         id: closeTimer
         interval: Math.max(0, root.cfg.closeDelay)
-        running: root.cfg.autoClose && root.panelHover !== null && !root.cfg.closed
-                 && !root.editing && !root.pointerInPanel && !root.popupOpen
+        running: root.cfg.autoClose && !root.cfg.closed && !root.editing
+                 && !root.pointerHere && !root.popupOpen
+                 && (root.cfg.closeScope !== "panel" || root.panelHover !== null)
         onTriggered: root.cfg.closed = true
     }
     Timer {
@@ -761,8 +811,15 @@ TRANSLATIONS = {
             "Het pijltje aanwijzen (klikken werkt ook)",
         "Open with:": "Openen met:",
         "Pointing opens after:": "Aanwijzen opent na:",
-        "Close when the pointer leaves the panel": "Sluiten als de muis het paneel verlaat",
-        "after": "na",
+        "Close by itself:": "Vanzelf sluiten:",
+        "Never": "Nooit",
+        "When the pointer leaves the drawer": "Als de muis de la verlaat",
+        "When the pointer leaves the panel": "Als de muis het paneel verlaat",
+        "The drawer is the arrow and the items it shows; empty panel space next to them "
+        "is outside it.":
+            "De la is het pijltje met de onderdelen die het toont; lege ruimte in het "
+            "paneel ernaast valt erbuiten.",
+        "Closes after:": "Sluit na:",
         "Open when a program asks for attention": "Openen als een programma om aandacht vraagt",
         "Sliding animation": "Schuifanimatie",
         "Arrow points the other way": "Pijltje wijst de andere kant op",
@@ -1436,18 +1493,21 @@ class DrawerPage(QWidget):
         self.hover_delay.setValue(config["hoverDelay"])
         form.addRow(tr("Pointing opens after:"), self.hover_delay)
 
-        self.auto_close = QCheckBox(tr("Close when the pointer leaves the panel"))
-        self.auto_close.setChecked(config["autoClose"])
-        self.auto_close.toggled.connect(self.update_enabled)
+        self.auto_close = QComboBox()
+        self.auto_close.addItem(tr("Never"), "")
+        self.auto_close.addItem(tr("When the pointer leaves the drawer"), SCOPE_DRAWER)
+        self.auto_close.addItem(tr("When the pointer leaves the panel"), SCOPE_PANEL)
+        self.auto_close.setCurrentIndex(max(0, self.auto_close.findData(
+            config["closeScope"] if config["autoClose"] else "")))
+        self.auto_close.setToolTip(tr("The drawer is the arrow and the items it shows; empty "
+                                      "panel space next to them is outside it."))
+        self.auto_close.currentIndexChanged.connect(self.update_enabled)
+        form.addRow(tr("Close by itself:"), self.auto_close)
+
         self.close_delay = QDoubleSpinBox(suffix=" s", minimum=0, maximum=60, singleStep=0.5,
                                           decimals=1)
         self.close_delay.setValue(config["closeDelay"] / 1000)
-        row = QHBoxLayout()
-        row.addWidget(self.auto_close)
-        row.addWidget(QLabel(tr("after")))
-        row.addWidget(self.close_delay)
-        row.addStretch()
-        form.addRow(row)
+        form.addRow(tr("Closes after:"), self.close_delay)
 
         self.attention = QCheckBox(tr("Open when a program asks for attention"))
         self.attention.setChecked(config["openOnAttention"])
@@ -1474,7 +1534,7 @@ class DrawerPage(QWidget):
         self.task_mode.setEnabled(any(check.isChecked() and plugin in TASK_PLUGINS
                                       for check, plugin in self.targets.values()))
         self.hover_delay.setEnabled(self.open_on.currentData() == OPEN_HOVER)
-        self.close_delay.setEnabled(self.auto_close.isChecked())
+        self.close_delay.setEnabled(bool(self.auto_close.currentData()))
 
     def values(self):
         return {"targets": [str(i) for i, (check, _) in self.targets.items()
@@ -1482,7 +1542,8 @@ class DrawerPage(QWidget):
                 "taskMode": self.task_mode.currentData(),
                 "openOn": self.open_on.currentData(),
                 "hoverDelay": self.hover_delay.value(),
-                "autoClose": self.auto_close.isChecked(),
+                "autoClose": bool(self.auto_close.currentData()),
+                "closeScope": self.auto_close.currentData() or self.drawer["config"]["closeScope"],
                 "closeDelay": round(self.close_delay.value() * 1000),
                 "openOnAttention": self.attention.isChecked(),
                 "animate": self.animate.isChecked(),

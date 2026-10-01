@@ -80,7 +80,8 @@ Edit Mode* and drag it.
 | Task manager | Hide all programs, open ones too; or only the pinned programs that are not open | all programs |
 | Open with | A click on the arrow, or pointing at it (a click always works) | click |
 | Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
-| Close when the pointer leaves the panel | Closes the drawer again by itself, after the time you set | off, 2 s |
+| Close by itself | Never, when the pointer leaves the drawer (the arrow and the items it shows), or when it leaves the panel | never |
+| Closes after | How long after the pointer left | 2 s |
 | Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
 | Sliding animation | Slide and fade, or switch at once | on |
 | Arrow points the other way | Flips the arrow | off |
