@@ -68,6 +68,7 @@ KWIN_SCRIPT_NAME = APP + "-helper"
 AUTOSTART = os.path.expanduser(f"~/.config/autostart/{APP}.desktop")
 CATCHER_PREFIX = "tidy-catcher:"
 IDLE_STEP = 1  # seconds of stillness before swayidle reports "idle"
+IDLE_LINK = os.path.join(DATA_DIR, "tidy-idle")
 
 MODE_ACTIVITY = "activity"
 MODE_CLICK = "click"
@@ -1102,14 +1103,31 @@ class Tidy(QObject):
 
     # --- idle -------------------------------------------------------------
 
+    def idle_program(self):
+        """swayidle, started through a link with a neutral name. Some programs look for
+        "sway" in the process list to detect the Sway compositor (Warp then drops its
+        window buttons); a process called swayidle fools them."""
+        target = shutil.which("swayidle")
+        try:
+            if not target:
+                return "swayidle"
+            if not os.path.islink(IDLE_LINK) or os.readlink(IDLE_LINK) != target:
+                os.makedirs(DATA_DIR, exist_ok=True)
+                if os.path.lexists(IDLE_LINK):
+                    os.remove(IDLE_LINK)
+                os.symlink(target, IDLE_LINK)
+            return IDLE_LINK
+        except OSError:
+            return target
+
     def start_idle(self):
         self.stop_idle()
         self.idle_since = None
         self.idle = QProcess()
         self.idle.readyReadStandardOutput.connect(self.on_idle_output)
         self.idle.finished.connect(self.on_idle_died)
-        self.idle.start("swayidle", ["-w", "timeout", str(IDLE_STEP), "echo idle",
-                                     "resume", "echo active"])
+        self.idle.start(self.idle_program(), ["-w", "timeout", str(IDLE_STEP), "echo idle",
+                                              "resume", "echo active"])
 
     def stop_idle(self):
         if self.idle:
