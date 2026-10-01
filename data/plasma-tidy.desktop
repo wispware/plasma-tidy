@@ -2,8 +2,8 @@
 Type=Application
 Name=Tidy
 GenericName=Plasma Tidy
-Comment=Houdt je bureaublad en systeemvak opgeruimd
-Comment[en]=Keeps your Plasma desktop and system tray clean
+Comment=Keeps your Plasma desktop and system tray clean
+Comment[nl]=Houdt je bureaublad en systeemvak opgeruimd
 Exec=plasma-tidy
 Icon=view-visible
 Categories=Settings;DesktopSettings;
@@ -11,13 +11,16 @@ Keywords=plasma;tidy;clean;declutter;hide;autohide;icons;desktop;tray;systray;op
 Actions=show;hide;toggle;
 
 [Desktop Action show]
-Name=Pictogrammen tonen
+Name=Show icons
+Name[nl]=Pictogrammen tonen
 Exec=plasma-tidy --show
 
 [Desktop Action hide]
-Name=Pictogrammen verbergen
+Name=Hide icons
+Name[nl]=Pictogrammen verbergen
 Exec=plasma-tidy --hide
 
 [Desktop Action toggle]
-Name=In-/uitschakelen
+Name=Switch on/off
+Name[nl]=In-/uitschakelen
 Exec=plasma-tidy --toggle
