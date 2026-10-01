@@ -82,6 +82,7 @@ Edit Mode* and drag it.
 | Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
 | Close by itself | Never, when the pointer leaves the drawer (the arrow and the items it shows), or when it leaves the panel | never |
 | Closes after | How long after the pointer left | 2 s |
+| Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer | off |
 | Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
 | Sliding animation | Slide and fade, or switch at once | on |
 | Arrow points the other way | Flips the arrow | off |
@@ -90,6 +91,10 @@ Edit Mode* and drag it.
 
 A widget that fills the panel, usually the task manager, keeps its place while hidden, so the
 rest of the panel does not jump. Other widgets give up their space.
+
+With the arrow *just after* a task manager, it sits right behind the last program. For that
+the task manager stops filling the panel (its own *Fill free space on panel* setting) and the
+drawer fills it instead; the setting is put back when you move the arrow or remove the drawer.
 
 With *only the pinned programs*, open programs stay in the panel: they are windows. Tidy
 remembers the pinned list while the drawer is closed and puts it back when it opens,

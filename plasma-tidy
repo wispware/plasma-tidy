@@ -93,7 +93,7 @@ PLACE_MANUAL = "manual"
 # The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
 DRAWER_DEFAULTS = {"closed": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
-                   "closeScope": SCOPE_DRAWER,
+                   "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "openOnAttention": True, "animate": True, "reverseArrow": False,
                    "place": PLACE_BEFORE}
 
@@ -273,11 +273,13 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="autoClose" type="Bool"><default>false</default></entry>
     <entry name="closeDelay" type="Int"><default>2000</default></entry>
     <entry name="closeScope" type="String"><default>drawer</default></entry>
+    <entry name="closeOnPanelClick" type="Bool"><default>false</default></entry>
     <entry name="openOnAttention" type="Bool"><default>true</default></entry>
     <entry name="animate" type="Bool"><default>true</default></entry>
     <entry name="reverseArrow" type="Bool"><default>false</default></entry>
     <entry name="place" type="String"><default>before</default></entry>
     <entry name="savedLaunchers" type="String"><default>{}</default></entry>
+    <entry name="savedFill" type="String"><default>{}</default></entry>
     <entry name="tidyCommand" type="String"><default></default></entry>
     <entry name="textOpen" type="String"><default>Show the hidden items</default></entry>
     <entry name="textClose" type="String"><default>Hide the items</default></entry>
@@ -323,6 +325,7 @@ PlasmoidItem {
         function onDestroyedChanged(destroyed) {
             root.leaving = destroyed;
             root.syncPinned();
+            root.syncFill();
         }
     }
     readonly property bool wantClosed: cfg.closed && !editing && !leaving
@@ -343,12 +346,6 @@ PlasmoidItem {
         s => inTargets(s.id) && (!isTasks(s.plugin) || cfg.taskMode === "all"))
     readonly property var pinnedTargets: siblings.filter(
         s => inTargets(s.id) && isTasks(s.plugin) && cfg.taskMode === "pinned")
-    readonly property bool targetsAfter: {
-        var after = 0, before = 0;
-        siblings.forEach(s => { if (inTargets(s.id)) { if (s.pos > ownPos) after++; else before++; } });
-        return after >= before;
-    }
-
     function scan() {
         var c = root.parent, hops = 0;
         while (c && !c.isAppletContainer && hops < 8) { c = c.parent; hops++; }
@@ -373,14 +370,24 @@ PlasmoidItem {
         if (key(list) !== key(siblings) || list.some((s, i) => s.item !== siblings[i].item))
             siblings = list;
         syncPinned();
+        syncFill();
     }
 
     // Diagnostics: with the "debug" setting on "on", the state goes to the journal twice a second.
     function report() {
         console.warn("TIDYDRAWER " + JSON.stringify({
             own: ownPos, closed: cfg.closed, mode: cfg.taskMode, hover: panelHover !== null,
+            width: Math.round(root.width), stretching: stretching, savedFill: cfg.savedFill,
+            arrow_icon: arrowIcon,
             inPanel: pointerInPanel, inDrawer: pointerInDrawer, arrow: arrowHovered,
-            popup: popupOpen, saved: cfg.savedLaunchers,
+            popup: popupOpen, saved: cfg.savedLaunchers, tap: panelTap !== null,
+            // is the middle of each widget's contents an empty spot, and the middle of the rest of it?
+            spots: siblings.map(s => {
+                var start = vertical ? s.item.y : s.item.x, full = vertical ? s.item.height : s.item.width;
+                var extent = contentExtent(s.item);
+                return s.plugin.replace("org.kde.plasma.", "") + ":" + isEmptySpot(start + extent / 2)
+                    + (extent < full ? "/" + isEmptySpot(start + extent + (full - extent) / 2) : "");
+            }),
             siblings: siblings.map(s => s.plugin.replace("org.kde.plasma.", "") + "#" + s.id + "@" + s.pos
                                         + (s.item.visible ? "" : "/hidden") + "/o" + s.item.opacity
                                         + "/w" + Math.round(s.item.width)
@@ -549,8 +556,9 @@ PlasmoidItem {
     Connections {
         target: root.cfg
         function onClosedChanged() { root.syncPinned(); }
-        function onTargetsChanged() { root.syncPinned(); }
+        function onTargetsChanged() { root.syncPinned(); root.syncFill(); }
         function onTaskModeChanged() { root.syncPinned(); }
+        function onPlaceChanged() { root.syncFill(); }
     }
     // Removed from the panel (or Plasma shutting down): never leave a task manager without
     // its pinned icons. At the next start a closed drawer empties the list again.
@@ -560,6 +568,7 @@ PlasmoidItem {
             if (hider) hider.release();
         }
         leaving = true;
+        syncFill();
         var saved = {};
         try { saved = JSON.parse(cfg.savedLaunchers || "{}") || {}; } catch (e) { return; }
         siblings.forEach(s => {
@@ -575,6 +584,40 @@ PlasmoidItem {
         cfg.savedLaunchers = JSON.stringify(saved);
     }
 
+    // --- arrow after a task manager that fills the panel --------------------------
+    // Placed after its items, the arrow would end up at the far end of the task manager's
+    // empty space. So the task manager stops filling the panel and this widget fills it
+    // instead: the arrow sits right behind the last program and the rest of our width is
+    // empty panel. The task manager's own setting is put back when this no longer applies.
+
+    property bool stretching: false
+    function syncFill() {
+        var saved = {};
+        try { saved = JSON.parse(cfg.savedFill || "{}") || {}; } catch (e) { saved = {}; }
+        var before = JSON.stringify(saved), present = {};
+        siblings.forEach(s => {
+            if (!isTasks(s.plugin)) return;
+            present[s.id] = true;
+            var conf = null;
+            try { conf = s.item.applet.plasmoid.configuration; } catch (e) {}
+            if (!conf) return;
+            var take = cfg.place === "after" && !leaving && inTargets(s.id) && s.pos < ownPos;
+            if (take && !(s.id in saved)) {
+                if (conf.fill === false) return;   // already set that way by the user
+                saved[s.id] = true;
+                // Save first, change afterwards: a crash in between must not lose the setting.
+                cfg.savedFill = JSON.stringify(saved);
+                conf.fill = false;
+            } else if (!take && (s.id in saved)) {
+                conf.fill = true;
+                delete saved[s.id];
+            }
+        });
+        Object.keys(saved).forEach(id => { if (!(id in present)) delete saved[id]; });
+        if (JSON.stringify(saved) !== before) cfg.savedFill = JSON.stringify(saved);
+        stretching = Object.keys(saved).length > 0;
+    }
+
     // --- opening and closing ---------------------------------------------------
 
     function toggle() { cfg.closed = !cfg.closed; }
@@ -586,9 +629,54 @@ PlasmoidItem {
     onContainerChanged: {
         // The old one may be gone already, together with the panel it was watching.
         try { if (panelHover) panelHover.destroy(); } catch (e) {}
+        try { if (panelTap) panelTap.destroy(); } catch (e) {}
         panelHover = null;
-        if (container && container.parent)
+        panelTap = null;
+        if (container && container.parent) {
             panelHover = hoverComponent.createObject(container.parent);
+            panelTap = tapComponent.createObject(container.parent);
+        }
+    }
+
+    // A click on an empty spot of the panel closes the drawer. The panel passes every
+    // click to this handler as well, also those on a widget, so "empty" is worked out
+    // from the layout: no widget there, or only the unused part of one that fills the panel.
+    Component {
+        id: tapComponent
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            onTapped: (eventPoint, button) => root.panelTapped(
+                root.vertical ? eventPoint.position.y : eventPoint.position.x)
+        }
+    }
+    property var panelTap: null
+    function panelTapped(pos) {
+        if (cfg.closeOnPanelClick && !cfg.closed && isEmptySpot(pos))
+            cfg.closed = true;
+    }
+    function contentExtent(k) {
+        var full = vertical ? k.height : k.width;
+        var wanted = vertical ? k.applet.Layout.preferredHeight : k.applet.Layout.preferredWidth;
+        return (wanted > 0 && wanted < full) ? wanted : full;
+    }
+    function isEmptySpot(pos) {
+        if (!container || !container.parent) return false;
+        var kids = container.parent.children;
+        var mirrored = !vertical && Qt.application.layoutDirection === Qt.RightToLeft;
+        for (var i = 0; i < kids.length; i++) {
+            var k = kids[i];
+            // Hidden by a drawer but still holding its place: that looks empty too.
+            if (!k || !k.isAppletContainer || !k.applet || !k.visible || k.opacity === 0) continue;
+            var plugin = "";
+            try { plugin = k.applet.plasmoid.pluginName; } catch (e) {}
+            if (plugin === "org.kde.plasma.panelspacer" || plugin === "org.kde.plasma.marginsseparator")
+                continue;
+            var start = vertical ? k.y : k.x, full = vertical ? k.height : k.width;
+            var extent = contentExtent(k);
+            var from = mirrored ? start + full - extent : start;
+            if (pos >= from && pos <= from + extent) return false;
+        }
+        return true;
     }
     readonly property bool pointerInPanel: (panelHover ? panelHover.hovered : false) || arrowHovered
 
@@ -676,40 +764,54 @@ PlasmoidItem {
 
     preferredRepresentation: fullRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
-    toolTipMainText: cfg.closed ? cfg.textOpen : cfg.textClose
-    toolTipSubText: ""
 
     readonly property int thickness: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+    Layout.fillWidth: !vertical && stretching
+    Layout.fillHeight: vertical && stretching
     Layout.minimumWidth: vertical ? -1 : thickness
     Layout.preferredWidth: vertical ? -1 : thickness
-    Layout.maximumWidth: vertical ? -1 : thickness
+    Layout.maximumWidth: vertical ? -1 : (stretching ? Infinity : thickness)
     Layout.minimumHeight: vertical ? thickness : -1
     Layout.preferredHeight: vertical ? thickness : -1
-    Layout.maximumHeight: vertical ? thickness : -1
+    Layout.maximumHeight: vertical ? (stretching ? Infinity : thickness) : -1
 
-    // Closed: point at where the items will appear. Open: point back at the arrow's side.
-    readonly property bool pointsForward: (cfg.closed === targetsAfter) !== cfg.reverseArrow
+    // Closed, the arrow points the way the drawer opens: away from the nearest end of the
+    // panel. Open, it points back.
+    readonly property bool inFirstHalf: {
+        if (!container || !container.parent) return true;
+        var at = (vertical ? container.y : container.x) + thickness / 2;
+        return at < (vertical ? container.parent.height : container.parent.width) / 2;
+    }
+    readonly property bool pointsForward: (cfg.closed === inFirstHalf) !== cfg.reverseArrow
     readonly property string arrowIcon: vertical ? (pointsForward ? "arrow-down" : "arrow-up")
-        : ((pointsForward !== (Qt.application.layoutDirection === Qt.RightToLeft)) ? "arrow-right" : "arrow-left")
+                                                 : (pointsForward ? "arrow-right" : "arrow-left")
 
     property bool arrowHovered: false
 
     fullRepresentation: Item {
-        Kirigami.Icon {
-            anchors.centerIn: parent
-            width: Kirigami.Units.iconSizes.small
-            height: width
-            source: root.arrowIcon
-            active: root.arrowHovered
-        }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.LeftButton
-            onContainsMouseChanged: root.arrowHovered = containsMouse
-            onClicked: { hoverTimer.stop(); root.toggle(); }
-            onEntered: if (root.cfg.openOn === "hover" && root.cfg.closed) hoverTimer.restart()
-            onExited: hoverTimer.stop()
+        // The arrow sits at the start of the widget; when the widget fills the panel, the
+        // rest of it is empty panel space.
+        PlasmaCore.ToolTipArea {
+            width: root.vertical ? parent.width : root.thickness
+            height: root.vertical ? root.thickness : parent.height
+            mainText: root.cfg.closed ? root.cfg.textOpen : root.cfg.textClose
+
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                width: Kirigami.Units.iconSizes.small
+                height: width
+                source: root.arrowIcon
+                active: root.arrowHovered
+            }
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton
+                onContainsMouseChanged: root.arrowHovered = containsMouse
+                onClicked: { hoverTimer.stop(); root.toggle(); }
+                onEntered: if (root.cfg.openOn === "hover" && root.cfg.closed) hoverTimer.restart()
+                onExited: hoverTimer.stop()
+            }
         }
     }
 }
@@ -820,6 +922,8 @@ TRANSLATIONS = {
             "De la is het pijltje met de onderdelen die het toont; lege ruimte in het "
             "paneel ernaast valt erbuiten.",
         "Closes after:": "Sluit na:",
+        "Close with a click on an empty spot in the panel":
+            "Sluiten met een klik op een lege plek in het paneel",
         "Open when a program asks for attention": "Openen als een programma om aandacht vraagt",
         "Sliding animation": "Schuifanimatie",
         "Arrow points the other way": "Pijltje wijst de andere kant op",
@@ -827,6 +931,10 @@ TRANSLATIONS = {
         "Just before the items it hides": "Direct vóór de onderdelen die het verbergt",
         "Just after the items it hides": "Direct na de onderdelen die het verbergt",
         "Where I put it myself": "Waar ik het zelf neerzet",
+        "After a task manager the arrow sits right behind the last program. The task manager "
+        "then no longer fills the panel; the drawer does that instead.":
+            "Na een taakbeheer staat het pijltje direct achter het laatste programma. "
+            "Taakbeheer vult het paneel dan niet meer op; dat doet de la.",
         "Close and open the drawers together with the desktop icons":
             "Laden sluiten en openen samen met de bureaubladpictogrammen",
         "The arrow sits next to the items it hides. To place it yourself, choose \"Where I "
@@ -1509,6 +1617,10 @@ class DrawerPage(QWidget):
         self.close_delay.setValue(config["closeDelay"] / 1000)
         form.addRow(tr("Closes after:"), self.close_delay)
 
+        self.panel_click = QCheckBox(tr("Close with a click on an empty spot in the panel"))
+        self.panel_click.setChecked(config["closeOnPanelClick"])
+        form.addRow(self.panel_click)
+
         self.attention = QCheckBox(tr("Open when a program asks for attention"))
         self.attention.setChecked(config["openOnAttention"])
         form.addRow(self.attention)
@@ -1526,6 +1638,9 @@ class DrawerPage(QWidget):
         self.place.addItem(tr("Just after the items it hides"), PLACE_AFTER)
         self.place.addItem(tr("Where I put it myself"), PLACE_MANUAL)
         self.place.setCurrentIndex(max(0, self.place.findData(config["place"])))
+        self.place.setToolTip(tr("After a task manager the arrow sits right behind the last "
+                                 "program. The task manager then no longer fills the panel; "
+                                 "the drawer does that instead."))
         form.addRow(tr("Place of the arrow:"), self.place)
 
         self.update_enabled()
@@ -1545,6 +1660,7 @@ class DrawerPage(QWidget):
                 "autoClose": bool(self.auto_close.currentData()),
                 "closeScope": self.auto_close.currentData() or self.drawer["config"]["closeScope"],
                 "closeDelay": round(self.close_delay.value() * 1000),
+                "closeOnPanelClick": self.panel_click.isChecked(),
                 "openOnAttention": self.attention.isChecked(),
                 "animate": self.animate.isChecked(),
                 "reverseArrow": self.reverse.isChecked(),
