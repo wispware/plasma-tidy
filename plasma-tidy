@@ -59,7 +59,7 @@ APP_NAME = "Tidy"
 OLD_APP = "autohide-desktop-icons"  # previous name, for carrying over its settings
 VERSION = "0.2.0"
 AUTHOR = "Ivar"
-DESCRIPTION = "Keeps your KDE Plasma desktop and system tray clean."
+DESCRIPTION = "Keeps your KDE Plasma desktop, panel and system tray clean."
 # To be filled in at the first release; while empty, the About tab shows a placeholder.
 LICENSE = "GPL-3.0-or-later"
 WEBSITE_URL = ""    # planned: the project's GitHub page
@@ -821,8 +821,8 @@ PlasmoidItem {
 # and a line in LANGUAGES. A text missing from a table stays English.
 TRANSLATIONS = {
     "nl": {
-        "Keeps your KDE Plasma desktop and system tray clean.":
-            "Houdt je KDE Plasma-bureaublad en systeemvak opgeruimd.",
+        "Keeps your KDE Plasma desktop, panel and system tray clean.":
+            "Houdt je KDE Plasma-bureaublad, paneel en systeemvak opgeruimd.",
         # screen corners
         "None": "Geen",
         "Top left": "Linksboven",
@@ -947,10 +947,12 @@ TRANSLATIONS = {
         "{app} settings…": "{app}-instellingen…",
         # about
         "Version {version}": "Versie {version}",
-        "Hides your desktop icons when you don't need them, and lets you choose per icon "
-        "what shows in the system tray.":
-            "Verbergt je bureaubladpictogrammen als je ze niet nodig hebt, "
-            "en laat je per pictogram kiezen wat er in het systeemvak staat.",
+        "Hides your desktop icons when you don't need them, tucks the programs and icons "
+        "in your panel away behind an arrow, and lets you choose per icon what shows in the "
+        "system tray.":
+            "Verbergt je bureaubladpictogrammen als je ze niet nodig hebt, bergt de "
+            "programma's en pictogrammen in je paneel op achter een pijltje, en laat je per "
+            "pictogram kiezen wat er in het systeemvak staat.",
         "coming with the first release": "volgt bij de eerste release",
         "Made by {author}": "Gemaakt door {author}",
         "License: {license}": "Licentie: {license}",
@@ -1073,7 +1075,9 @@ def tr(text):
 def drawer_files():
     """The drawer widget as Plasma wants it on disk: {relative path: contents}."""
     metadata = {"KPlugin": {"Id": DRAWER_ID, "Name": f"{APP_NAME} Drawer",
+                            "Name[nl]": f"{APP_NAME}-la",
                             "Description": "Tucks panel widgets away behind an arrow",
+                            "Description[nl]": "Bergt paneelonderdelen op achter een pijltje",
                             "Icon": "arrow-right", "Category": "Utilities",
                             "Version": VERSION, "License": LICENSE},
                 "KPackageStructure": "Plasma/Applet",
@@ -1822,8 +1826,9 @@ class AboutTab(QWidget):
         layout.addLayout(head)
 
         about = QLabel(tr(DESCRIPTION) + "<br><br>"
-                       + tr("Hides your desktop icons when you don't need them, and lets you "
-                            "choose per icon what shows in the system tray."))
+                       + tr("Hides your desktop icons when you don't need them, tucks the "
+                            "programs and icons in your panel away behind an arrow, and lets "
+                            "you choose per icon what shows in the system tray."))
         about.setWordWrap(True)
         layout.addWidget(about)
 

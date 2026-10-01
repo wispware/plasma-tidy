@@ -2,8 +2,8 @@
 Type=Application
 Name=Tidy
 GenericName=Plasma Tidy
-Comment=Keeps your Plasma desktop and system tray clean
-Comment[nl]=Houdt je bureaublad en systeemvak opgeruimd
+Comment=Keeps your Plasma desktop, panel and system tray clean
+Comment[nl]=Houdt je bureaublad, paneel en systeemvak opgeruimd
 Exec=plasma-tidy
 Icon=view-visible
 Categories=Settings;DesktopSettings;

@@ -67,12 +67,14 @@ will fire.
 
 ### Panel
 
-The *Panel* tab adds drawers to your panel. A drawer is a small arrow: click it (or point at
-it) and the widgets in it slide away; click again and they are back. *Add a drawer* puts one
-just before the task manager, with the task manager in it; a second drawer starts with the
-system tray. The arrow sits next to the widgets it hides and moves along when you change them.
-To place it yourself, choose *Where I put it myself*, right-click the panel, choose *Enter
-Edit Mode* and drag it.
+The *Panel* tab adds drawers to your panel. A drawer is a small arrow that tucks the widgets
+you choose away. Click the arrow to close or open the drawer. If you like, it also opens when
+you point at the arrow, and closes by itself or on a click on an empty spot of the panel.
+
+*Add a drawer* puts one just before the task manager, with the task manager in it; a second
+drawer starts with the system tray. The arrow sits next to the widgets it hides and moves
+along when you change them. To place it yourself, choose *Where I put it myself*, right-click
+the panel, choose *Enter Edit Mode* and drag it.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
@@ -82,10 +84,10 @@ Edit Mode* and drag it.
 | Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
 | Close by itself | Never, when the pointer leaves the drawer (the arrow and the items it shows), or when it leaves the panel | never |
 | Closes after | How long after the pointer left | 2 s |
-| Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer | off |
+| Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer; a click on a widget does what it always did | off |
 | Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
 | Sliding animation | Slide and fade, or switch at once | on |
-| Arrow points the other way | Flips the arrow | off |
+| Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
 | Close and open the drawers together with the desktop icons | The drawers follow Tidy's hiding and showing of the desktop icons | off |
 
@@ -143,21 +145,22 @@ plasma-tidy --version   print the version
 - **Click to show** puts an invisible window on each screen, just above the desktop and below
   everything else. A small KWin script, loaded while Tidy runs, keeps it there, keeps it out
   of the task switcher, and handles the screen corner.
-
 - **The drawer** is a small Plasma widget that ships inside Tidy and is written to
   `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
   widget, so the drawer reaches into the panel's layout and makes its neighbours invisible. It
-  writes nothing to them, with one exception: in *only the pinned programs* mode it empties
-  the task manager's pinned list and restores it. The drawer keeps working when Tidy is not
-  running; Tidy is only needed to change its settings.
+  changes two settings of a task manager, and only when you ask for it: in *only the pinned
+  programs* mode it empties the pinned list while closed, and with the arrow *just after* the
+  task manager it switches off *Fill free space on panel*. Both are put back when the drawer
+  opens, moves or is removed. The drawer keeps working when Tidy is not running; Tidy is only
+  needed to change its settings.
 
 Tidy needs no root access and changes nothing outside your own Plasma configuration.
 
 ## Limitations
 
 - Plasma 6 on Wayland only.
-- The icons appear and disappear at once; there is no fade.
-- Only icons are hidden. Widgets you placed on the desktop stay visible.
+- The desktop icons appear and disappear at once; there is no fade.
+- On the desktop only icons are hidden. Widgets you placed there stay visible.
 - Hiding reloads the desktop's Folder View, so Tidy postpones it while a menu is open or the
   desktop is in edit mode.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
@@ -166,6 +169,8 @@ Tidy needs no root access and changes nothing outside your own Plasma configurat
   things; nothing is lost, your widgets simply stay visible.
 - A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
   and in once.
+- Closing by itself follows the pointer inside the panel. A window preview or a menu that
+  opens above the panel counts as having left the drawer.
 
 ## Troubleshooting
 
