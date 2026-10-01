@@ -862,6 +862,12 @@ TRANSLATIONS = {
         "System items": "Systeemonderdelen",
         "Applications": "Programma's",
         "Minimal": "Minimaal",
+        "Show all": "Alles tonen",
+        "Every icon always visible in the panel; what is switched off stays off.":
+            "Elk pictogram altijd zichtbaar in de taakbalk; wat uit staat blijft uit.",
+        "Hide all": "Alles verbergen",
+        "Every icon under the ^ arrow; what is switched off stays off.":
+            "Elk pictogram onder het pijltje ^; wat uit staat blijft uit.",
         "Only network, volume and battery visible; notifications and devices when relevant; "
         "the rest under ^.":
             "Alleen netwerk, volume en batterij in beeld; meldingen en "
@@ -1516,6 +1522,15 @@ class TrayTab(QWidget):
                               "devices when relevant; the rest under ^."))
         minimal.clicked.connect(self.apply_minimal)
         row.addWidget(minimal)
+        show_all = QPushButton(QIcon.fromTheme("view-visible"), tr("Show all"))
+        show_all.setToolTip(tr("Every icon always visible in the panel; what is switched off "
+                               "stays off."))
+        show_all.clicked.connect(lambda: self.apply_all(TRAY_SHOWN))
+        row.addWidget(show_all)
+        hide_all = QPushButton(QIcon.fromTheme("view-hidden"), tr("Hide all"))
+        hide_all.setToolTip(tr("Every icon under the ^ arrow; what is switched off stays off."))
+        hide_all.clicked.connect(lambda: self.apply_all(TRAY_HIDDEN))
+        row.addWidget(hide_all)
         row.addStretch()
         layout.addLayout(row)
 
@@ -1547,6 +1562,12 @@ class TrayTab(QWidget):
             else:
                 mode = TRAY_HIDDEN
             combo.setCurrentIndex(combo.findData(mode))
+
+    def apply_all(self, mode):
+        """Put every icon on the same choice; what is off stays off."""
+        for item_id, combo in self.combos.items():
+            if combo.currentData() != TRAY_DISABLED:
+                combo.setCurrentIndex(combo.findData(mode))
 
     def apply(self):
         if self.config is None:

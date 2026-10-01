@@ -112,8 +112,13 @@ The *System tray* tab lists every icon in your system tray. For each one, choose
 - **Off**: switched off completely (Plasma's own items only; icons that belong to an
   application can be shown or hidden, not switched off)
 
-The *Minimal* button applies a minimal preset: network, volume and battery shown;
-notifications, devices, camera and Caps Lock indicators automatic; everything else hidden.
+Three buttons set every icon at once; items that are switched off stay off, and nothing
+changes until you press OK:
+
+- **Minimal**: network, volume and battery shown; notifications, devices, camera and Caps Lock
+  indicators automatic; everything else hidden
+- **Show all**: every icon always visible in the panel
+- **Hide all**: every icon under the `^` arrow
 
 ### Shortcuts and command line
 
