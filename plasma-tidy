@@ -20,6 +20,12 @@ a click on the desktop, a screen corner or a shortcut.
 - Show desktop (Meta+D) hides the catcher too; that is why Meta+D itself brings
   the icons back, and why every activity counts in that view.
 
+Panel:
+
+- A drawer is a small widget with an arrow. It tucks the widgets you choose away:
+  all of them, or for a task manager only the pinned programs that aren't open.
+  The widget ships inside this file and is written to Plasma's widget folder.
+
 System tray:
 
 - Choose per icon: automatic, show, hide (under ^) or off.
@@ -43,15 +49,15 @@ from PyQt6.QtDBus import (QDBusAbstractAdaptor, QDBusConnection, QDBusInterface,
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QPainter
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
-                             QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout,
-                             QLabel, QMenu, QMessageBox, QProgressBar, QPushButton,
-                             QScrollArea, QSpinBox, QSystemTrayIcon, QTabWidget,
-                             QVBoxLayout, QWidget)
+                             QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+                             QHBoxLayout, QLabel, QMenu, QMessageBox, QProgressBar,
+                             QPushButton, QScrollArea, QSpinBox, QStackedWidget,
+                             QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
 
 APP = "plasma-tidy"
 APP_NAME = "Tidy"
 OLD_APP = "autohide-desktop-icons"  # previous name, for carrying over its settings
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 AUTHOR = "Ivar"
 DESCRIPTION = "Keeps your KDE Plasma desktop and system tray clean."
 # To be filled in at the first release; while empty, the About tab shows a placeholder.
@@ -70,6 +76,24 @@ CATCHER_PREFIX = "tidy-catcher:"
 IDLE_STEP = 1  # seconds of stillness before swayidle reports "idle"
 IDLE_LINK = os.path.join(DATA_DIR, "tidy-idle")
 
+DRAWER_ID = "io.github.wispware.plasmatidy.drawer"
+DRAWER_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{DRAWER_ID}")
+TASK_PLUGINS = ("org.kde.plasma.icontasks", "org.kde.plasma.taskmanager")
+# Widgets that never go into a drawer: separators, spacers and the drawers themselves.
+DRAWER_SKIP = ("org.kde.plasma.marginsseparator", "org.kde.plasma.panelspacer", DRAWER_ID)
+TASKS_ALL = "all"
+TASKS_PINNED = "pinned"
+OPEN_CLICK = "click"
+OPEN_HOVER = "hover"
+PLACE_BEFORE = "before"
+PLACE_AFTER = "after"
+PLACE_MANUAL = "manual"
+# The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
+DRAWER_DEFAULTS = {"closed": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
+                   "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
+                   "openOnAttention": True, "animate": True, "reverseArrow": False,
+                   "place": PLACE_BEFORE}
+
 MODE_ACTIVITY = "activity"
 MODE_CLICK = "click"
 REHIDE_IDLE = "idle"
@@ -83,6 +107,28 @@ CORNERS = [("none", "None", None),
            ("topright", "Top right", "KWin.ElectricTopRight"),
            ("bottomleft", "Bottom left", "KWin.ElectricBottomLeft"),
            ("bottomright", "Bottom right", "KWin.ElectricBottomRight")]
+
+PANEL_NAMES = {
+    "org.kde.plasma.kickoff": "Application launcher",
+    "org.kde.plasma.kicker": "Application menu",
+    "org.kde.plasma.kickerdash": "Application dashboard",
+    "org.kde.plasma.pager": "Virtual desktops",
+    "org.kde.plasma.icontasks": "Task manager (icons)",
+    "org.kde.plasma.taskmanager": "Task manager",
+    "org.kde.plasma.systemtray": "System tray",
+    "org.kde.plasma.digitalclock": "Clock",
+    "org.kde.plasma.showdesktop": "Show desktop",
+    "org.kde.plasma.minimizeall": "Minimize all",
+    "org.kde.plasma.quicklaunch": "Quick launch",
+    "org.kde.plasma.icon": "Program icon",
+    "org.kde.plasma.trash": "Trash",
+    "org.kde.plasma.appmenu": "Global menu",
+    "org.kde.plasma.mediacontroller": "Media controls",
+    "org.kde.plasma.keyboardlayout": "Keyboard layout",
+    "org.kde.plasma.weather": "Weather",
+}
+PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left panel",
+                "right": "Right panel"}
 
 TRAY_AUTO = "auto"
 TRAY_SHOWN = "shown"
@@ -210,6 +256,415 @@ registerScreenEdge(%(edge)s, function () {
 });
 """
 
+DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="closed" type="Bool"><default>false</default></entry>
+    <entry name="targets" type="StringList"><default></default></entry>
+    <entry name="taskMode" type="String"><default>all</default></entry>
+    <entry name="openOn" type="String"><default>click</default></entry>
+    <entry name="hoverDelay" type="Int"><default>200</default></entry>
+    <entry name="autoClose" type="Bool"><default>false</default></entry>
+    <entry name="closeDelay" type="Int"><default>2000</default></entry>
+    <entry name="openOnAttention" type="Bool"><default>true</default></entry>
+    <entry name="animate" type="Bool"><default>true</default></entry>
+    <entry name="reverseArrow" type="Bool"><default>false</default></entry>
+    <entry name="place" type="String"><default>before</default></entry>
+    <entry name="savedLaunchers" type="String"><default>{}</default></entry>
+    <entry name="tidyCommand" type="String"><default></default></entry>
+    <entry name="textOpen" type="String"><default>Show the hidden items</default></entry>
+    <entry name="textClose" type="String"><default>Hide the items</default></entry>
+    <entry name="textSettings" type="String"><default>Tidy settings…</default></entry>
+    <entry name="debug" type="String"><default></default></entry>
+  </group>
+</kcfg>
+"""
+
+# The drawer widget (QML). It hides its neighbours in the panel; Tidy only installs it and
+# writes its settings.
+DRAWER_QML = r"""// SPDX-FileCopyrightText: 2026 Ivar
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Tidy Drawer: an arrow in the panel that tucks neighbouring widgets away.
+// Generated by plasma-tidy; edit it there.
+//
+// Plasma has no public way to hide another widget, so this reaches into the panel's
+// layout: every widget sits in an "applet container" next to ours. Nothing is written
+// to those widgets (except the pinned list of a task manager in "pinned" mode); if a
+// Plasma update changes the layout, the drawer simply stops hiding things.
+
+import QtQuick
+import QtQuick.Layouts
+import org.kde.plasma.plasmoid
+import org.kde.plasma.core as PlasmaCore
+import org.kde.plasma.plasma5support as P5Support
+import org.kde.kirigami as Kirigami
+
+PlasmoidItem {
+    id: root
+
+    readonly property var cfg: Plasmoid.configuration
+    readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+    // While the panel is being edited everything must stay reachable.
+    readonly property bool editing: (Plasmoid.containment?.corona?.editMode ?? false)
+                                    || (Plasmoid.containment?.userConfiguring ?? false)
+    // Removed from the panel (Plasma keeps a removed widget alive for a while, for "undo"):
+    // let go of everything.
+    property bool leaving: false
+    Connections {
+        target: Plasmoid
+        function onDestroyedChanged(destroyed) {
+            root.leaving = destroyed;
+            root.syncPinned();
+        }
+    }
+    readonly property bool wantClosed: cfg.closed && !editing && !leaving
+
+    property Item container: null   // our own applet container
+    property var siblings: []       // the other widgets: [{item, id, plugin, pos}]
+    property int ownPos: -1
+
+    function isTasks(plugin) {
+        return plugin === "org.kde.plasma.icontasks" || plugin === "org.kde.plasma.taskmanager";
+    }
+    function inTargets(id) {
+        return Array.from(cfg.targets).indexOf(id) >= 0;
+    }
+
+    // Widgets hidden as a whole, and task managers that only lose their pinned icons.
+    readonly property var wholeTargets: siblings.filter(
+        s => inTargets(s.id) && (!isTasks(s.plugin) || cfg.taskMode === "all"))
+    readonly property var pinnedTargets: siblings.filter(
+        s => inTargets(s.id) && isTasks(s.plugin) && cfg.taskMode === "pinned")
+    readonly property bool targetsAfter: {
+        var after = 0, before = 0;
+        siblings.forEach(s => { if (inTargets(s.id)) { if (s.pos > ownPos) after++; else before++; } });
+        return after >= before;
+    }
+
+    function scan() {
+        var c = root.parent, hops = 0;
+        while (c && !c.isAppletContainer && hops < 8) { c = c.parent; hops++; }
+        if (!c || !c.isAppletContainer || !c.parent) {
+            container = null;
+            siblings = [];
+            return;
+        }
+        container = c;
+        ownPos = c.index;
+        var list = [], kids = c.parent.children;
+        for (var i = 0; i < kids.length; i++) {
+            var k = kids[i];
+            if (!k || k === c || !k.isAppletContainer || !k.applet) continue;
+            var applet = null;
+            try { applet = k.applet.plasmoid; } catch (e) {}
+            if (!applet) continue;
+            list.push({item: k, id: String(applet.id), plugin: applet.pluginName, pos: k.index});
+        }
+        // Only replace the list when it really changed: replacing it rebuilds the hiders.
+        var key = l => l.map(s => s.id + "@" + s.pos).join(",");
+        if (key(list) !== key(siblings) || list.some((s, i) => s.item !== siblings[i].item))
+            siblings = list;
+        syncPinned();
+    }
+
+    // Diagnostics: with the "debug" setting on "on", the state goes to the journal twice a second.
+    function report() {
+        console.warn("TIDYDRAWER " + JSON.stringify({
+            own: ownPos, closed: cfg.closed, mode: cfg.taskMode, hover: panelHover !== null,
+            inPanel: pointerInPanel, popup: popupOpen, saved: cfg.savedLaunchers,
+            siblings: siblings.map(s => s.plugin.replace("org.kde.plasma.", "") + "#" + s.id + "@" + s.pos
+                                        + (s.item.visible ? "" : "/hidden") + "/o" + s.item.opacity
+                                        + "/w" + Math.round(s.item.width)
+                                        + (isTasks(s.plugin) ? "/L" + Array.from(s.item.applet.plasmoid.configuration.launchers).length : "")),
+            whole: wholeTargets.map(s => s.id), pinned: pinnedTargets.map(s => s.id)}));
+    }
+    Timer { interval: 500; repeat: true; running: root.cfg.debug === "on"; onTriggered: root.report() }
+
+    Timer { id: rescan; interval: 300; onTriggered: root.scan() }
+    onParentChanged: rescan.restart()
+    Component.onCompleted: rescan.restart()
+    Connections {
+        target: root.container ? root.container.parent : null
+        function onChildrenChanged() { rescan.restart(); }
+    }
+    Connections {
+        target: root.container
+        function onIndexChanged() { rescan.restart(); }
+    }
+
+    // --- hiding whole widgets ------------------------------------------------
+
+    Instantiator {
+        id: hiders
+        model: root.wholeTargets
+        delegate: QtObject {
+            id: h
+            required property var modelData
+            readonly property Item item: modelData ? modelData.item : null
+            readonly property bool after: modelData ? modelData.pos > root.ownPos : true
+            // A widget that fills the panel (usually the task manager) keeps its place when
+            // closed, so the rest of the panel doesn't jump; the others give up their space.
+            readonly property bool fills: item ? (root.vertical ? item.wantsToFillHeight : item.wantsToFillWidth) : false
+            property real size: 0   // natural size, remembered while open
+            property real factor: root.wantClosed ? 0 : 1
+            property bool ready: false
+            readonly property real slide: Math.min(size, Kirigami.Units.gridUnit * 14) * (1 - factor)
+            readonly property bool moving: factor > 0 && factor < 1
+
+            function measure() {
+                if (item && factor === 1) size = root.vertical ? item.height : item.width;
+            }
+            Component.onCompleted: { measure(); ready = true; }
+            // A hider that goes while it is hiding (settings changed, drawer removed) must put
+            // its widget back first: the bindings below only restore while they still exist.
+            function release() { ready = false; factor = 1; }
+            Component.onDestruction: release()
+            onFactorChanged: measure()
+            property Connections sizes: Connections {
+                target: h.item
+                function onWidthChanged() { h.measure(); }
+                function onHeightChanged() { h.measure(); }
+            }
+
+            Behavior on factor {
+                enabled: h.ready && root.cfg.animate && !root.leaving
+                NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+            }
+
+            property Binding b1: Binding {
+                target: h.item; property: "visible"; value: false
+                when: h.factor === 0 && !h.fills
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b2: Binding {
+                target: h.item; property: "opacity"; value: h.factor
+                when: h.factor < 1
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            property Binding b3: Binding {
+                target: h.item; property: "enabled"; value: false
+                when: h.factor < 1
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            property Binding b4: Binding {
+                target: h.item; property: "clip"; value: true
+                when: h.factor < 1
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            // The contents slide towards the arrow...
+            property Binding b5: Binding {
+                target: h.item && h.item.applet ? h.item.applet.anchors : null
+                property: root.vertical ? (h.after ? "topMargin" : "bottomMargin")
+                                        : (h.after ? "leftMargin" : "rightMargin")
+                value: -h.slide
+                when: h.moving && h.size > 0
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            property Binding b6: Binding {
+                target: h.item && h.item.applet ? h.item.applet.anchors : null
+                property: root.vertical ? (h.after ? "bottomMargin" : "topMargin")
+                                        : (h.after ? "rightMargin" : "leftMargin")
+                value: h.fills ? h.slide : 0
+                when: h.moving && h.size > 0
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            // ...while a widget that gives up its space shrinks.
+            readonly property bool shrinking: h.moving && !h.fills && h.size > 0
+            property Binding b7: Binding {
+                target: h.item ? h.item.Layout : null
+                property: root.vertical ? "maximumHeight" : "maximumWidth"
+                value: h.size * h.factor
+                when: h.shrinking
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b8: Binding {
+                target: h.item ? h.item.Layout : null
+                property: root.vertical ? "preferredHeight" : "preferredWidth"
+                value: h.size * h.factor
+                when: h.shrinking
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b9: Binding {
+                target: h.item ? h.item.Layout : null
+                property: root.vertical ? "minimumHeight" : "minimumWidth"
+                value: 0
+                when: h.shrinking
+                restoreMode: Binding.RestoreBinding
+            }
+
+            // A hidden program asks for attention: open up.
+            property Connections attention: Connections {
+                target: h.item && h.item.applet ? h.item.applet.plasmoid : null
+                function onStatusChanged() {
+                    if (root.cfg.openOnAttention && root.cfg.closed
+                            && h.item.applet.plasmoid.status === PlasmaCore.Types.NeedsAttentionStatus)
+                        root.cfg.closed = false;
+                }
+            }
+        }
+    }
+
+    // --- task manager: only the pinned icons -------------------------------------
+    // The pinned icons are a list in the task manager's settings. Closed: remember the list
+    // and empty it; programs that are running stay, they are windows. Open: put it back,
+    // keeping anything that was pinned in the meantime.
+
+    function syncPinned() {
+        var saved = {};
+        try { saved = JSON.parse(cfg.savedLaunchers || "{}") || {}; } catch (e) { saved = {}; }
+        var changed = false;
+        siblings.forEach(s => {
+            if (!isTasks(s.plugin)) return;
+            var conf = null;
+            try { conf = s.item.applet.plasmoid.configuration; } catch (e) {}
+            if (!conf) return;
+            // Worked out here rather than taken from pinnedTargets: right after a settings
+            // change that list may not have caught up yet.
+            var hide = cfg.closed && !leaving && cfg.taskMode === "pinned" && inTargets(s.id);
+            if (hide && !(s.id in saved)) {
+                saved[s.id] = Array.from(conf.launchers);
+                changed = true;
+                // Save first, empty afterwards: a crash in between must not lose the list.
+                cfg.savedLaunchers = JSON.stringify(saved);
+                conf.launchers = [];
+            } else if (!hide && (s.id in saved)) {
+                var list = saved[s.id];
+                Array.from(conf.launchers).forEach(l => { if (list.indexOf(l) < 0) list.push(l); });
+                conf.launchers = list;
+                delete saved[s.id];
+                changed = true;
+            }
+        });
+        if (changed) cfg.savedLaunchers = JSON.stringify(saved);
+    }
+    Connections {
+        target: root.cfg
+        function onClosedChanged() { root.syncPinned(); }
+        function onTargetsChanged() { root.syncPinned(); }
+        function onTaskModeChanged() { root.syncPinned(); }
+    }
+    // Removed from the panel (or Plasma shutting down): never leave a task manager without
+    // its pinned icons. At the next start a closed drawer empties the list again.
+    Component.onDestruction: {
+        for (var i = 0; i < hiders.count; i++) {
+            var hider = hiders.objectAt(i);
+            if (hider) hider.release();
+        }
+        leaving = true;
+        var saved = {};
+        try { saved = JSON.parse(cfg.savedLaunchers || "{}") || {}; } catch (e) { return; }
+        siblings.forEach(s => {
+            if (!(s.id in saved)) return;
+            try {
+                var conf = s.item.applet.plasmoid.configuration;
+                var list = saved[s.id];
+                Array.from(conf.launchers).forEach(l => { if (list.indexOf(l) < 0) list.push(l); });
+                conf.launchers = list;
+                delete saved[s.id];
+            } catch (e) {}
+        });
+        cfg.savedLaunchers = JSON.stringify(saved);
+    }
+
+    // --- opening and closing ---------------------------------------------------
+
+    function toggle() { cfg.closed = !cfg.closed; }
+
+    // Is the pointer over the panel? Watched on the panel's layout, so moving from the
+    // arrow onto the revealed icons keeps the drawer open.
+    property var panelHover: null
+    Component { id: hoverComponent; HoverHandler {} }
+    onContainerChanged: {
+        // The old one may be gone already, together with the panel it was watching.
+        try { if (panelHover) panelHover.destroy(); } catch (e) {}
+        panelHover = null;
+        if (container && container.parent)
+            panelHover = hoverComponent.createObject(container.parent);
+    }
+    readonly property bool pointerInPanel: (panelHover ? panelHover.hovered : false) || arrowHovered
+    // A pop-up of one of the widgets (menu, calendar, ...) counts as "still busy here".
+    function hasPopupOpen(applet) {
+        // Widgets shown in full in the panel (task manager, pager, ...) always count as
+        // "expanded"; only a widget with an icon in the panel has a real pop-up.
+        return applet && applet.expanded && applet.compactRepresentationItem !== null
+            && applet.compactRepresentationItem.visible;
+    }
+    readonly property bool popupOpen: siblings.some(s => hasPopupOpen(s.item.applet))
+
+    Timer {
+        id: closeTimer
+        interval: Math.max(0, root.cfg.closeDelay)
+        running: root.cfg.autoClose && root.panelHover !== null && !root.cfg.closed
+                 && !root.editing && !root.pointerInPanel && !root.popupOpen
+        onTriggered: root.cfg.closed = true
+    }
+    Timer {
+        id: hoverTimer
+        interval: Math.max(0, root.cfg.hoverDelay)
+        onTriggered: if (root.arrowHovered) root.cfg.closed = false
+    }
+
+    P5Support.DataSource {
+        id: runner
+        engine: "executable"
+        onNewData: (source, data) => disconnectSource(source)
+    }
+    Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            text: root.cfg.textSettings
+            icon.name: "configure"
+            visible: root.cfg.tidyCommand !== ""
+            onTriggered: runner.connectSource(root.cfg.tidyCommand + " --settings")
+        }
+    ]
+
+    // --- the arrow -------------------------------------------------------------
+
+    preferredRepresentation: fullRepresentation
+    Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
+    toolTipMainText: cfg.closed ? cfg.textOpen : cfg.textClose
+    toolTipSubText: ""
+
+    readonly property int thickness: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+    Layout.minimumWidth: vertical ? -1 : thickness
+    Layout.preferredWidth: vertical ? -1 : thickness
+    Layout.maximumWidth: vertical ? -1 : thickness
+    Layout.minimumHeight: vertical ? thickness : -1
+    Layout.preferredHeight: vertical ? thickness : -1
+    Layout.maximumHeight: vertical ? thickness : -1
+
+    // Closed: point at where the items will appear. Open: point back at the arrow's side.
+    readonly property bool pointsForward: (cfg.closed === targetsAfter) !== cfg.reverseArrow
+    readonly property string arrowIcon: vertical ? (pointsForward ? "arrow-down" : "arrow-up")
+        : ((pointsForward !== (Qt.application.layoutDirection === Qt.RightToLeft)) ? "arrow-right" : "arrow-left")
+
+    property bool arrowHovered: false
+
+    fullRepresentation: Item {
+        Kirigami.Icon {
+            anchors.centerIn: parent
+            width: Kirigami.Units.iconSizes.small
+            height: width
+            source: root.arrowIcon
+            active: root.arrowHovered
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton
+            onContainsMouseChanged: root.arrowHovered = containsMouse
+            onClicked: { hoverTimer.stop(); root.toggle(); }
+            onEntered: if (root.cfg.openOn === "hover" && root.cfg.closed) hoverTimer.restart()
+            onExited: hoverTimer.stop()
+        }
+    }
+}
+"""
+
 # Translations. The texts in the code are English; to add a language, add a table here
 # and a line in LANGUAGES. A text missing from a table stays English.
 TRANSLATIONS = {
@@ -259,6 +714,72 @@ TRANSLATIONS = {
         "the rest under ^.":
             "Alleen netwerk, volume en batterij in beeld; meldingen en "
             "apparaten als ze relevant zijn; de rest onder ^.",
+        # panel drawers
+        "Application launcher": "Startmenu",
+        "Application menu": "Toepassingenmenu",
+        "Application dashboard": "Toepassingendashboard",
+        "Virtual desktops": "Virtuele bureaubladen",
+        "Task manager (icons)": "Taakbeheer (pictogrammen)",
+        "Task manager": "Taakbeheer",
+        "Clock": "Klok",
+        "Show desktop": "Bureaublad tonen",
+        "Minimize all": "Alles minimaliseren",
+        "Quick launch": "Snelstarter",
+        "Program icon": "Programmapictogram",
+        "Trash": "Prullenbak",
+        "Global menu": "Globaal menu",
+        "Top panel": "Paneel boven",
+        "Bottom panel": "Paneel onder",
+        "Left panel": "Paneel links",
+        "Right panel": "Paneel rechts",
+        "Panel": "Paneel",
+        "A drawer is an arrow in the panel. It tucks the widgets you choose away and "
+        "brings them back when you click or point at the arrow.":
+            "Een la is een pijltje in het paneel. Die bergt de onderdelen op die je kiest "
+            "en haalt ze terug als je op het pijltje klikt of het aanwijst.",
+        "Drawer:": "La:",
+        "Drawer {n} — {panel}": "La {n} — {panel}",
+        "Add a drawer": "La toevoegen",
+        "Remove": "Verwijderen",
+        "No drawer yet. Add one to hide panel icons behind an arrow.":
+            "Nog geen la. Voeg er een toe om paneelpictogrammen achter een pijltje te verbergen.",
+        "The drawer could not be added to the panel.":
+            "De la kon niet aan het paneel worden toegevoegd.",
+        "No panel found.": "Geen paneel gevonden.",
+        "In this drawer": "In deze la",
+        "Hide all programs, open ones too": "Alle programma's verbergen, ook geopende",
+        "Hide only pinned programs that are not open":
+            "Alleen vastgemaakte programma's verbergen die niet open zijn",
+        "Open programs are windows: with the second choice they stay in the panel and only "
+        "the pinned icons of programs that are not running disappear.":
+            "Geopende programma's zijn vensters: bij de tweede keuze blijven ze in het paneel "
+            "staan en verdwijnen alleen de vastgemaakte pictogrammen van programma's die niet "
+            "draaien.",
+        "Task manager:": "Taakbeheer:",
+        "A click on the arrow": "Een klik op het pijltje",
+        "Pointing at the arrow (a click works too)":
+            "Het pijltje aanwijzen (klikken werkt ook)",
+        "Open with:": "Openen met:",
+        "Pointing opens after:": "Aanwijzen opent na:",
+        "Close when the pointer leaves the panel": "Sluiten als de muis het paneel verlaat",
+        "after": "na",
+        "Open when a program asks for attention": "Openen als een programma om aandacht vraagt",
+        "Sliding animation": "Schuifanimatie",
+        "Arrow points the other way": "Pijltje wijst de andere kant op",
+        "Place of the arrow:": "Plaats van het pijltje:",
+        "Just before the items it hides": "Direct vóór de onderdelen die het verbergt",
+        "Just after the items it hides": "Direct na de onderdelen die het verbergt",
+        "Where I put it myself": "Waar ik het zelf neerzet",
+        "Close and open the drawers together with the desktop icons":
+            "Laden sluiten en openen samen met de bureaubladpictogrammen",
+        "The arrow sits next to the items it hides. To place it yourself, choose \"Where I "
+        "put it myself\", right-click the panel, choose Enter Edit Mode and drag it.":
+            "Het pijltje staat naast de onderdelen die het verbergt. Zelf plaatsen: kies "
+            "\"Waar ik het zelf neerzet\", klik met rechts op het paneel, kies Bewerkmodus "
+            "en sleep het.",
+        "Show the hidden items": "Verborgen onderdelen tonen",
+        "Hide the items": "Onderdelen verbergen",
+        "{app} settings…": "{app}-instellingen…",
         # about
         "Version {version}": "Versie {version}",
         "Hides your desktop icons when you don't need them, and lets you choose per icon "
@@ -342,8 +863,10 @@ TRANSLATIONS = {
         "{app} — icons hidden": "{app} — pictogrammen verborgen",
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
-        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --version]":
-            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --version]",
+        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
+        "--drawer-close | --drawer-toggle | --version]":
+            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
+            "--drawer-close | --drawer-toggle | --version]",
         "swayidle is missing.\n\nInstall it with:\nsudo dnf install swayidle":
             "swayidle ontbreekt.\n\nInstalleer het met:\nsudo dnf install swayidle",
     },
@@ -380,6 +903,70 @@ def set_language(choice):
 
 def tr(text):
     return CATALOG.get(text, text)
+
+
+def drawer_files():
+    """The drawer widget as Plasma wants it on disk: {relative path: contents}."""
+    metadata = {"KPlugin": {"Id": DRAWER_ID, "Name": f"{APP_NAME} Drawer",
+                            "Description": "Tucks panel widgets away behind an arrow",
+                            "Icon": "arrow-right", "Category": "Utilities",
+                            "Version": VERSION, "License": LICENSE},
+                "KPackageStructure": "Plasma/Applet",
+                "X-Plasma-API-Minimum-Version": "6.0"}
+    return {"metadata.json": json.dumps(metadata, indent=4) + "\n",
+            "contents/config/main.xml": DRAWER_CONFIG_XML.lstrip("\n"),
+            "contents/ui/main.qml": DRAWER_QML.lstrip("\n")}
+
+
+def install_drawer():
+    """Write the drawer widget where Plasma finds it. It ships inside this file, so that
+    installing Tidy stays a matter of copying one file. A changed widget is picked up by
+    Plasma at its next start."""
+    for name, text in drawer_files().items():
+        path = os.path.join(DRAWER_DIR, name)
+        try:
+            with open(path) as f:
+                if f.read() == text:
+                    continue
+        except OSError:
+            pass
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+
+
+def drawer_texts():
+    """What a drawer needs to know from Tidy: how to open the settings, and its texts."""
+    return {"tidyCommand": os.path.abspath(sys.argv[0]),
+            "textOpen": tr("Show the hidden items"),
+            "textClose": tr("Hide the items"),
+            "textSettings": tr("{app} settings…").format(app=APP_NAME)}
+
+
+def drawer_value(key, raw):
+    """A drawer setting as read from Plasma (always text) in the type of its default."""
+    default = DRAWER_DEFAULTS[key]
+    if raw is None or raw == "":
+        return list(default) if isinstance(default, list) else default
+    if isinstance(default, bool):
+        return raw if isinstance(raw, bool) else str(raw).lower() == "true"
+    if isinstance(default, int):
+        try:
+            return int(float(raw))
+        except ValueError:
+            return default
+    if isinstance(default, list):
+        return [str(i) for i in raw] if isinstance(raw, list) else [
+            i for i in str(raw).split(",") if i]
+    return str(raw)
+
+
+def panel_widget_name(plugin):
+    if plugin in PANEL_NAMES:
+        return tr(PANEL_NAMES[plugin])
+    if plugin in TRAY_NAMES:
+        return tr(TRAY_NAMES[plugin])
+    return plugin.rsplit(".", 1)[-1]
 
 
 class Plasma:
@@ -463,6 +1050,127 @@ class Plasma:
         self.run("var m = %s;" % json.dumps({str(k): v for k, v in modes.items()}) + """
             panels().forEach(function (p) { if (p.id in m) p.hiding = m[p.id]; });""")
 
+    def panel_widgets(self):
+        """The panels with their widgets, in the order they have in the panel."""
+        out = self.run("""
+            var r = [];
+            panels().forEach(function (p) {
+                r.push({panel: p.id, location: p.location,
+                        widgets: p.widgets().map(function (w) {
+                            return {id: w.id, type: w.type, index: w.index};
+                        })});
+            });
+            print(JSON.stringify(r));""")
+        try:
+            found = json.loads(out)
+        except ValueError:
+            return []
+        for panel in found:
+            panel["widgets"].sort(key=lambda w: w["index"])
+        return found
+
+    def drawers(self):
+        """Every Tidy drawer in the panels, with its settings."""
+        out = self.run("var keys = %s, type = %s;" % (json.dumps(list(DRAWER_DEFAULTS)),
+                                                      json.dumps(DRAWER_ID)) + """
+            var r = [];
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type != type) return;
+                w.currentConfigGroup = ["General"];
+                var c = {};
+                keys.forEach(function (k) { c[k] = w.readConfig(k); });
+                r.push({id: w.id, panel: p.id, config: c});
+            }); });
+            print(JSON.stringify(r));""")
+        try:
+            found = json.loads(out)
+        except ValueError:
+            return []
+        for drawer in found:
+            drawer["config"] = {k: drawer_value(k, drawer["config"].get(k))
+                                for k in DRAWER_DEFAULTS}
+        return found
+
+    def set_drawer_config(self, drawer_id, config):
+        """Write settings to one drawer, or to all of them with drawer_id None."""
+        self.run("var id = %s, c = %s, type = %s;" % (json.dumps(drawer_id), json.dumps(config),
+                                                      json.dumps(DRAWER_ID)) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type != type || (id !== null && w.id != id)) return;
+                w.currentConfigGroup = ["General"];
+                for (var k in c) w.writeConfig(k, c[k]);
+                w.reloadConfig();
+            }); });""")
+
+    def add_drawer(self, panel_id, config):
+        """Add a drawer to a panel and put it next to its widgets. Returns its id, or None."""
+        out = self.run("var panel = %d, c = %s, type = %s;" % (panel_id, json.dumps(config),
+                                                               json.dumps(DRAWER_ID)) + """
+            var id = -1;
+            panels().forEach(function (p) {
+                if (p.id != panel) return;
+                var w = p.addWidget(type);
+                if (!w || !w.id) return;
+                w.currentConfigGroup = ["General"];
+                for (var k in c) w.writeConfig(k, c[k]);
+                w.reloadConfig();
+                id = w.id;
+            });
+            print(id);""")
+        try:
+            new_id = int(out)
+        except ValueError:
+            return None
+        if new_id < 0:
+            return None
+        # In a call of its own: only then does the panel know the new widget's place.
+        self.place_drawer(new_id, config.get("targets", []), config.get("place", PLACE_BEFORE))
+        return new_id
+
+    def place_drawer(self, drawer_id, targets, where):
+        """Move a drawer's arrow next to the widgets it hides: just before the first of them
+        or just after the last."""
+        if where not in (PLACE_BEFORE, PLACE_AFTER) or not targets:
+            return
+        self.run("var id = %d, targets = %s, after = %s;" % (
+            drawer_id, json.dumps([str(i) for i in targets]), json.dumps(where == PLACE_AFTER)) + """
+            panels().forEach(function (p) {
+                var me = null, anchor = null;
+                p.widgets().forEach(function (w) {
+                    if (w.id == id) { me = w; return; }
+                    if (targets.indexOf(String(w.id)) < 0) return;
+                    if (!anchor || (after ? w.index > anchor.index : w.index < anchor.index))
+                        anchor = w;
+                });
+                if (!me || !anchor) return;
+                // Our own slot disappears from the order when we move, so everything behind
+                // us shifts one place.
+                var want = anchor.index + (after ? 1 : 0) - (me.index < anchor.index ? 1 : 0);
+                if (want != me.index) me.index = want;
+            });""")
+
+    def remove_drawer(self, drawer_id):
+        # Open it first, so that everything it hides is back before it goes.
+        self.set_drawer_config(drawer_id, {"closed": False})
+        self.run("var id = %d, type = %s;" % (drawer_id, json.dumps(DRAWER_ID)) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type == type && w.id == id) w.remove();
+            }); });""")
+
+    def set_drawers_closed(self, closed):
+        """Close (True) or open (False) every drawer. None switches: close them all if one
+        is open, otherwise open them all."""
+        self.run("var want = %s, type = %s;" % (json.dumps(closed), json.dumps(DRAWER_ID)) + """
+            var list = [];
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type != type) return;
+                w.currentConfigGroup = ["General"];
+                list.push(w);
+            }); });
+            if (want === null)
+                want = list.some(function (w) { return String(w.readConfig("closed")) != "true"; });
+            list.forEach(function (w) { w.writeConfig("closed", want); w.reloadConfig(); });""")
+
 
 class KWin:
     """Loads the KWin script for the catchers and the screen corner."""
@@ -545,6 +1253,18 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     def Settings(self):
         # Through the event loop, so the D-Bus call doesn't wait until the window closes.
         QTimer.singleShot(0, self.autohide.show_settings)
+
+    @pyqtSlot()
+    def DrawerOpen(self):
+        self.autohide.plasma.set_drawers_closed(False)
+
+    @pyqtSlot()
+    def DrawerClose(self):
+        self.autohide.plasma.set_drawers_closed(True)
+
+    @pyqtSlot()
+    def DrawerToggle(self):
+        self.autohide.plasma.set_drawers_closed(None)
 
 
 def tray_app_items():
@@ -673,6 +1393,235 @@ class TrayTab(QWidget):
         self.plasma.set_tray_config(extra, shown, hidden)
 
 
+class DrawerPage(QWidget):
+    """The settings of one drawer."""
+
+    def __init__(self, drawer, widgets):
+        super().__init__()
+        self.drawer = drawer
+        config = drawer["config"]
+        form = QFormLayout(self)
+        form.setContentsMargins(0, 0, 0, 0)
+
+        box = QGroupBox(tr("In this drawer"))
+        box_layout = QVBoxLayout(box)
+        self.targets = {}
+        for widget in widgets:
+            if widget["type"] in DRAWER_SKIP:
+                continue
+            check = QCheckBox(panel_widget_name(widget["type"]))
+            check.setChecked(str(widget["id"]) in config["targets"])
+            check.toggled.connect(self.update_enabled)
+            self.targets[widget["id"]] = (check, widget["type"])
+            box_layout.addWidget(check)
+        form.addRow(box)
+
+        self.task_mode = QComboBox()
+        self.task_mode.addItem(tr("Hide all programs, open ones too"), TASKS_ALL)
+        self.task_mode.addItem(tr("Hide only pinned programs that are not open"), TASKS_PINNED)
+        self.task_mode.setCurrentIndex(max(0, self.task_mode.findData(config["taskMode"])))
+        self.task_mode.setToolTip(tr("Open programs are windows: with the second choice they "
+                                     "stay in the panel and only the pinned icons of programs "
+                                     "that are not running disappear."))
+        form.addRow(tr("Task manager:"), self.task_mode)
+
+        self.open_on = QComboBox()
+        self.open_on.addItem(tr("A click on the arrow"), OPEN_CLICK)
+        self.open_on.addItem(tr("Pointing at the arrow (a click works too)"), OPEN_HOVER)
+        self.open_on.setCurrentIndex(max(0, self.open_on.findData(config["openOn"])))
+        self.open_on.currentIndexChanged.connect(self.update_enabled)
+        form.addRow(tr("Open with:"), self.open_on)
+
+        self.hover_delay = QSpinBox(suffix=" ms", minimum=0, maximum=3000, singleStep=50)
+        self.hover_delay.setValue(config["hoverDelay"])
+        form.addRow(tr("Pointing opens after:"), self.hover_delay)
+
+        self.auto_close = QCheckBox(tr("Close when the pointer leaves the panel"))
+        self.auto_close.setChecked(config["autoClose"])
+        self.auto_close.toggled.connect(self.update_enabled)
+        self.close_delay = QDoubleSpinBox(suffix=" s", minimum=0, maximum=60, singleStep=0.5,
+                                          decimals=1)
+        self.close_delay.setValue(config["closeDelay"] / 1000)
+        row = QHBoxLayout()
+        row.addWidget(self.auto_close)
+        row.addWidget(QLabel(tr("after")))
+        row.addWidget(self.close_delay)
+        row.addStretch()
+        form.addRow(row)
+
+        self.attention = QCheckBox(tr("Open when a program asks for attention"))
+        self.attention.setChecked(config["openOnAttention"])
+        form.addRow(self.attention)
+
+        self.animate = QCheckBox(tr("Sliding animation"))
+        self.animate.setChecked(config["animate"])
+        form.addRow(self.animate)
+
+        self.reverse = QCheckBox(tr("Arrow points the other way"))
+        self.reverse.setChecked(config["reverseArrow"])
+        form.addRow(self.reverse)
+
+        self.place = QComboBox()
+        self.place.addItem(tr("Just before the items it hides"), PLACE_BEFORE)
+        self.place.addItem(tr("Just after the items it hides"), PLACE_AFTER)
+        self.place.addItem(tr("Where I put it myself"), PLACE_MANUAL)
+        self.place.setCurrentIndex(max(0, self.place.findData(config["place"])))
+        form.addRow(tr("Place of the arrow:"), self.place)
+
+        self.update_enabled()
+
+    def update_enabled(self):
+        self.task_mode.setEnabled(any(check.isChecked() and plugin in TASK_PLUGINS
+                                      for check, plugin in self.targets.values()))
+        self.hover_delay.setEnabled(self.open_on.currentData() == OPEN_HOVER)
+        self.close_delay.setEnabled(self.auto_close.isChecked())
+
+    def values(self):
+        return {"targets": [str(i) for i, (check, _) in self.targets.items()
+                            if check.isChecked()],
+                "taskMode": self.task_mode.currentData(),
+                "openOn": self.open_on.currentData(),
+                "hoverDelay": self.hover_delay.value(),
+                "autoClose": self.auto_close.isChecked(),
+                "closeDelay": round(self.close_delay.value() * 1000),
+                "openOnAttention": self.attention.isChecked(),
+                "animate": self.animate.isChecked(),
+                "reverseArrow": self.reverse.isChecked(),
+                "place": self.place.currentData()}
+
+    def apply(self, plasma):
+        config = self.drawer["config"]
+        changed = {k: v for k, v in self.values().items() if v != config[k]}
+        if changed:
+            plasma.set_drawer_config(self.drawer["id"], changed)
+            config.update(changed)
+        if "targets" in changed or "place" in changed:
+            # The arrow belongs next to what it hides.
+            plasma.place_drawer(self.drawer["id"], config["targets"], config["place"])
+
+
+class DrawerTab(QWidget):
+    """Tab for the panel drawers: arrows that tuck panel widgets away."""
+
+    def __init__(self, autohide):
+        super().__init__()
+        self.plasma = autohide.plasma
+        self.pages = []
+        self.panels = []
+        layout = QVBoxLayout(self)
+
+        intro = QLabel(tr("A drawer is an arrow in the panel. It tucks the widgets you choose "
+                          "away and brings them back when you click or point at the arrow."))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("Drawer:")))
+        self.selector = QComboBox()
+        row.addWidget(self.selector, 1)
+        self.add_button = QPushButton(QIcon.fromTheme("list-add"), tr("Add a drawer"))
+        self.add_button.clicked.connect(self.add)
+        row.addWidget(self.add_button)
+        self.remove_button = QPushButton(QIcon.fromTheme("list-remove"), tr("Remove"))
+        self.remove_button.clicked.connect(self.remove)
+        row.addWidget(self.remove_button)
+        layout.addLayout(row)
+
+        self.stack = QStackedWidget()
+        self.selector.currentIndexChanged.connect(self.stack.setCurrentIndex)
+        layout.addWidget(self.stack)
+
+        self.follow = QCheckBox(tr("Close and open the drawers together with the desktop icons"))
+        self.follow.setChecked(autohide.settings.value("drawer_follow", False, bool))
+        layout.addWidget(self.follow)
+
+        hint = QLabel(tr("The arrow sits next to the items it hides. To place it yourself, "
+                         "choose \"Where I put it myself\", right-click the panel, choose "
+                         "Enter Edit Mode and drag it."))
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        layout.addWidget(hint)
+        layout.addStretch()
+        self.rebuild()
+
+    def rebuild(self, select=None):
+        """Read the drawers from the panels again and show a page for each."""
+        self.selector.blockSignals(True)
+        self.selector.clear()
+        while self.stack.count():
+            page = self.stack.widget(0)
+            self.stack.removeWidget(page)
+            page.deleteLater()
+        self.pages = []
+        self.panels = self.plasma.panel_widgets()
+        by_id = {panel["panel"]: panel for panel in self.panels}
+        for number, drawer in enumerate(self.plasma.drawers(), 1):
+            panel = by_id.get(drawer["panel"])
+            if not panel:
+                continue
+            page = DrawerPage(drawer, panel["widgets"])
+            self.pages.append(page)
+            self.stack.addWidget(page)
+            place = tr(PANEL_PLACES.get(panel["location"], "Panel"))
+            self.selector.addItem(tr("Drawer {n} — {panel}").format(n=number, panel=place),
+                                  drawer["id"])
+        if not self.pages:
+            empty = QLabel(tr("No drawer yet. Add one to hide panel icons behind an arrow."))
+            empty.setWordWrap(True)
+            empty.setEnabled(False)
+            self.stack.addWidget(empty)
+        self.selector.blockSignals(False)
+        self.selector.setEnabled(bool(self.pages))
+        self.remove_button.setEnabled(bool(self.pages))
+        index = max(0, self.selector.findData(select)) if select is not None else 0
+        self.selector.setCurrentIndex(index)
+        self.stack.setCurrentIndex(index)
+
+    def add(self):
+        if not self.panels:
+            QMessageBox.warning(self, APP_NAME, tr("No panel found."))
+            return
+        panel = self.panels[0]
+        if len(self.panels) > 1:
+            # Several panels: ask which one.
+            menu = QMenu(self)
+            for candidate in self.panels:
+                action = menu.addAction(tr(PANEL_PLACES.get(candidate["location"], "Panel")))
+                action.setData(candidate["panel"])
+            chosen = menu.exec(self.add_button.mapToGlobal(self.add_button.rect().bottomLeft()))
+            if not chosen:
+                return
+            panel = next(p for p in self.panels if p["panel"] == chosen.data())
+        # A new drawer starts with the task manager in it. If another drawer has that
+        # already, with the system tray; failing that, empty. Its arrow sits next to them.
+        self.apply()
+        taken = {i for page in self.pages for i in page.drawer["config"]["targets"]}
+        targets = []
+        for plugins in (TASK_PLUGINS, ("org.kde.plasma.systemtray",)):
+            targets = [str(w["id"]) for w in panel["widgets"]
+                       if w["type"] in plugins and str(w["id"]) not in taken]
+            if targets:
+                break
+        config = dict(drawer_texts(), targets=targets)
+        install_drawer()
+        new_id = self.plasma.add_drawer(panel["panel"], config)
+        if new_id is None:
+            QMessageBox.warning(self, APP_NAME, tr("The drawer could not be added to the panel."))
+        self.rebuild(select=new_id)
+
+    def remove(self):
+        drawer_id = self.selector.currentData()
+        if drawer_id is None:
+            return
+        self.apply()
+        self.plasma.remove_drawer(drawer_id)
+        self.rebuild()
+
+    def apply(self):
+        for page in self.pages:
+            page.apply(self.plasma)
+
+
 def open_donate():
     if DONATE_URL:
         QDesktopServices.openUrl(QUrl(DONATE_URL))
@@ -749,6 +1698,10 @@ class SettingsDialog(QDialog):
         desktop_tab = QWidget()
         layout = QVBoxLayout(desktop_tab)
         tabs.addTab(desktop_tab, QIcon.fromTheme("user-desktop"), tr("Desktop"))
+        self.drawer_tab = DrawerTab(autohide)
+        tabs.addTab(self.drawer_tab,
+                    QIcon.fromTheme("sidebar-collapse-left", QIcon.fromTheme("arrow-left")),
+                    tr("Panel"))
         self.tray_tab = TrayTab(autohide.plasma)
         tabs.addTab(self.tray_tab, QIcon.fromTheme("preferences-desktop-notification"),
                     tr("System tray"))
@@ -928,6 +1881,7 @@ class Tidy(QObject):
         self.catchers = []
         self.dialog = None
         os.makedirs(EMPTY_DIR, exist_ok=True)
+        install_drawer()
 
         self.recover_after_crash()
         self.showing_desktop = self.kwin.showing_desktop()
@@ -1040,6 +1994,8 @@ class Tidy(QObject):
         self.plasma.set_desktop_urls({k: EMPTY_URL for k in urls})
         self.hidden = True
         self.update_icon()
+        if self.settings.value("drawer_follow", False, bool):
+            self.plasma.set_drawers_closed(True)
         if self.mode() == MODE_CLICK:
             self.show_catchers()
 
@@ -1053,6 +2009,8 @@ class Tidy(QObject):
                 self.plasma.set_panel_modes({int(k): v for k, v in state["panels"].items()})
             self.settings.remove("saved_state")
             self.settings.sync()
+        if (self.hidden or raw) and self.settings.value("drawer_follow", False, bool):
+            self.plasma.set_drawers_closed(False)
         self.hidden = False
         self.shown_at = time.monotonic()
         self.idle_since = None if self.counts_activity() else time.monotonic()
@@ -1177,6 +2135,7 @@ class Tidy(QObject):
         for action, text in self.menu_texts:
             action.setText(tr(text).format(app=APP_NAME))
         self.update_icon()
+        self.plasma.set_drawer_config(None, drawer_texts())
 
     def set_enabled(self, on):
         self.settings.setValue("enabled", on)
@@ -1234,6 +2193,8 @@ class Tidy(QObject):
             set_language(dlg.language.currentData())
             self.retranslate()
         dlg.tray_tab.apply()
+        dlg.drawer_tab.apply()
+        self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
         if dlg.corner.currentData() != old_corner:
             self.kwin.load(dlg.corner.currentData())
 
@@ -1265,8 +2226,11 @@ def migrate_old_config():
         shutil.copy2(old, new)
 
 
-COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--settings": "Settings"}
-USAGE = "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --version]"
+COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--settings": "Settings",
+            "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
+            "--drawer-toggle": "DrawerToggle"}
+USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
+         "--drawer-close | --drawer-toggle | --version]")
 
 
 def main():
@@ -1304,7 +2268,7 @@ def main():
     bus.registerObject("/", autohide)
     # Load only now: the KWin script reports the active window over D-Bus right away.
     autohide.kwin.load(autohide.settings.value("corner", "none"))
-    if command in ("Show", "Hide", "Settings"):
+    if command and command != "Toggle":
         QTimer.singleShot(0, getattr(adaptor, command))
 
     # Restore cleanly on logout/shutdown (SIGTERM) or Ctrl+C.

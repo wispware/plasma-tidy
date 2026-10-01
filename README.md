@@ -1,9 +1,11 @@
 # Tidy (plasma-tidy)
 
-Tidy keeps your KDE Plasma desktop and system tray clean.
+Tidy keeps your KDE Plasma desktop, panel and system tray clean.
 
 - **Desktop:** hides your desktop icons when you're not using them, and brings them back on
   mouse movement, a click on the desktop, a screen corner or a shortcut.
+- **Panel:** a drawer, an arrow in the panel, tucks the programs and widgets you choose away
+  and brings them back on a click or when you point at it.
 - **System tray:** choose per icon whether it's shown, hidden under `^`, automatic or disabled.
 
 It lives in the system tray as a small eye icon and stays out of the way: it never steals
@@ -63,6 +65,35 @@ the menu.
 If the screen corner you pick already has an action in System Settings → Screen Edges, both
 will fire.
 
+### Panel
+
+The *Panel* tab adds drawers to your panel. A drawer is a small arrow: click it (or point at
+it) and the widgets in it slide away; click again and they are back. *Add a drawer* puts one
+just before the task manager, with the task manager in it; a second drawer starts with the
+system tray. The arrow sits next to the widgets it hides and moves along when you change them.
+To place it yourself, choose *Where I put it myself*, right-click the panel, choose *Enter
+Edit Mode* and drag it.
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| In this drawer | Which of the panel's widgets the drawer hides | the task manager |
+| Task manager | Hide all programs, open ones too; or only the pinned programs that are not open | all programs |
+| Open with | A click on the arrow, or pointing at it (a click always works) | click |
+| Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
+| Close when the pointer leaves the panel | Closes the drawer again by itself, after the time you set | off, 2 s |
+| Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
+| Sliding animation | Slide and fade, or switch at once | on |
+| Arrow points the other way | Flips the arrow | off |
+| Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
+| Close and open the drawers together with the desktop icons | The drawers follow Tidy's hiding and showing of the desktop icons | off |
+
+A widget that fills the panel, usually the task manager, keeps its place while hidden, so the
+rest of the panel does not jump. Other widgets give up their space.
+
+With *only the pinned programs*, open programs stay in the panel: they are windows. Tidy
+remembers the pinned list while the drawer is closed and puts it back when it opens,
+including anything you pinned in the meantime.
+
 ### System tray
 
 The *System tray* tab lists every icon in your system tray. For each one, choose:
@@ -78,8 +109,9 @@ notifications, devices, camera and Caps Lock indicators automatic; everything el
 
 ### Shortcuts and command line
 
-Tidy has three actions you can bind to a key in System Settings → Keyboard → Shortcuts →
-Add New → Application → Tidy: show the icons, hide the icons, and switch Tidy on or off.
+Tidy has four actions you can bind to a key in System Settings → Keyboard → Shortcuts →
+Add New → Application → Tidy: show the icons, hide the icons, switch Tidy on or off, and open
+or close the panel drawers.
 
 The same actions are available from the command line. Only one copy of Tidy runs at a time; a
 second call passes its command to the running one.
@@ -90,6 +122,9 @@ plasma-tidy --show      show the icons now
 plasma-tidy --hide      hide the icons now
 plasma-tidy --toggle    switch Tidy on or off
 plasma-tidy --settings  open the settings
+plasma-tidy --drawer-open    open the panel drawers
+plasma-tidy --drawer-close   close the panel drawers
+plasma-tidy --drawer-toggle  close them if one is open, otherwise open them
 plasma-tidy --version   print the version
 ```
 
@@ -103,6 +138,13 @@ plasma-tidy --version   print the version
   everything else. A small KWin script, loaded while Tidy runs, keeps it there, keeps it out
   of the task switcher, and handles the screen corner.
 
+- **The drawer** is a small Plasma widget that ships inside Tidy and is written to
+  `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
+  widget, so the drawer reaches into the panel's layout and makes its neighbours invisible. It
+  writes nothing to them, with one exception: in *only the pinned programs* mode it empties
+  the task manager's pinned list and restores it. The drawer keeps working when Tidy is not
+  running; Tidy is only needed to change its settings.
+
 Tidy needs no root access and changes nothing outside your own Plasma configuration.
 
 ## Limitations
@@ -113,6 +155,11 @@ Tidy needs no root access and changes nothing outside your own Plasma configurat
 - Hiding reloads the desktop's Folder View, so Tidy postpones it while a menu is open or the
   desktop is in edit mode.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
+- The drawer depends on how Plasma builds its panel, which is not a public interface. It is
+  tested with Plasma 6.7. If a Plasma update changes the panel, the drawer stops hiding
+  things; nothing is lost, your widgets simply stay visible.
+- A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
+  and in once.
 
 ## Troubleshooting
 
@@ -120,15 +167,20 @@ Tidy needs no root access and changes nothing outside your own Plasma configurat
 tray menu: both restore the original folder. If that doesn't help, right-click the desktop →
 Configure Desktop and Wallpaper → Location, and set it back to *Desktop folder*.
 
+**A widget stays hidden in the panel.** Click the drawer's arrow, or remove the drawer in the
+*Panel* tab: both bring everything back. Restarting Plasma (log out and in) does too.
+
 ## Uninstall
 
-Quit Tidy from the tray menu first, so your icons are restored. Then:
+Remove your drawers in the *Panel* tab and quit Tidy from the tray menu, so your panel and
+icons are restored. Then:
 
 ```sh
 rm ~/.local/bin/plasma-tidy
 rm ~/.local/share/applications/plasma-tidy.desktop
 rm -f ~/.config/autostart/plasma-tidy.desktop
 rm -rf ~/.config/plasma-tidy ~/.local/share/plasma-tidy
+rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.drawer
 ```
 
 ## Feedback

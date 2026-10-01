@@ -7,8 +7,8 @@ Comment[nl]=Houdt je bureaublad en systeemvak opgeruimd
 Exec=plasma-tidy
 Icon=view-visible
 Categories=Settings;DesktopSettings;
-Keywords=plasma;tidy;clean;declutter;hide;autohide;icons;desktop;tray;systray;opruimen;verbergen;pictogrammen;bureaublad;systeemvak;
-Actions=show;hide;toggle;
+Keywords=plasma;tidy;clean;declutter;hide;autohide;icons;desktop;panel;taskbar;drawer;tray;systray;opruimen;verbergen;pictogrammen;bureaublad;paneel;taakbalk;la;systeemvak;
+Actions=show;hide;toggle;drawer;
 
 [Desktop Action show]
 Name=Show icons
@@ -24,3 +24,8 @@ Exec=plasma-tidy --hide
 Name=Switch on/off
 Name[nl]=In-/uitschakelen
 Exec=plasma-tidy --toggle
+
+[Desktop Action drawer]
+Name=Open or close the panel drawers
+Name[nl]=Paneelladen openen of sluiten
+Exec=plasma-tidy --drawer-toggle
