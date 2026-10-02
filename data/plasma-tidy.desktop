@@ -8,7 +8,7 @@ Exec=plasma-tidy
 Icon=view-visible
 Categories=Settings;DesktopSettings;
 Keywords=plasma;tidy;clean;declutter;hide;autohide;icons;desktop;panel;taskbar;drawer;tray;systray;opruimen;verbergen;pictogrammen;bureaublad;paneel;taakbalk;la;systeemvak;
-Actions=show;hide;toggle;drawer;
+Actions=show;hide;toggle;drawer;restore;
 
 [Desktop Action show]
 Name=Show icons
@@ -29,3 +29,8 @@ Exec=plasma-tidy --toggle
 Name=Open or close the panel drawers
 Name[nl]=Paneelladen openen of sluiten
 Exec=plasma-tidy --drawer-toggle
+
+[Desktop Action restore]
+Name=Restore everything
+Name[nl]=Alles terugzetten
+Exec=plasma-tidy --restore

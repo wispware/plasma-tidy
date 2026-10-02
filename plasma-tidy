@@ -91,7 +91,7 @@ PLACE_BEFORE = "before"
 PLACE_AFTER = "after"
 PLACE_MANUAL = "manual"
 # The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
-DRAWER_DEFAULTS = {"closed": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
+DRAWER_DEFAULTS = {"closed": False, "paused": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "openOnAttention": True, "animate": True, "reverseArrow": False,
@@ -266,6 +266,7 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <kcfgfile name=""/>
   <group name="General">
     <entry name="closed" type="Bool"><default>false</default></entry>
+    <entry name="paused" type="Bool"><default>false</default></entry>
     <entry name="targets" type="StringList"><default></default></entry>
     <entry name="taskMode" type="String"><default>all</default></entry>
     <entry name="openOn" type="String"><default>click</default></entry>
@@ -284,6 +285,7 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="textOpen" type="String"><default>Show the hidden items</default></entry>
     <entry name="textClose" type="String"><default>Hide the items</default></entry>
     <entry name="textSettings" type="String"><default>Tidy settings…</default></entry>
+    <entry name="textPaused" type="String"><default>Paused. Click to resume</default></entry>
     <entry name="debug" type="String"><default></default></entry>
   </group>
 </kcfg>
@@ -328,7 +330,9 @@ PlasmoidItem {
             root.syncFill();
         }
     }
-    readonly property bool wantClosed: cfg.closed && !editing && !leaving
+    // Paused (Tidy's "Restore everything"): the drawer lets go of everything, as if it were
+    // not there, until Tidy is switched on again or the arrow is clicked.
+    readonly property bool wantClosed: cfg.closed && !editing && !leaving && !cfg.paused
 
     property Item container: null   // our own applet container
     property var siblings: []       // the other widgets: [{item, id, plugin, pos}]
@@ -376,11 +380,13 @@ PlasmoidItem {
     // Diagnostics: with the "debug" setting on "on", the state goes to the journal twice a second.
     function report() {
         console.warn("TIDYDRAWER " + JSON.stringify({
-            own: ownPos, closed: cfg.closed, mode: cfg.taskMode, hover: panelHover !== null,
+            own: ownPos, closed: cfg.closed, paused: cfg.paused, mode: cfg.taskMode,
+            hover: panelHover !== null,
             width: Math.round(root.width), stretching: stretching, savedFill: cfg.savedFill,
             arrow_icon: arrowIcon,
             inPanel: pointerInPanel, inDrawer: pointerInDrawer, arrow: arrowHovered,
             popup: popupOpen, saved: cfg.savedLaunchers, tap: panelTap !== null,
+            memory: JSON.stringify(savedMemory),
             // is the middle of each widget's contents an empty spot, and the middle of the rest of it?
             spots: siblings.map(s => {
                 var start = vertical ? s.item.y : s.item.x, full = vertical ? s.item.height : s.item.width;
@@ -512,7 +518,7 @@ PlasmoidItem {
             property Connections attention: Connections {
                 target: h.item && h.item.applet ? h.item.applet.plasmoid : null
                 function onStatusChanged() {
-                    if (root.cfg.openOnAttention && root.cfg.closed
+                    if (root.cfg.openOnAttention && root.cfg.closed && !root.cfg.paused
                             && h.item.applet.plasmoid.status === PlasmaCore.Types.NeedsAttentionStatus)
                         root.cfg.closed = false;
                 }
@@ -525,10 +531,37 @@ PlasmoidItem {
     // and empty it; programs that are running stay, they are windows. Open: put it back,
     // keeping anything that was pinned in the meantime.
 
+    // What the drawer has taken from a task manager is kept in its own settings, so that it
+    // survives a restart. Settings written from here reach Plasma's configuration a moment
+    // later, and when Tidy changes a setting in that moment Plasma reloads them all, without
+    // ours. So every change is written out at once, and a copy in memory wins over whatever
+    // a reload brings back.
+    property var savedMemory: ({})
+    function persist(map) {
+        try { map.writeConfig(); } catch (e) {}
+    }
+    function loadSaved(key) {
+        if (!(key in savedMemory)) {
+            var value = {};
+            try { value = JSON.parse(cfg[key] || "{}") || {}; } catch (e) { value = {}; }
+            savedMemory[key] = value;
+        }
+        return savedMemory[key];
+    }
+    function storeSaved(key, value) {
+        savedMemory[key] = value;
+        var text = JSON.stringify(value);
+        if (cfg[key] !== text) cfg[key] = text;
+        persist(cfg);
+    }
+    function restoreLaunchers(conf, list) {
+        Array.from(conf.launchers).forEach(l => { if (list.indexOf(l) < 0) list.push(l); });
+        conf.launchers = list;
+        persist(conf);
+    }
+
     function syncPinned() {
-        var saved = {};
-        try { saved = JSON.parse(cfg.savedLaunchers || "{}") || {}; } catch (e) { saved = {}; }
-        var changed = false;
+        var saved = loadSaved("savedLaunchers");
         siblings.forEach(s => {
             if (!isTasks(s.plugin)) return;
             var conf = null;
@@ -536,22 +569,20 @@ PlasmoidItem {
             if (!conf) return;
             // Worked out here rather than taken from pinnedTargets: right after a settings
             // change that list may not have caught up yet.
-            var hide = cfg.closed && !leaving && cfg.taskMode === "pinned" && inTargets(s.id);
+            var hide = cfg.closed && !leaving && !cfg.paused && cfg.taskMode === "pinned"
+                       && inTargets(s.id);
             if (hide && !(s.id in saved)) {
-                saved[s.id] = Array.from(conf.launchers);
-                changed = true;
                 // Save first, empty afterwards: a crash in between must not lose the list.
-                cfg.savedLaunchers = JSON.stringify(saved);
+                saved[s.id] = Array.from(conf.launchers);
+                storeSaved("savedLaunchers", saved);
                 conf.launchers = [];
+                persist(conf);
             } else if (!hide && (s.id in saved)) {
-                var list = saved[s.id];
-                Array.from(conf.launchers).forEach(l => { if (list.indexOf(l) < 0) list.push(l); });
-                conf.launchers = list;
+                restoreLaunchers(conf, saved[s.id]);
                 delete saved[s.id];
-                changed = true;
+                storeSaved("savedLaunchers", saved);
             }
         });
-        if (changed) cfg.savedLaunchers = JSON.stringify(saved);
     }
     Connections {
         target: root.cfg
@@ -559,6 +590,16 @@ PlasmoidItem {
         function onTargetsChanged() { root.syncPinned(); root.syncFill(); }
         function onTaskModeChanged() { root.syncPinned(); }
         function onPlaceChanged() { root.syncFill(); }
+        function onPausedChanged() { root.syncPinned(); root.syncFill(); }
+        // A reload from outside brought back an older version: ours wins.
+        function onSavedLaunchersChanged() {
+            if ("savedLaunchers" in root.savedMemory)
+                root.storeSaved("savedLaunchers", root.savedMemory["savedLaunchers"]);
+        }
+        function onSavedFillChanged() {
+            if ("savedFill" in root.savedMemory)
+                root.storeSaved("savedFill", root.savedMemory["savedFill"]);
+        }
     }
     // Removed from the panel (or Plasma shutting down): never leave a task manager without
     // its pinned icons. At the next start a closed drawer empties the list again.
@@ -569,19 +610,15 @@ PlasmoidItem {
         }
         leaving = true;
         syncFill();
-        var saved = {};
-        try { saved = JSON.parse(cfg.savedLaunchers || "{}") || {}; } catch (e) { return; }
+        var saved = loadSaved("savedLaunchers");
         siblings.forEach(s => {
             if (!(s.id in saved)) return;
             try {
-                var conf = s.item.applet.plasmoid.configuration;
-                var list = saved[s.id];
-                Array.from(conf.launchers).forEach(l => { if (list.indexOf(l) < 0) list.push(l); });
-                conf.launchers = list;
+                restoreLaunchers(s.item.applet.plasmoid.configuration, saved[s.id]);
                 delete saved[s.id];
             } catch (e) {}
         });
-        cfg.savedLaunchers = JSON.stringify(saved);
+        storeSaved("savedLaunchers", saved);
     }
 
     // --- arrow after a task manager that fills the panel --------------------------
@@ -592,8 +629,7 @@ PlasmoidItem {
 
     property bool stretching: false
     function syncFill() {
-        var saved = {};
-        try { saved = JSON.parse(cfg.savedFill || "{}") || {}; } catch (e) { saved = {}; }
+        var saved = loadSaved("savedFill");
         var before = JSON.stringify(saved), present = {};
         siblings.forEach(s => {
             if (!isTasks(s.plugin)) return;
@@ -601,20 +637,25 @@ PlasmoidItem {
             var conf = null;
             try { conf = s.item.applet.plasmoid.configuration; } catch (e) {}
             if (!conf) return;
-            var take = cfg.place === "after" && !leaving && inTargets(s.id) && s.pos < ownPos;
+            var take = cfg.place === "after" && !leaving && !cfg.paused && inTargets(s.id)
+                       && s.pos < ownPos;
             if (take && !(s.id in saved)) {
                 if (conf.fill === false) return;   // already set that way by the user
-                saved[s.id] = true;
                 // Save first, change afterwards: a crash in between must not lose the setting.
-                cfg.savedFill = JSON.stringify(saved);
+                saved[s.id] = true;
+                storeSaved("savedFill", saved);
                 conf.fill = false;
+                persist(conf);
             } else if (!take && (s.id in saved)) {
                 conf.fill = true;
+                persist(conf);
                 delete saved[s.id];
             }
         });
-        Object.keys(saved).forEach(id => { if (!(id in present)) delete saved[id]; });
-        if (JSON.stringify(saved) !== before) cfg.savedFill = JSON.stringify(saved);
+        // Only once the list of widgets is known: a task manager that is gone needs no entry.
+        if (siblings.length > 0)
+            Object.keys(saved).forEach(id => { if (!(id in present)) delete saved[id]; });
+        if (JSON.stringify(saved) !== before) storeSaved("savedFill", saved);
         stretching = Object.keys(saved).length > 0;
     }
 
@@ -651,7 +692,7 @@ PlasmoidItem {
     }
     property var panelTap: null
     function panelTapped(pos) {
-        if (cfg.closeOnPanelClick && !cfg.closed && isEmptySpot(pos))
+        if (cfg.closeOnPanelClick && !cfg.closed && !cfg.paused && isEmptySpot(pos))
             cfg.closed = true;
     }
     function contentExtent(k) {
@@ -735,7 +776,7 @@ PlasmoidItem {
     Timer {
         id: closeTimer
         interval: Math.max(0, root.cfg.closeDelay)
-        running: root.cfg.autoClose && !root.cfg.closed && !root.editing
+        running: root.cfg.autoClose && !root.cfg.closed && !root.cfg.paused && !root.editing
                  && !root.pointerHere && !root.popupOpen
                  && (root.cfg.closeScope !== "panel" || root.panelHover !== null)
         onTriggered: root.cfg.closed = true
@@ -794,7 +835,8 @@ PlasmoidItem {
         PlasmaCore.ToolTipArea {
             width: root.vertical ? parent.width : root.thickness
             height: root.vertical ? root.thickness : parent.height
-            mainText: root.cfg.closed ? root.cfg.textOpen : root.cfg.textClose
+            mainText: root.cfg.paused ? root.cfg.textPaused
+                                      : (root.cfg.closed ? root.cfg.textOpen : root.cfg.textClose)
 
             Kirigami.Icon {
                 anchors.centerIn: parent
@@ -802,14 +844,20 @@ PlasmoidItem {
                 height: width
                 source: root.arrowIcon
                 active: root.arrowHovered
+                opacity: root.cfg.paused ? 0.4 : 1
             }
             MouseArea {
                 anchors.fill: parent
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton
                 onContainsMouseChanged: root.arrowHovered = containsMouse
-                onClicked: { hoverTimer.stop(); root.toggle(); }
-                onEntered: if (root.cfg.openOn === "hover" && root.cfg.closed) hoverTimer.restart()
+                onClicked: {
+                    hoverTimer.stop();
+                    if (root.cfg.paused) root.cfg.paused = false;
+                    else root.toggle();
+                }
+                onEntered: if (root.cfg.openOn === "hover" && root.cfg.closed && !root.cfg.paused)
+                               hoverTimer.restart()
                 onExited: hoverTimer.stop()
             }
         }
@@ -951,6 +999,19 @@ TRANSLATIONS = {
         "Show the hidden items": "Verborgen onderdelen tonen",
         "Hide the items": "Onderdelen verbergen",
         "{app} settings…": "{app}-instellingen…",
+        "Paused. Click to resume": "Gepauzeerd. Klik om te hervatten",
+        # restore everything
+        "Restore everything…": "Alles terugzetten…",
+        "Restore everything?": "Alles terugzetten?",
+        "This shows your desktop icons, your panel and everything in the drawers again, and "
+        "puts back the Plasma settings that {app} changed. {app} is switched off and the "
+        "drawers are paused until you switch {app} on again.":
+            "Dit toont je bureaubladpictogrammen, je paneel en alles in de laden weer, en zet "
+            "de Plasma-instellingen terug die {app} heeft aangepast. {app} wordt uitgeschakeld "
+            "en de laden pauzeren tot je {app} weer inschakelt.",
+        "Also put the system tray back as it was before {app} changed it":
+            "Ook het systeemvak terugzetten zoals het was voordat {app} het aanpaste",
+        "Restore": "Terugzetten",
         # about
         "Version {version}": "Versie {version}",
         "Hides your desktop icons when you don't need them, tucks the programs and icons "
@@ -1037,9 +1098,9 @@ TRANSLATIONS = {
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
         "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
-        "--drawer-close | --drawer-toggle | --version]":
+        "--drawer-close | --drawer-toggle | --restore | --version]":
             "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
-            "--drawer-close | --drawer-toggle | --version]",
+            "--drawer-close | --drawer-toggle | --restore | --version]",
         "swayidle is missing.\n\nInstall it with:\nsudo dnf install swayidle":
             "swayidle ontbreekt.\n\nInstalleer het met:\nsudo dnf install swayidle",
     },
@@ -1115,7 +1176,8 @@ def drawer_texts():
     return {"tidyCommand": os.path.abspath(sys.argv[0]),
             "textOpen": tr("Show the hidden items"),
             "textClose": tr("Hide the items"),
-            "textSettings": tr("{app} settings…").format(app=APP_NAME)}
+            "textSettings": tr("{app} settings…").format(app=APP_NAME),
+            "textPaused": tr("Paused. Click to resume")}
 
 
 def drawer_value(key, raw):
@@ -1332,6 +1394,50 @@ class Plasma:
                 if (w.type == type && w.id == id) w.remove();
             }); });""")
 
+    def task_launchers(self):
+        """The pinned programs of every task manager in the panels: {widget id: [urls]}."""
+        out = self.run("var types = %s;" % json.dumps(TASK_PLUGINS) + """
+            var r = {};
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (types.indexOf(w.type) < 0) return;
+                w.currentConfigGroup = ["General"];
+                var v = w.readConfig("launchers");
+                r[w.id] = !v ? [] : (Array.isArray(v) ? v : String(v).split(","));
+            }); });
+            print(JSON.stringify(r));""")
+        try:
+            return {int(k): [i for i in v if i] for k, v in json.loads(out).items()}
+        except ValueError:
+            return {}
+
+    def held_launchers(self):
+        """Pinned programs that closed drawers are holding: {task manager id: [urls]}."""
+        out = self.run("var type = %s;" % json.dumps(DRAWER_ID) + """
+            var r = [];
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type != type) return;
+                w.currentConfigGroup = ["General"];
+                r.push(String(w.readConfig("savedLaunchers") || "{}"));
+            }); });
+            print(JSON.stringify(r));""")
+        held = {}
+        try:
+            for text in json.loads(out):
+                for widget_id, launchers in json.loads(text).items():
+                    held[int(widget_id)] = [i for i in launchers if i]
+        except (ValueError, AttributeError, TypeError):
+            pass
+        return held
+
+    def set_task_launchers(self, widget_id, launchers):
+        self.run("var id = %d, list = %s;" % (widget_id, json.dumps(launchers)) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.id != id) return;
+                w.currentConfigGroup = ["General"];
+                w.writeConfig("launchers", list);
+                w.reloadConfig();
+            }); });""")
+
     def set_drawers_closed(self, closed):
         """Close (True) or open (False) every drawer. None switches: close them all if one
         is open, otherwise open them all."""
@@ -1441,6 +1547,10 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     def DrawerToggle(self):
         self.autohide.plasma.set_drawers_closed(None)
 
+    @pyqtSlot()
+    def Restore(self):
+        self.autohide.restore_everything()
+
 
 def tray_app_items():
     """Application icons (StatusNotifierItems) currently in the system tray."""
@@ -1469,9 +1579,10 @@ def tray_app_items():
 class TrayTab(QWidget):
     """Tab for choosing per icon how it appears in the system tray."""
 
-    def __init__(self, plasma):
+    def __init__(self, plasma, settings):
         super().__init__()
         self.plasma = plasma
+        self.settings = settings
         self.config = plasma.tray_config()
         layout = QVBoxLayout(self)
         if self.config is None:
@@ -1580,6 +1691,10 @@ class TrayTab(QWidget):
                   if i in self.plasmoids and m != TRAY_DISABLED and i not in extra]
         shown = [i for i, m in modes.items() if m == TRAY_SHOWN]
         hidden = [i for i, m in modes.items() if m == TRAY_HIDDEN]
+        if not self.settings.value("tray_original", ""):
+            # Remember how the tray was before Tidy first touched it, for "Restore everything".
+            self.settings.setValue("tray_original", json.dumps(
+                {k: self.config[k] for k in ("extra", "shown", "hidden")}))
         self.plasma.set_tray_config(extra, shown, hidden)
 
 
@@ -1905,7 +2020,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self.drawer_tab,
                     QIcon.fromTheme("sidebar-collapse-left", QIcon.fromTheme("arrow-left")),
                     tr("Panel"))
-        self.tray_tab = TrayTab(autohide.plasma)
+        self.tray_tab = TrayTab(autohide.plasma, settings)
         tabs.addTab(self.tray_tab, QIcon.fromTheme("preferences-desktop-notification"),
                     tr("System tray"))
         self.about_tab = AboutTab()
@@ -2011,6 +2126,9 @@ class SettingsDialog(QDialog):
         support.setToolTip(tr("Donate or more information"))
         support.linkActivated.connect(self.on_support)
         footer.addWidget(support)
+        restore = QPushButton(QIcon.fromTheme("edit-undo"), tr("Restore everything…"))
+        restore.clicked.connect(lambda: autohide.ask_restore(self))
+        footer.addWidget(restore)
         footer.addStretch()
         footer.addWidget(self.button_box)
         outer.addLayout(footer)
@@ -2109,6 +2227,7 @@ class Tidy(QObject):
         self.enabled_action.toggled.connect(self.set_enabled)
         menu.addAction(self.enabled_action)
         settings_action = menu.addAction(QIcon.fromTheme("configure"), "", self.show_settings)
+        restore_action = menu.addAction(QIcon.fromTheme("edit-undo"), "", self.ask_restore)
         about_action = menu.addAction(QIcon.fromTheme("help-about"), "",
                                       lambda: self.show_settings(about=True))
         donate_action = menu.addAction("", self.on_donate)
@@ -2116,6 +2235,7 @@ class Tidy(QObject):
         quit_action = menu.addAction("", self.quit)
         # English texts; retranslate() fills them in, and again when the language changes.
         self.menu_texts = [(self.enabled_action, "Enabled"), (settings_action, "Settings…"),
+                           (restore_action, "Restore everything…"),
                            (about_action, "About {app}"), (donate_action, "♥ Donate…"),
                            (quit_action, "Quit")]
         self.tray.setContextMenu(menu)
@@ -2129,6 +2249,7 @@ class Tidy(QObject):
 
         if self.enabled_action.isChecked():
             self.start_idle()
+        QTimer.singleShot(5000, self.backup_launchers)
 
     def mode(self):
         return self.settings.value("mode", MODE_ACTIVITY)
@@ -2346,9 +2467,73 @@ class Tidy(QObject):
         if on:
             self.shown_at = time.monotonic()
             self.start_idle()
+            # Drawers paused by "Restore everything" resume.
+            self.plasma.set_drawer_config(None, {"paused": False})
         else:
             self.stop_idle()
             self.show()
+
+    def backup_launchers(self):
+        """Keep a copy of every task manager's pinned programs, as a last resort for "Restore
+        everything"."""
+        held = self.plasma.held_launchers()
+        try:
+            backup = json.loads(self.settings.value("launchers_backup", "") or "{}")
+        except ValueError:
+            backup = {}
+        for widget_id, launchers in self.plasma.task_launchers().items():
+            # What a closed drawer holds, plus whatever was pinned since.
+            complete = held.get(widget_id, []) + [i for i in launchers
+                                                  if i not in held.get(widget_id, [])]
+            if complete:
+                backup[str(widget_id)] = complete
+        self.settings.setValue("launchers_backup", json.dumps(backup))
+
+    def recover_launchers(self):
+        """A task manager without any pinned program, while we have a copy: put it back."""
+        try:
+            backup = json.loads(self.settings.value("launchers_backup", "") or "{}")
+        except ValueError:
+            return
+        for widget_id, launchers in self.plasma.task_launchers().items():
+            if not launchers and backup.get(str(widget_id)):
+                self.plasma.set_task_launchers(widget_id, backup[str(widget_id)])
+
+    def restore_everything(self, tray=False):
+        """Put the desktop back as if Tidy were not there: everything visible, every Plasma
+        setting that Tidy or a drawer changed restored, and Tidy itself switched off."""
+        self.enabled_action.setChecked(False)  # stops the timer and shows the icons
+        self.show()                            # also when Tidy already was off
+        self.recover_after_crash()
+        self.backup_launchers()
+        self.plasma.set_drawer_config(None, {"paused": True})
+        # Once the drawers have handed everything back.
+        QTimer.singleShot(2000, self.recover_launchers)
+        original = self.settings.value("tray_original", "")
+        if tray and original:
+            try:
+                saved = json.loads(original)
+                self.plasma.set_tray_config(saved["extra"], saved["shown"], saved["hidden"])
+            except (ValueError, KeyError):
+                pass
+
+    def ask_restore(self, parent=None):
+        box = QMessageBox(QMessageBox.Icon.Question, APP_NAME, tr("Restore everything?"),
+                          parent=parent if isinstance(parent, QWidget) else None)
+        box.setInformativeText(tr(
+            "This shows your desktop icons, your panel and everything in the drawers again, "
+            "and puts back the Plasma settings that {app} changed. {app} is switched off and "
+            "the drawers are paused until you switch {app} on again.").format(app=APP_NAME))
+        tray = None
+        if self.settings.value("tray_original", ""):
+            tray = QCheckBox(tr("Also put the system tray back as it was before {app} changed "
+                                "it").format(app=APP_NAME))
+            box.setCheckBox(tray)
+        restore = box.addButton(tr("Restore"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        if box.clickedButton() is restore:
+            self.restore_everything(tray=bool(tray and tray.isChecked()))
 
     def on_tray_click(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -2396,6 +2581,7 @@ class Tidy(QObject):
             set_language(dlg.language.currentData())
             self.retranslate()
         dlg.tray_tab.apply()
+        self.backup_launchers()  # before a drawer may start holding them
         dlg.drawer_tab.apply()
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
         if dlg.corner.currentData() != old_corner:
@@ -2431,9 +2617,9 @@ def migrate_old_config():
 
 COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--settings": "Settings",
             "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
-            "--drawer-toggle": "DrawerToggle"}
+            "--drawer-toggle": "DrawerToggle", "--restore": "Restore"}
 USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
-         "--drawer-close | --drawer-toggle | --version]")
+         "--drawer-close | --drawer-toggle | --restore | --version]")
 
 
 def main():

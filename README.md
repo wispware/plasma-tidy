@@ -120,11 +120,23 @@ changes until you press OK:
 - **Show all**: every icon always visible in the panel
 - **Hide all**: every icon under the `^` arrow
 
+### Restore everything
+
+*Restore everything* (in the tray menu and at the bottom of the settings) puts your desktop
+back as if Tidy were not there. It shows the desktop icons, the panel and everything in the
+drawers, and puts back the Plasma settings Tidy changed: the desktop folder, the panel's
+visibility, and a task manager's pinned list and *Fill free space on panel*. If you tick the
+box, the system tray goes back to how it was before Tidy first changed it.
+
+Tidy is then switched off and the drawers are paused: their arrows stay in the panel, dimmed,
+and hide nothing. Switch Tidy on again in the tray menu, or click an arrow, to resume. Your
+settings are kept.
+
 ### Shortcuts and command line
 
-Tidy has four actions you can bind to a key in System Settings → Keyboard → Shortcuts →
-Add New → Application → Tidy: show the icons, hide the icons, switch Tidy on or off, and open
-or close the panel drawers.
+Tidy has five actions you can bind to a key in System Settings → Keyboard → Shortcuts →
+Add New → Application → Tidy: show the icons, hide the icons, switch Tidy on or off, open or
+close the panel drawers, and restore everything.
 
 The same actions are available from the command line. Only one copy of Tidy runs at a time; a
 second call passes its command to the running one.
@@ -138,6 +150,7 @@ plasma-tidy --settings  open the settings
 plasma-tidy --drawer-open    open the panel drawers
 plasma-tidy --drawer-close   close the panel drawers
 plasma-tidy --drawer-toggle  close them if one is open, otherwise open them
+plasma-tidy --restore   restore everything and switch Tidy off (does not touch the tray)
 plasma-tidy --version   print the version
 ```
 
@@ -185,6 +198,9 @@ Configure Desktop and Wallpaper → Location, and set it back to *Desktop folder
 
 **A widget stays hidden in the panel.** Click the drawer's arrow, or remove the drawer in the
 *Panel* tab: both bring everything back. Restarting Plasma (log out and in) does too.
+
+**Something is hidden and I don't know why.** Choose *Restore everything* in Tidy's tray menu,
+or run `plasma-tidy --restore`.
 
 ## Uninstall
 
