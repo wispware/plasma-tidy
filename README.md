@@ -13,6 +13,9 @@ Tidy keeps your KDE Plasma desktop, panel and system tray clean.
   by itself: on battery, with an external screen, at certain hours, per program, virtual
   desktop or activity.
 - **Peek:** hold a key to see everything for a moment; let go and it is tidy again.
+- **Balloons and previews:** switch Plasma's text balloons off, and choose what a program in
+  the panel shows when you point at it: a preview with or without its title, text only, or
+  nothing.
 
 It lives in the system tray as a small eye icon and stays out of the way: it never steals
 focus, and it waits while you have a menu open or are editing your desktop.
@@ -100,7 +103,7 @@ along when you change them. To place it yourself, choose *Where I put it myself*
 the panel, choose *Enter Edit Mode* and drag it.
 
 You can give a drawer a name; without one it is called after what is in it. The name shows in
-the list of drawers and in the arrow's tooltip.
+the list of drawers and in the arrow's balloon.
 
 The settings of a drawer come in three parts.
 
@@ -149,7 +152,9 @@ The settings of a drawer come in three parts.
 Below the drawers, *All drawers: close and open together with the desktop icons* makes every
 drawer follow Tidy's hiding and showing of the desktop icons (off by default).
 
-Under that, *Balloons and previews* holds two of Plasma's own settings, shown as they are now:
+Under that, *Balloons and previews* is about what comes up when you point at something in the
+panel. The first two are Plasma's own settings, shown as they are now; the rest is done by a
+drawer:
 
 | Setting | What it does |
 |---|---|
@@ -357,6 +362,13 @@ plasma-tidy --version   print the version
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
   drawer keeps working when Tidy is not running; Tidy is only needed to change its settings,
   for a peek and for opening when the desktop is shown.
+- **Balloons and previews**: Plasma's text balloons are switched with Plasma's own setting
+  (`plasmarc`), and the preview in a program's pop-up with the task manager's own. Plasma has
+  no setting for the rest, so a drawer that holds the task manager does it, in the same way
+  it hides icons: it asks for the pop-up itself when Plasma's balloons are off, keeps it away
+  for *None*, gives the title and the text no room for *Only the preview*, and sets the
+  distance to the panel while the pop-up is up. How Plasma had its settings is remembered the
+  first time Tidy changes them.
 - **Rules** look at the power supply (UPower), the screens, the clock, the active window and
   virtual desktop (the KWin script) and the activity (KDE's activity manager). Tidy is told
   when one of these changes; it does not keep checking.
@@ -382,6 +394,10 @@ it uses about 30 MB of memory and no processor time.
 - A new version of the helper, like the drawer, is picked up when Plasma starts.
 - A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
   and in once.
+- In a pop-up drawer a program shows its name at most, not a preview of its window: the
+  preview comes with an icon that is in the panel itself.
+- With *Only the preview of the window*, the pop-up of a program with several windows may keep
+  some empty room above the previews.
 - Closing by itself follows the pointer inside the panel. A window preview or a menu that
   opens above the panel counts as having left the drawer.
 
