@@ -203,6 +203,14 @@ class DrawerPage(QWidget):
                                          "the front"))
         self.on_maximized.setChecked(config["closeOnMaximized"])
         form.addRow(self.on_maximized)
+
+        self.on_panel_hide = QCheckBox(tr("Close when the panel slides out of view"))
+        self.on_panel_hide.setChecked(config["closeOnPanelHide"])
+        self.on_panel_hide.setToolTip(tr(
+            "When the panel hides (auto-hide, dodging a window, or hidden together with the "
+            "desktop icons) the drawer closes, so the panel comes back tidy. It does not open "
+            "again by itself."))
+        form.addRow(self.on_panel_hide)
         layout.addWidget(box)
         layout.addStretch()
         parts.addTab(page, tr("Opening and closing"))
@@ -415,6 +423,7 @@ class DrawerPage(QWidget):
                 "closeOnPanelClick": self.panel_click.isChecked(),
                 "openOnPanelClick": self.panel_open.isChecked(),
                 "closeAfterUse": self.after_use.isChecked(),
+                "closeOnPanelHide": self.on_panel_hide.isChecked(),
                 "closeOnMaximized": self.on_maximized.isChecked(),
                 "icon": self.icon.currentData(),
                 "iconCustom": self.icon_custom.text().strip(),

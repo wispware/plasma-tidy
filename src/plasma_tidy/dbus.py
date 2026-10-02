@@ -23,6 +23,8 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     DesktopActivated = pyqtSignal()
     # A menu or pop-up opens somewhere, or the last one closes: a drawer stays open with it.
     MenuOpen = pyqtSignal(bool)
+    # A panel slid out of view, on this screen and this edge: a drawer in it may close.
+    PanelGone = pyqtSignal(str, str)
 
     def __init__(self, autohide):
         super().__init__(autohide)
@@ -49,6 +51,10 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     def PopupOpen(self, open_):
         self.autohide.popup_open = open_
         self.MenuOpen.emit(open_)
+
+    @pyqtSlot(str, str)
+    def PanelHidden(self, screen, edge):
+        self.PanelGone.emit(screen, edge)
 
     @pyqtSlot(str, bool)
     def ActiveWindow(self, name, fullscreen):

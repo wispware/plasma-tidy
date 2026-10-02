@@ -28,6 +28,7 @@ KCM.SimpleKCM {
     property bool cfg_closeOnPanelClick
     property bool cfg_openOnPanelClick
     property bool cfg_closeAfterUse
+    property bool cfg_closeOnPanelHide
     property bool cfg_closeOnMaximized
     property bool cfg_openOnDesktop
     property bool cfg_openOnAttention
@@ -187,6 +188,11 @@ KCM.SimpleKCM {
             text: page.t("Close when a window that fills the screen comes to the front")
             checked: page.cfg_closeOnMaximized
             onToggled: page.cfg_closeOnMaximized = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Close when the panel slides out of view")
+            checked: page.cfg_closeOnPanelHide
+            onToggled: page.cfg_closeOnPanelHide = checked
         }
 
         // --- arrow ---

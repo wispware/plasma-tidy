@@ -137,6 +137,7 @@ The settings of a drawer come in three parts.
 | Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer; a click on a widget does what it always did | off |
 | Close after a click on something in the drawer | Closes once you have started or picked something; a pop-up it opened is waited for | off |
 | Close when a window that fills the screen comes to the front | Closes each time a maximized or full-screen window becomes the active one | off |
+| Close when the panel slides out of view | When the panel hides (auto-hide, dodging a window, or hidden together with the desktop icons) the drawer closes, so the panel comes back tidy. It does not open again by itself. Tidy tells the drawer, so Tidy has to be running | on |
 
 *Appearance*
 
@@ -362,7 +363,7 @@ plasma-tidy --version   print the version
 - **A small KWin script**, loaded while Tidy runs, tells Tidy whether the desktop is the
   active window, and when the pointer moves over the desktop while another window is the
   active one (it looks at most twice a second). It also tells when a menu opens or the
-  last one closes, and handles the screen corner. It only tells changes, and it never sees
+  last one closes and when a panel slides out of view, and handles the screen corner. It only tells changes, and it never sees
   what you type or click.
 - **The drawer** is a small Plasma widget that ships inside Tidy and is written to
   `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
@@ -371,8 +372,8 @@ plasma-tidy --version   print the version
   when you ask for it: with the arrow *just after* the task manager it switches off *Fill
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
   drawer does its work by itself, also should Tidy stop unexpectedly; Tidy is only needed to
-  change its settings, for a peek, for opening when the desktop is shown, and to stay open
-  under any menu. Quitting Tidy or switching it off pauses the drawers.
+  change its settings, for a peek, for opening when the desktop is shown, to stay open under
+  any menu, and to close when the panel hides. Quitting Tidy or switching it off pauses the drawers.
 - **Balloons and previews**: Plasma's text balloons are switched with Plasma's own setting
   (`plasmarc`), and the preview in a program's pop-up with the task manager's own. Plasma has
   no setting for the rest, so a drawer that holds the task manager does it, in the same way

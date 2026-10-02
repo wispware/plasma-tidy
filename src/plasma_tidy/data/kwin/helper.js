@@ -83,3 +83,19 @@ function trackPopup(w) {
 workspace.windowList().forEach(trackPopup);
 workspace.windowAdded.connect(trackPopup);
 reportPopups();
+
+// A panel that slides out of view (auto-hide, dodge windows): told with its screen and the
+// edge it is on, for the drawers that close then. Its coming back is not told.
+function trackPanel(w) {
+    if (!w.dock) return;
+    w.hiddenChanged.connect(function () {
+        if (!w.hidden || !w.output) return;
+        var g = w.frameGeometry, o = w.output.geometry;
+        var edge = g.width >= g.height
+            ? (g.y + g.height / 2 < o.y + o.height / 2 ? "top" : "bottom")
+            : (g.x + g.width / 2 < o.x + o.width / 2 ? "left" : "right");
+        callDBus("%(name)s", "/", "%(name)s", "PanelHidden", w.output.name, edge);
+    });
+}
+workspace.windowList().forEach(trackPanel);
+workspace.windowAdded.connect(trackPanel);

@@ -175,6 +175,13 @@ TRANSLATIONS = {
         "Without an icon the spot stays clickable and lights up under the pointer.":
             "Zonder pictogram blijft de plek aanklikbaar en licht hij op onder de muis.",
         "Icon name or image file": "Pictogramnaam of afbeeldingsbestand",
+        "Close when the panel slides out of view": "Sluiten als het paneel uit beeld schuift",
+        "When the panel hides (auto-hide, dodging a window, or hidden together with the "
+        "desktop icons) the drawer closes, so the panel comes back tidy. It does not open "
+        "again by itself.":
+            "Als het paneel verdwijnt (automatisch verbergen, een venster ontwijken, of samen "
+            "met de bureaubladpictogrammen verborgen) sluit de la, zodat het paneel opgeruimd "
+            "terugkomt. Hij gaat niet vanzelf weer open.",
         "Without an icon the arrow takes no room in the panel":
             "Zonder pictogram neemt het pijltje geen ruimte in het paneel",
         "The empty spot goes, and with it pointing at it and clicking it. Only while the "

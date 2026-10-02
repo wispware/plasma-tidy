@@ -58,27 +58,38 @@ PlasmoidItem {
 
     // --- what Tidy tells -------------------------------------------------------------------
 
-    // Tidy tells three things with a signal on the session bus: that a peek starts or ends,
-    // that the desktop came to the front, and that a menu is open somewhere. The link is
-    // made by hand, so that a Plasma without this module leaves the drawer working; it then
-    // only misses these.
+    // Tidy tells four things with a signal on the session bus: that a peek starts or ends,
+    // that the desktop came to the front, that a menu is open somewhere, and that a panel
+    // slid out of view. The link is made by hand, so that a Plasma without this module
+    // leaves the drawer working; it then only misses these.
     property bool peeking: false
     property bool menuOpen: false
+    readonly property string panelEdge: Plasmoid.location === PlasmaCore.Types.TopEdge ? "top"
+        : Plasmoid.location === PlasmaCore.Types.LeftEdge ? "left"
+        : Plasmoid.location === PlasmaCore.Types.RightEdge ? "right" : "bottom"
     property var tidyLink: null
     function linkTidy() {
         try {
             tidyLink = Qt.createQmlObject('import QtQuick; import org.kde.plasma.workspace.dbus as DBus; '
                 + 'QtObject { id: link; property string name: "io.github.wispware.PlasmaTidy"; '
                 + 'property bool runs: watch.registered; signal peek(bool on); signal desktop(); signal menu(bool on); '
+                + 'signal panelGone(string screen, string edge); '
                 + 'property var watch: DBus.DBusServiceWatcher { busType: DBus.BusType.Session; '
                 + 'watchedService: link.name } '
                 + 'property var listen: DBus.SignalWatcher { busType: DBus.BusType.Session; '
                 + 'service: link.name; path: "/"; iface: link.name; '
                 + 'function dbusPeeking(on) { link.peek(on === true || String(on) === "true"); } '
                 + 'function dbusMenuOpen(on) { link.menu(on === true || String(on) === "true"); } '
+                + 'function dbusPanelGone(screen, edge) { link.panelGone(String(screen), String(edge)); } '
                 + 'function dbusDesktopActivated() { link.desktop(); } } }', root, "tidyLink");
             tidyLink.peek.connect(on => { root.peeking = on; });
             tidyLink.menu.connect(on => { root.menuOpen = on; });
+            // The panel this drawer is in slid out of view: it comes back tidy.
+            tidyLink.panelGone.connect((screen, edge) => {
+                if (root.cfg.closeOnPanelHide && !root.cfg.closed && !root.cfg.paused && !root.peeking
+                        && screen === Screen.name && edge === root.panelEdge)
+                    root.cfg.closed = true;
+            });
             // Tidy gone in the middle of a peek: it is over. And nothing is known of menus.
             tidyLink.runsChanged.connect(() => {
                 if (!tidyLink.runs) { root.peeking = false; root.menuOpen = false; }
@@ -181,7 +192,7 @@ PlasmoidItem {
             taskTips: cfg.taskTips + "/" + taskHiders.filter(h => { try { return h.item.active === true; } catch (e) { return false; } }).length
                 + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
                 + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length, tipShowing: tipShowing,
-            menus: taskMenuOpen + "/" + menuOpen, closing: closeTimer.running,
+            menus: taskMenuOpen + "/" + menuOpen, panel: Screen.name + "/" + panelEdge, closing: closeTimer.running,
             slim: slim + "/room " + room + (container && !container.visible ? "/out of the panel" : "")
                 + "/shortcut " + hasShortcut,
             tipTexts: cfg.debug === "on" ? tipFind().map(a => String(a.mainText)).filter(t => t !== "") : [],
