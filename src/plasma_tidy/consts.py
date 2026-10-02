@@ -47,9 +47,14 @@ MARK_ATTENTION = "attention"
 PLACE_BEFORE = "before"
 PLACE_AFTER = "after"
 PLACE_MANUAL = "manual"
+DISPLAY_PANEL = "panel"
+DISPLAY_POPUP = "popup"
 # The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
 DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [],
                    "taskMode": TASKS_ALL, "taskKeep": [], "taskList": "", "openOn": OPEN_CLICK,
+                   "display": DISPLAY_PANEL, "popupStyle": "row", "popupBackground": True,
+                   "popupGap": True, "trayArrow": "open",
+                   "fitPanel": False,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "openOnPanelClick": False,
@@ -92,6 +97,11 @@ PANEL_NAMES = {
     "org.kde.plasma.weather": "Weather",
 }
 ANIMATIONS = [("slide", "Slide"), ("grow", "Grow"), ("cascade", "One by one"), ("fade", "Fade")]
+DISPLAYS = [(DISPLAY_PANEL, "In the panel"), (DISPLAY_POPUP, "In a pop-up above the arrow")]
+TRAY_ARROWS = [("open", "In the panel while the pop-up is open"),
+               ("always", "Always in the panel"), ("never", "Never")]
+POPUP_STYLES = [("row", "A row of icons"), ("column", "A column of icons"),
+                ("grid", "A grid with names"), ("list", "A list with names")]
 ACTIVE_PLACES = [("fixed", "On their pinned spot"), ("start", "All in front"),
                  ("end", "All at the back")]
 ICON_STYLES = [("arrow", "Arrow"), ("double", "Double arrow"), ("triangle", "Triangle"),
@@ -107,6 +117,12 @@ DRAWER_PAGE_TEXTS = [
     "When the pointer leaves the drawer", "When the pointer leaves the panel", "Closes after:",
     "Close with a click on an empty spot in the panel",
     "Open with a click on an empty spot in the panel",
+    "Shows its contents:", "In the panel", "In a pop-up above the arrow", "Pop-up:",
+    "A row of icons", "A column of icons", "A grid with names", "A list with names",
+    "Pop-up has a background, like the panel",
+    "Pop-up floats above the panel, like Plasma's own pop-ups",
+    "The system tray's own arrow (^):", "In the panel while the pop-up is open",
+    "Always in the panel", "Never",
     "Close after a click on something in the drawer",
     "Close when a window that fills the screen comes to the front", "Appearance", "Icon:",
     "Open programs:", "On their pinned spot", "All in front", "All at the back", "Animation:",
@@ -129,7 +145,7 @@ PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,mi
                     "focus_panel": False, "tray_hide_new": False, "tray_rules": "",
                     "peek_key": "", "peek_panel": True}
 # What a drawer is doing right now; not part of a profile.
-DRAWER_STATE = ("closed", "paused", "taskList")
+DRAWER_STATE = ("closed", "paused", "taskList", "fitPanel")
 # Rules: when something is the case, use a profile or switch focus mode on.
 RULE_WHEN = [("battery", "On battery"), ("mains", "On mains power"),
              ("external", "An external screen is connected"),

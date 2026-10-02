@@ -32,6 +32,11 @@ KCM.SimpleKCM {
     property bool cfg_openOnDesktop
     property bool cfg_openOnAttention
     property string cfg_animation
+    property string cfg_display
+    property string cfg_popupStyle
+    property bool cfg_popupBackground
+    property bool cfg_popupGap
+    property string cfg_trayArrow
     property int cfg_animationDuration
     property string cfg_activePlace
     property bool cfg_reverseArrow
@@ -210,6 +215,40 @@ KCM.SimpleKCM {
             text: page.t("Arrow points the other way")
             checked: page.cfg_reverseArrow
             onToggled: page.cfg_reverseArrow = checked
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("Shows its contents:")
+            choices: [["panel", "In the panel"], ["popup", "In a pop-up above the arrow"]]
+            value: page.cfg_display
+            onChosen: value => page.cfg_display = value
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("Pop-up:")
+            enabled: page.cfg_display === "popup"
+            choices: [["row", "A row of icons"], ["column", "A column of icons"],
+                      ["grid", "A grid with names"], ["list", "A list with names"]]
+            value: page.cfg_popupStyle
+            onChosen: value => page.cfg_popupStyle = value
+        }
+        QQC2.CheckBox {
+            text: page.t("Pop-up has a background, like the panel")
+            enabled: page.cfg_display === "popup"
+            checked: page.cfg_popupBackground
+            onToggled: page.cfg_popupBackground = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Pop-up floats above the panel, like Plasma's own pop-ups")
+            enabled: page.cfg_display === "popup"
+            checked: page.cfg_popupGap
+            onToggled: page.cfg_popupGap = checked
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("The system tray's own arrow (^):")
+            enabled: page.cfg_display === "popup"
+            choices: [["open", "In the panel while the pop-up is open"], ["always", "Always in the panel"],
+                      ["never", "Never"]]
+            value: page.cfg_trayArrow
+            onChosen: value => page.cfg_trayArrow = value
         }
         Choice {
             Kirigami.FormData.label: page.t("Animation:")

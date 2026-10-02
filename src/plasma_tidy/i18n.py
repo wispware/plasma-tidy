@@ -503,10 +503,89 @@ TRANSLATIONS = {
             "Geldt nu",
         "Welcome to {app}":
             "Welkom bij {app}",
-        "{app} keeps your desktop clean. It hides the desktop icons when you don't need them and brings them back when you do. Three choices to start with; everything can be changed later.":
-            "{app} houdt je bureaublad schoon. Het verbergt de bureaubladpictogrammen als je ze niet nodig hebt en haalt ze terug als je ze wel nodig hebt. Drie keuzes om mee te beginnen; alles is later te wijzigen.",
-        "There is more in the settings: drawers that tuck panel icons away, a tidy system tray, focus mode, rules and profiles. {app} lives in the system tray: click its eye icon to open the settings.":
-            "In de instellingen zit meer: la's die paneelpictogrammen wegstoppen, een opgeruimd systeemvak, focusmodus, regels en profielen. {app} staat in het systeemvak: klik op het oog-pictogram om de instellingen te openen.",
+        "{app} keeps your desktop clean. It hides the desktop icons when you don't need them "
+        "and brings them back when you do. A few choices to start with; everything can be "
+        "changed later.":
+            "{app} houdt je bureaublad schoon. Het verbergt de bureaubladpictogrammen als je ze "
+            "niet nodig hebt en haalt ze terug als je ze wel nodig hebt. Een paar keuzes om mee "
+            "te beginnen; alles is later te wijzigen.",
+        "{app} can also tidy your panel:": "{app} kan ook je paneel opruimen:",
+        "Add a drawer for the programs in the panel":
+            "Een la toevoegen voor de programma's in het paneel",
+        "Puts an arrow next to the task manager. A click on it tucks the program icons away, "
+        "and brings them back.":
+            "Zet een pijltje naast het takenbeheer. Een klik erop stopt de programmapictogrammen "
+            "weg, en haalt ze weer terug.",
+        "There is one already, or the panel has no task manager.":
+            "Er is er al een, of het paneel heeft geen takenbeheer.",
+        "Tidy the system tray": "Het systeemvak opruimen",
+        "Only network, volume and battery stay in view, and Tidy's own icon; the rest goes "
+        "under the ^ arrow.":
+            "Alleen netwerk, volume en batterij blijven in beeld, en Tidy's eigen pictogram; "
+            "de rest gaat onder het pijltje ^.",
+        "There is more in the settings: focus mode, rules, profiles and a key to peek. {app} "
+        "lives in the system tray: click its eye icon to open the settings.":
+            "In de instellingen zit meer: focusmodus, regels, profielen en een toets om te "
+            "gluren. {app} staat in het systeemvak: klik op het oog-pictogram om de "
+            "instellingen te openen.",
+        "Welcome window…": "Welkomstscherm…",
+        "Shows its contents:": "Toont zijn inhoud:",
+        "In the panel": "In het paneel",
+        "In a pop-up above the arrow": "In een pop-up boven het pijltje",
+        "Pop-up:": "Pop-up:",
+        "A row of icons": "Een rij pictogrammen",
+        "A column of icons": "Een kolom pictogrammen",
+        "Pop-up has a background, like the panel": "Pop-up heeft een achtergrond, zoals het paneel",
+        "Pop-up floats above the panel, like Plasma's own pop-ups":
+            "Pop-up zweeft boven het paneel, zoals Plasma's eigen pop-ups",
+        "On: the pop-up keeps the same distance from the panel as the system tray's own pop-up "
+        "and the start menu, so they all line up. Off: it stands on the panel's edge. Only a "
+        "floating panel shows the difference.":
+            "Aan: de pop-up houdt dezelfde afstand tot het paneel als de eigen pop-up van het "
+            "systeemvak en het startmenu, zodat ze op één lijn staan. Uit: hij staat op de rand "
+            "van het paneel. Alleen bij een zwevend paneel zie je het verschil.",
+"The system tray's own arrow (^):": "Het eigen pijltje (^) van het systeemvak:",
+        "In the panel while the pop-up is open": "In het paneel zolang de pop-up open is",
+        "Always in the panel": "Altijd in het paneel",
+        "With the system tray in a pop-up, only its icons go there. The tray's own arrow, for "
+        "the icons it keeps hidden, can stay in the panel, show there only while the pop-up "
+        "is open, or go altogether. Without it, the icons under it can only be reached by "
+        "setting them to Show on the System tray tab.":
+            "Met het systeemvak in een pop-up gaan alleen de pictogrammen daarheen. Het eigen "
+            "pijltje van het systeemvak, voor de pictogrammen die het verborgen houdt, kan in "
+            "het paneel blijven, daar alleen staan zolang de pop-up open is, of helemaal "
+            "verdwijnen. Zonder pijltje zijn de pictogrammen eronder alleen nog te bereiken "
+            "door ze op het tabblad Systeemvak op Tonen te zetten.",
+        "On: the pop-up looks like a piece of your panel. Off: only the icons, on whatever is "
+        "behind them.":
+            "Aan: de pop-up ziet eruit als een stukje van je paneel. Uit: alleen de pictogrammen, "
+            "op wat er ook achter staat.",
+        "A grid with names": "Een raster met namen",
+        "A list with names": "Een lijst met namen",
+        "In the panel: what is in the drawer slides out next to the arrow. In a pop-up: it "
+        "stays out of the panel and comes up in a small window above the arrow, so the panel "
+        "never changes size; made for a panel that is as long as its contents. Programs are "
+        "shown as icons you can click; any other widget, such as the system tray, is moved "
+        "into the pop-up as it is and keeps its own shape.":
+            "In het paneel: wat in de la zit schuift naast het pijltje uit. In een pop-up: het "
+            "blijft buiten het paneel en komt omhoog in een klein venster boven het pijltje, "
+            "zodat het paneel nooit van grootte verandert; gemaakt voor een paneel dat zo lang "
+            "is als zijn inhoud. Programma's worden getoond als pictogrammen waarop je kunt "
+            "klikken; elke andere widget, zoals het systeemvak, wordt zoals hij is naar de "
+            "pop-up verplaatst en houdt zijn eigen vorm.",
+        "This panel is as long as its contents, so it jumps to its new size when the drawer "
+        "opens. Sliding inside it adds nothing then: the icons fade, whatever is chosen here.":
+            "Dit paneel is zo lang als zijn inhoud en springt dus naar zijn nieuwe grootte als "
+            "de la opengaat. Schuiven erbinnen voegt dan niets toe: de pictogrammen vervagen, "
+            "wat hier ook gekozen is.",
+        "This panel is as long as its contents: it has no empty spot to click on.":
+            "Dit paneel is zo lang als zijn inhoud: er is geen lege plek om op te klikken.",
+        "This panel is as long as its contents: it changes size when a drawer opens. Showing "
+        "the contents in a pop-up (Appearance) keeps the panel still.":
+            "Dit paneel is zo lang als zijn inhoud: het verandert van grootte als een la "
+            "opengaat. Met de inhoud in een pop-up (Uiterlijk) blijft het paneel stilstaan.",
+        "Shows the window from the first start again, with the choices to begin with.":
+            "Toont het venster van de eerste start opnieuw, met de keuzes om mee te beginnen.",
         "Profile: {name}":
             "Profiel: {name}",
         "Desktop {n}":

@@ -263,7 +263,8 @@ class Plasma:
         out = self.run("""
             var r = [];
             panels().forEach(function (p) {
-                r.push({panel: p.id, location: p.location,
+                // "fit": the panel is as long as its contents, and changes size with them
+                r.push({panel: p.id, location: p.location, fit: p.lengthMode == "fit",
                         widgets: p.widgets().map(function (w) {
                             return {id: w.id, type: w.type, index: w.index};
                         })});

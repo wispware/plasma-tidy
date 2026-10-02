@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, 
                              QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea,
                              QSpinBox, QStackedWidget, QTabWidget, QVBoxLayout, QWidget)
 
-from .consts import (ACTIVE_PLACES, ANIMATIONS, APP_NAME, DRAWER_SKIP, ICON_STYLES,
+from .consts import (ACTIVE_PLACES, ANIMATIONS, APP_NAME, DISPLAY_POPUP, DISPLAYS, DRAWER_SKIP,
+                     ICON_STYLES, POPUP_STYLES, TRAY_ARROWS,
                      MARK_ATTENTION, MARK_COUNT, MARK_NONE, MARK_OPEN, OPEN_CLICK, OPEN_HOVER,
                      PANEL_PLACES, PLACE_AFTER, PLACE_BEFORE, PLACE_MANUAL, SCOPE_DRAWER,
                      SCOPE_PANEL, TASKS_ALL, TASKS_PINNED, TASK_PLUGINS)
@@ -24,9 +25,10 @@ class DrawerPage(QWidget):
     """The settings of one drawer, in three parts: what is in it, how it opens and closes,
     and what its arrow looks like."""
 
-    def __init__(self, drawer, widgets, number, on_label=None):
+    def __init__(self, drawer, widgets, number, on_label=None, fit=False):
         super().__init__()
         self.drawer = drawer
+        self.fit = fit            # its panel is as long as its contents
         self.number = number
         self.panel_name = ""      # which panel it is in, when there are several
         self.on_label = on_label  # called when the name to show for this drawer changes
@@ -43,6 +45,14 @@ class DrawerPage(QWidget):
         self.name.textChanged.connect(self.relabel)
         row.addWidget(self.name, 1)
         outer.addLayout(row)
+
+        if self.fit:
+            note = QLabel(tr("This panel is as long as its contents: it changes size when a "
+                             "drawer opens. Showing the contents in a pop-up (Appearance) keeps "
+                             "the panel still."))
+            note.setWordWrap(True)
+            note.setEnabled(False)
+            outer.addWidget(note)
 
         parts = QTabWidget()
         outer.addWidget(parts)
@@ -149,6 +159,9 @@ class DrawerPage(QWidget):
         self.panel_open.setToolTip(tr("A left click where the panel is empty opens this drawer. "
                                       "If a drawer that closes on such a click is open, the "
                                       "click only closes; it opens when none is."))
+        if self.fit:
+            self.panel_open.setToolTip(tr("This panel is as long as its contents: it has no "
+                                          "empty spot to click on."))
         form.addRow(self.panel_open)
 
         self.on_desktop = QCheckBox(tr("Open when the desktop is shown"))
@@ -178,6 +191,9 @@ class DrawerPage(QWidget):
         self.panel_click = QCheckBox(tr("Close with a click on an empty spot in the panel"))
         self.panel_click.setChecked(config["closeOnPanelClick"])
         form.addRow(self.panel_click)
+        if self.fit:
+            self.panel_click.setToolTip(tr("This panel is as long as its contents: it has no "
+                                           "empty spot to click on."))
 
         self.after_use = QCheckBox(tr("Close after a click on something in the drawer"))
         self.after_use.setChecked(config["closeAfterUse"])
@@ -237,6 +253,50 @@ class DrawerPage(QWidget):
         self.reverse.setChecked(config["reverseArrow"])
         form.addRow(self.reverse)
 
+        self.display = QComboBox()
+        for key, label in DISPLAYS:
+            self.display.addItem(tr(label), key)
+        self.display.setCurrentIndex(max(0, self.display.findData(config["display"])))
+        self.display.setToolTip(tr(
+            "In the panel: what is in the drawer slides out next to the arrow. In a pop-up: "
+            "it stays out of the panel and comes up in a small window above the arrow, so the "
+            "panel never changes size; made for a panel that is as long as its contents. "
+            "Programs are shown as icons you can click; any other widget, such as the system "
+            "tray, is moved into the pop-up as it is and keeps its own shape."))
+        self.display.currentIndexChanged.connect(self.update_enabled)
+        form.addRow(tr("Shows its contents:"), self.display)
+
+        self.popup_style = QComboBox()
+        for key, label in POPUP_STYLES:
+            self.popup_style.addItem(tr(label), key)
+        self.popup_style.setCurrentIndex(max(0, self.popup_style.findData(config["popupStyle"])))
+        form.addRow(tr("Pop-up:"), self.popup_style)
+
+        self.popup_background = QCheckBox(tr("Pop-up has a background, like the panel"))
+        self.popup_background.setChecked(config["popupBackground"])
+        self.popup_background.setToolTip(tr("On: the pop-up looks like a piece of your panel. "
+                                            "Off: only the icons, on whatever is behind them."))
+        form.addRow(self.popup_background)
+
+        self.popup_gap = QCheckBox(tr("Pop-up floats above the panel, like Plasma's own pop-ups"))
+        self.popup_gap.setChecked(config["popupGap"])
+        self.popup_gap.setToolTip(tr("On: the pop-up keeps the same distance from the panel as "
+                                     "the system tray's own pop-up and the start menu, so "
+                                     "they all line up. Off: it stands on the panel's edge. "
+                                     "Only a floating panel shows the difference."))
+        form.addRow(self.popup_gap)
+
+        self.tray_arrow = QComboBox()
+        for key, label in TRAY_ARROWS:
+            self.tray_arrow.addItem(tr(label), key)
+        self.tray_arrow.setCurrentIndex(max(0, self.tray_arrow.findData(config["trayArrow"])))
+        self.tray_arrow.setToolTip(tr(
+            "With the system tray in a pop-up, only its icons go there. The tray's own arrow, "
+            "for the icons it keeps hidden, can stay in the panel, show there only while the "
+            "pop-up is open, or go altogether. Without it, the icons under it can only be "
+            "reached by setting them to Show on the System tray tab."))
+        form.addRow(tr("The system tray's own arrow (^):"), self.tray_arrow)
+
         self.animation = QComboBox()
         for key, label in ANIMATIONS:
             self.animation.addItem(tr(label), key)
@@ -247,6 +307,11 @@ class DrawerPage(QWidget):
                                      "the other. Fade: they fade together and the rest closes "
                                      "up."))
         form.addRow(tr("Animation:"), self.animation)
+        if self.fit:
+            self.animation.setToolTip(tr(
+                "This panel is as long as its contents, so it jumps to its new size when the "
+                "drawer opens. Sliding inside it adds nothing then: the icons fade, whatever "
+                "is chosen here."))
 
         self.duration = QSpinBox(suffix=" ms", minimum=50, maximum=2000, singleStep=50)
         self.duration.setValue(config["animationDuration"])
@@ -284,6 +349,17 @@ class DrawerPage(QWidget):
         self.task_mode.setEnabled(tasks)
         self.active_place.setEnabled(tasks)
         self.programs_box.setEnabled(tasks)
+        popup = self.display.currentData() == DISPLAY_POPUP
+        self.popup_style.setEnabled(popup)
+        self.popup_background.setEnabled(popup)
+        self.popup_gap.setEnabled(popup)
+        self.tray_arrow.setEnabled(popup and any(
+            check.isChecked() and plugin == "org.kde.plasma.systemtray"
+            for check, plugin in self.targets.values()))
+        self.animation.setEnabled(not popup and not self.fit)
+        # A panel as long as its contents has no empty spot to click on.
+        for box in (self.panel_click, self.panel_open):
+            box.setEnabled(not self.fit)
         self.hover_delay.setEnabled(self.open_on.currentData() == OPEN_HOVER)
         self.close_delay.setEnabled(bool(self.auto_close.currentData()))
         custom = self.icon.currentData() == "custom"
@@ -322,6 +398,11 @@ class DrawerPage(QWidget):
                 "indicator": self.mark.currentData(),
                 "place": self.place.currentData(),
                 "reverseArrow": self.reverse.isChecked(),
+                "display": self.display.currentData(),
+                "popupStyle": self.popup_style.currentData(),
+                "popupBackground": self.popup_background.isChecked(),
+                "popupGap": self.popup_gap.isChecked(),
+                "trayArrow": self.tray_arrow.currentData(),
                 "animation": self.animation.currentData(),
                 "animationDuration": self.duration.value()}
 
@@ -397,7 +478,8 @@ class DrawerTab(QWidget):
             panel = by_id.get(drawer["panel"])
             if not panel:
                 continue
-            page = DrawerPage(drawer, panel["widgets"], number, self.relabel)
+            page = DrawerPage(drawer, panel["widgets"], number, self.relabel,
+                              fit=bool(panel.get("fit")))
             # Which panel only matters when there is more than one.
             page.panel_name = (tr(PANEL_PLACES.get(panel["location"], "Panel"))
                                if len(self.panels) > 1 else "")

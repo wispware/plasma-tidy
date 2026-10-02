@@ -54,9 +54,11 @@ Tidy shows an eye in the system tray: open when your icons are visible, crossed 
 are hidden, grey when Tidy is switched off. Click it to open the settings; right-click for
 the menu.
 
-The first time Tidy starts, a welcome window asks the three things that matter most: after how
-long the icons hide, what brings them back, and whether Tidy starts at login. Everything else
-is in the settings.
+The first time Tidy starts, a welcome window asks the things that matter most: after how
+long the icons hide, what brings them back, and whether Tidy starts at login. It also offers
+to add a drawer for the programs in your panel and to tidy the system tray; both are off
+unless you tick them. Everything else is in the settings, and *Welcome window…* on the
+*General* tab shows the window again.
 
 In the settings window, *Apply* puts your changes to work and keeps the window open, so you
 can try them out; *OK* does the same and closes it. *Apply* becomes available as soon as you
@@ -135,6 +137,11 @@ The settings of a drawer come in three parts.
 | Mark on the closed drawer | A dot on the arrow when hidden programs are open, their number, a dot only when one asks for attention, or nothing. Applies when the drawer hides a task manager with all its programs | a dot |
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
+| Shows its contents | In the panel: what is in the drawer slides out next to the arrow. In a pop-up above the arrow: it stays out of the panel and comes up in a small window, so the panel never changes size | in the panel |
+| Pop-up | For programs: a row of icons, a column of icons standing on the arrow, a grid with names, or a list with names. Other widgets keep their own shape | a row |
+| Pop-up has a background, like the panel | On: the pop-up looks like a piece of your panel. Off: only the icons, on whatever is behind them | on |
+| Pop-up floats above the panel, like Plasma's own pop-ups | On: the same distance from the panel as the start menu and the system tray's own pop-up, so they line up. Off: it stands on the panel's edge. Only a floating panel shows the difference | on |
+| The system tray's own arrow (^) | With the system tray in a pop-up only its icons go there. Its own arrow, for the icons it keeps hidden, shows in the panel while the pop-up is open, always, or never | while the pop-up is open |
 | Animation | Slide: the icons of a task manager slide out from under the arrow at their normal size, like a drawer. Grow: they grow from small to their normal size. One by one: they come and go one after the other. Fade: they fade together and the rest closes up | slide |
 | Speed | How long the movement takes; one by one, how long each icon takes | 250 ms |
 
@@ -148,6 +155,18 @@ not running.
 A task manager is not hidden as a whole: its icons are, one by one, so they can slide away
 smoothly. The task manager itself keeps its place, and the rest of the panel does not jump.
 Other widgets give up their space.
+
+**A panel that is as long as its contents** (*Fit content* in Plasma's panel settings) changes
+size when a drawer opens, and Plasma does that in a jump. For such a panel, choose *In a pop-up
+above the arrow*: the drawer then keeps its programs out of the panel and shows them in a
+small window above the arrow when you click or point at it. A click starts the program or goes
+to its window, a middle click opens a new window. The pop-up never takes the keyboard from the
+window you are working in, and it closes when the pointer leaves it. Any other widget in such
+a drawer, the system tray for instance, is itself moved into the pop-up while the drawer works
+this way and does what it does in the panel. Of the system tray only the icons move: they stand
+one above the other in the *column* and *list* styles. The tray's own `^` arrow, for the icons
+it keeps hidden, shows in the panel while the pop-up is open, or always, or never, as you set it. Without the pop-up, Tidy lets the icons fade in such a panel instead
+of slide, and switches off the two options for a click on an empty spot: there is none.
 
 With *Open programs* in front or at the back, the open programs stand together and the pinned
 ones slide out next to them, instead of appearing in between.

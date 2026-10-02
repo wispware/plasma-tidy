@@ -439,6 +439,11 @@ class SettingsDialog(QDialog):
         defaults.clicked.connect(self.reset_defaults)
         row.addWidget(defaults)
         row.addStretch()
+        welcome = QPushButton(tr("Welcome window…"))
+        welcome.setToolTip(tr("Shows the window from the first start again, with the choices "
+                              "to begin with."))
+        welcome.clicked.connect(autohide.welcome)
+        row.addWidget(welcome)
         restore = QPushButton(QIcon.fromTheme("edit-undo"), tr("Restore everything…"))
         restore.setToolTip(tr("Shows everything again, puts back the Plasma settings that Tidy "
                               "changed, and switches Tidy off."))

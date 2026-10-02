@@ -14,7 +14,9 @@ import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
+import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
+import org.kde.ksvg as KSvg
 import org.kde.taskmanager as TaskManager
 
 PlasmoidItem {
@@ -39,7 +41,19 @@ PlasmoidItem {
     // Paused (Tidy's "Restore everything"): the drawer lets go of everything, as if it were
     // not there, until Tidy is switched on again or the arrow is clicked.
     // Peek (Tidy's key to hold): open for as long as the key is held, whatever else is set.
-    readonly property bool wantClosed: cfg.closed && !editing && !leaving && !cfg.paused && !peeking
+    // As a pop-up (for a panel that sizes itself to its contents, which would jump): what is
+    // in the drawer stays out of the panel all the time, and "open" means that a window above
+    // the arrow shows it. The programs of a task manager are drawn there by the drawer; any
+    // other widget (the system tray, a clock) is itself moved into that window, so it works
+    // exactly as it does in the panel.
+    readonly property bool popupMode: cfg.display === "popup"
+                                      && (taskManagers.length > 0 || wholeTargets.length > 0)
+    readonly property bool wantClosed: (popupMode || cfg.closed) && !editing && !leaving
+                                       && !cfg.paused && !(peeking && !popupMode)
+    readonly property bool wantClosedWhole: wantClosed
+    // In a panel that sizes itself to its contents the panel jumps to its new size first;
+    // sliding inside it then adds nothing, a fade is the calmest.
+    readonly property string animation: (cfg.fitPanel && cfg.animation !== "fade") ? "fade" : cfg.animation
 
     // --- what Tidy tells -------------------------------------------------------------------
 
@@ -88,11 +102,11 @@ PlasmoidItem {
     // Sliding makes things narrower until they are gone. Fading and one-by-one leave an
     // icon at its normal size and only change how see-through it is; a whole widget (the
     // system tray, the clock) still slides in one-by-one, as it is one thing.
-    readonly property bool shrinks: cfg.animation === "grow"
+    readonly property bool shrinks: animation === "grow"
     // "slide" (also for a style this version doesn't know): the icons keep their size and
     // slide out from under the arrow together, like a drawer.
-    readonly property bool slides: !shrinks && cfg.animation !== "fade" && cfg.animation !== "cascade"
-    readonly property bool widgetsShrink: cfg.animation !== "fade"
+    readonly property bool slides: !shrinks && animation !== "fade" && animation !== "cascade"
+    readonly property bool widgetsShrink: animation !== "fade"
     // How long the task manager takes to move an icon aside.
     readonly property int moveTime: Kirigami.Units.longDuration
     function scan() {
@@ -133,6 +147,17 @@ PlasmoidItem {
         polishTasks();
         console.warn("TIDYDRAWER " + JSON.stringify({
             own: ownPos, closed: cfg.closed, paused: cfg.paused, mode: cfg.taskMode,
+            lifted: (function () { var r = []; for (var i = 0; i < hiders.count; i++) { var h = hiders.objectAt(i);
+                if (h && h.applet) { var g = h.icons;
+                    r.push(h.modelData.plugin.replace("org.kde.plasma.", "") + ":" + (h.iconsHome ? "icons in popup" : (h.applet.parent === h.item ? "panel" : "popup"))
+                    + "/partly " + h.partly + "/factor" + h.factor
+                    + "/natural" + Math.round(h.natural) + "/wanted" + Math.round(h.wanted) + "/" + Math.round(h.applet.width) + "x" + Math.round(h.applet.height)
+                    + (g && g.parent ? "/in " + String(g.parent).split("(")[0] + " implicit " + Math.round(g.parent.implicitWidth) + " size " + Math.round(g.parent.width)
+                        + " kids=" + Array.from(g.parent.children).map(c => String(c).split("_")[0] + ":" + Math.round(c.width) + "x" + Math.round(c.height) + "/i" + Math.round(c.implicitWidth) + (c.visible ? "" : "/hidden")).join(",") : "")
+                    + (g ? "/grid count" + g.count + " rows" + g.rowsOrColumns + " cell" + Math.round(g.cellWidth) + "x" + Math.round(g.cellHeight) + " size" + Math.round(g.width) + "x" + Math.round(g.height) : "")); } } return r; })(),
+            display: cfg.display, shelf: popupMode ? (popup.visible ? "open" : "closed") + "/" + popupItems.length
+                + "/" + Math.round(popup.width) + "x" + Math.round(popup.height) : "",
+            animation: animation, fitPanel: cfg.fitPanel,
             hover: panelHover !== null,
             width: Math.round(root.width), stretching: stretching, savedFill: cfg.savedFill,
             arrow_icon: arrowIcon, windows: hiddenWindows, attention: hiddenAttention,
@@ -209,7 +234,12 @@ PlasmoidItem {
         return null;
     }
     onParentChanged: rescan.restart()
-    Component.onCompleted: { rescan.restart(); linkTidy(); }
+    Component.onCompleted: {
+        // A pop-up is never left open over a restart.
+        if (cfg.display === "popup" && !cfg.closed) cfg.closed = true;
+        rescan.restart();
+        linkTidy();
+    }
     Connections {
         target: root.container ? root.container.parent : null
         function onChildrenChanged() { rescan.restart(); }
@@ -221,9 +251,13 @@ PlasmoidItem {
 
     // --- hiding whole widgets ------------------------------------------------
 
+    // Counts up when the list of hiders changes, for what looks one up by its widget.
+    property int hidersVersion: 0
     Instantiator {
         id: hiders
         model: root.wholeTargets
+        onObjectAdded: { root.hidersVersion++; root.placeWidgets(); }
+        onObjectRemoved: root.hidersVersion++
         delegate: QtObject {
             id: h
             required property var modelData
@@ -233,7 +267,42 @@ PlasmoidItem {
             // closed, so the rest of the panel doesn't jump; the others give up their space.
             readonly property bool fills: item ? (root.vertical ? item.wantsToFillHeight : item.wantsToFillWidth) : false
             property real size: 0   // natural size, remembered while open
-            property real factor: root.wantClosed ? 0 : 1
+            // The widget itself, and how long it wants to be when it was never seen open.
+            readonly property Item applet: item ? item.applet : null
+            readonly property real wanted: {
+                if (!applet) return 0;
+                var hints = root.vertical
+                    ? [applet.Layout.preferredHeight, applet.Layout.minimumHeight, applet.implicitHeight]
+                    : [applet.Layout.preferredWidth, applet.Layout.minimumWidth, applet.implicitWidth];
+                return Math.max.apply(null, hints.filter(v => v > 0 && v < 100000).concat([0]));
+            }
+            readonly property real natural: size > 0 ? size : wanted
+            // Of the system tray only the icons go to the pop-up. The tray itself stays in the
+            // panel, with its own arrow for the icons it keeps hidden.
+            readonly property bool isTray: modelData ? modelData.plugin === "org.kde.plasma.systemtray" : false
+            property var icons: null       // the tray's grid of icons, once found
+            property var iconsHome: null   // where that grid belongs, while it is in the pop-up
+            function findIcons() {
+                if (!icons && isTray && applet && !root.vertical) icons = root.trayGrid(applet);
+            }
+            property Connections later: Connections {
+                target: root
+                function onSiblingsChanged() { h.findIcons(); }  // the tray builds its inside late
+            }
+            readonly property bool partly: icons !== null && root.liftWidgets
+            // With its icons gone the tray is only as long as what is left of it (its arrow).
+            readonly property real restLength: {
+                if (!iconsHome) return 0;
+                var total = 0, parts = iconsHome.children;
+                for (var i = 0; i < parts.length; i++) {
+                    var c = parts[i];
+                    if (c && c !== icons && c.visible) total += c.implicitWidth > 0 ? c.implicitWidth : c.width;
+                }
+                return total;
+            }
+            // ...as you chose: always, only while the pop-up is open, or never. Without its
+            // arrow the tray is hidden as a whole.
+            property real factor: (root.wantClosedWhole && !(partly && root.trayArrowShown)) ? 0 : 1
             property bool ready: false
             readonly property real slide: Math.min(size, Kirigami.Units.gridUnit * 14) * (1 - factor)
             readonly property bool moving: factor > 0 && factor < 1
@@ -241,10 +310,11 @@ PlasmoidItem {
             function measure() {
                 if (item && factor === 1) size = root.vertical ? item.height : item.width;
             }
-            Component.onCompleted: { measure(); ready = true; }
+            Component.onCompleted: { findIcons(); measure(); ready = true; }
+            onIconsChanged: root.placeWidgets()
             // A hider that goes while it is hiding (settings changed, drawer removed) must put
             // its widget back first: the bindings below only restore while they still exist.
-            function release() { ready = false; factor = 1; }
+            function release() { ready = false; factor = 1; root.placeWidget(h, false); }
             Component.onDestruction: release()
             onFactorChanged: measure()
             property Connections sizes: Connections {
@@ -254,7 +324,7 @@ PlasmoidItem {
             }
 
             Behavior on factor {
-                enabled: h.ready && root.cfg.animation !== "none" && !root.leaving
+                enabled: h.ready && root.animation !== "none" && !root.leaving
                 NumberAnimation { duration: root.cfg.animationDuration; easing.type: Easing.InOutCubic }
             }
 
@@ -300,22 +370,22 @@ PlasmoidItem {
             property Binding b7: Binding {
                 target: h.item ? h.item.Layout : null
                 property: root.vertical ? "maximumHeight" : "maximumWidth"
-                value: h.size * h.factor
-                when: h.shrinking
+                value: (h.iconsHome !== null ? h.restLength : h.size) * h.factor
+                when: h.shrinking || h.iconsHome !== null
                 restoreMode: Binding.RestoreBinding
             }
             property Binding b8: Binding {
                 target: h.item ? h.item.Layout : null
                 property: root.vertical ? "preferredHeight" : "preferredWidth"
-                value: h.size * h.factor
-                when: h.shrinking
+                value: (h.iconsHome !== null ? h.restLength : h.size) * h.factor
+                when: h.shrinking || h.iconsHome !== null
                 restoreMode: Binding.RestoreBinding
             }
             property Binding b9: Binding {
                 target: h.item ? h.item.Layout : null
                 property: root.vertical ? "minimumHeight" : "minimumWidth"
-                value: 0
-                when: h.shrinking
+                value: h.shrinking ? 0 : h.restLength
+                when: h.shrinking || h.iconsHome !== null
                 restoreMode: Binding.RestoreBinding
             }
 
@@ -353,7 +423,7 @@ PlasmoidItem {
             for (var i = 0; i < list.children.length; i++) {
                 var c = list.children[i];
                 if (c && c.model !== undefined && c.isWindow !== undefined)
-                    found.push({item: c, after: s.pos > ownPos});
+                    found.push({item: c, after: s.pos > ownPos, applet: s.item.applet});
             }
         });
         return found;
@@ -366,7 +436,7 @@ PlasmoidItem {
         });
         wanted.forEach(w => {
             if (!kept.some(h => h.item === w.item))
-                kept.push({item: w.item, hider: taskHiderComponent.createObject(
+                kept.push({item: w.item, applet: w.applet, hider: taskHiderComponent.createObject(
                     root, {task: w.item, after: w.after})});
         });
         taskHiders = kept;
@@ -382,6 +452,391 @@ PlasmoidItem {
         var n = 0;
         taskHiders.forEach(h => { if (h.hider && h.hider.takesPart && !h.hider.launcherOnly) n++; });
         ownWindows = n;
+        listPopup.restart();
+    }
+
+    // --- the pop-up ---------------------------------------------------------------------
+
+    // What the pop-up shows: the icons this drawer keeps out of the panel, in their order.
+    property var popupItems: []
+    Timer {
+        id: listPopup
+        interval: 0
+        onTriggered: {
+            var along = t => root.vertical ? t.y : t.x;
+            root.popupItems = root.taskHiders
+                .filter(h => h.hider && h.hider.takesPart && h.item)
+                .sort((a, b) => along(a.item) - along(b.item));
+        }
+    }
+    // The system tray's own arrow, for the icons it keeps hidden: in the panel always, only
+    // while the pop-up is open, or never.
+    readonly property bool trayArrowShown: cfg.trayArrow === "always"
+                                           || (cfg.trayArrow !== "never" && popupWanted)
+    property bool popupHovered: false
+    // Opened without the pointer (a shortcut, a peek) the pop-up waits; once the pointer has
+    // been in the drawer, leaving it closes the pop-up.
+    property bool popupVisited: false
+    // Only shown when there is something in it that has a size.
+    readonly property bool popupFilled: shelf.wantedWidth > 2 * shelf.edge && shelf.wantedHeight > 2 * shelf.edge
+    readonly property bool popupWanted: popupMode && (!cfg.closed || peeking) && !editing && !leaving
+                                        && !cfg.paused && popupFilled
+
+    // A whole widget in the pop-up: the widget itself is lifted out of its place in the panel
+    // (which stays there, empty and without width) into a holder in the pop-up, and put back
+    // when the drawer stops showing its contents that way.
+    property var holders: ({})       // widget id -> holder in the pop-up
+    readonly property bool liftWidgets: popupMode && !editing && !leaving && !cfg.paused
+    function placeWidget(h, lift) {
+        try {
+            if (!h || !h.item || !h.applet) return;
+            var holder = lift ? holders[h.modelData.id] : null;
+            if (h.icons) {
+                // The system tray: only its icons move; the tray stays where it is.
+                if (holder && h.icons.parent !== holder) {
+                    if (!h.iconsHome) h.iconsHome = h.icons.parent;
+                    h.icons.parent = holder;
+                    h.icons.x = 0;
+                    h.icons.y = 0;
+                } else if (!holder && h.iconsHome) {
+                    // Back into the tray, in front of what else is there (its arrow): a layout
+                    // keeps the order in which its parts were put in.
+                    var layout = h.iconsHome, rest = [];
+                    for (var i = 0; i < layout.children.length; i++)
+                        if (layout.children[i] !== h.icons) rest.push(layout.children[i]);
+                    h.icons.parent = layout;
+                    rest.forEach(c => { c.parent = null; c.parent = layout; });
+                    h.iconsHome = null;
+                    // The tray does not notice by itself that it has its icons back: a change
+                    // to how they lie in its layout makes it measure itself again.
+                    var fill = h.icons.Layout.fillWidth;
+                    h.icons.Layout.fillWidth = !fill;
+                    h.icons.Layout.fillWidth = fill;
+                }
+                if (h.applet.parent !== h.item) {
+                    h.applet.parent = h.item;
+                    h.applet.anchors.fill = h.item;
+                }
+                return;
+            }
+            var home = holder ? holder : h.item;
+            if (h.applet.parent === home) return;
+            h.applet.parent = home;
+            h.applet.anchors.fill = home;
+        } catch (e) {
+            console.warn("TIDYDRAWER cannot move a widget: " + e);
+        }
+    }
+    function placeWidgets() {
+        for (var i = 0; i < hiders.count; i++) placeWidget(hiders.objectAt(i), liftWidgets);
+    }
+    onLiftWidgetsChanged: placeWidgets()
+    onHoldersChanged: placeWidgets()
+    // The grid inside the system tray that holds its icons.
+    function trayGrid(item) {
+        var level = [item];
+        for (var depth = 0; depth < 8 && level.length; depth++) {
+            var next = [];
+            for (var i = 0; i < level.length; i++) {
+                var c = level[i];
+                if (c && c.rowsOrColumns !== undefined && c.count !== undefined) return c;
+                if (c && c.children) for (var j = 0; j < c.children.length; j++) next.push(c.children[j]);
+            }
+            level = next;
+        }
+        return null;
+    }
+    function hiderOf(id) {
+        for (var i = 0; i < hiders.count; i++) {
+            var h = hiders.objectAt(i);
+            if (h && h.modelData && h.modelData.id === id) return h;
+        }
+        return null;
+    }
+    onPopupWantedChanged: {
+        popupVisited = false;
+        if (popupWanted) placeAnchor();
+        popup.visible = popupWanted;
+    }
+
+    // The pop-up must stand on the panel's edge. A widget in the panel lies a little inside
+    // that edge, so a pop-up that takes its place from the widget would overlap the panel.
+    // It takes its place from an unseen item instead: as long as the arrow, and across the
+    // panel as thick as the panel's own background.
+    property Item panelBar: null
+    Item { id: popupAnchor }
+    function findBar() {
+        var top = root, best = null;
+        while (top.parent) top = top.parent;
+        function walk(item, depth) {
+            if (!item || depth > 4) return;
+            if (item.imagePath !== undefined && item.visible && item.width > 0
+                    && String(item.imagePath).indexOf("panel-background") >= 0
+                    && (!best || item.width * item.height > best.width * best.height))
+                best = item;
+            for (var i = 0; i < item.children.length; i++) walk(item.children[i], depth + 1);
+        }
+        try { walk(top, 0); } catch (e) {}
+        panelBar = best;
+    }
+    function placeAnchor() {
+        if (!panelBar) findBar();
+        var x = 0, y = 0, w = root.width, h = root.height;
+        try {
+            // Standing on the panel: from the panel's own background. Floating above it, the
+            // way Plasma's own pop-ups do: from the edge of the panel's window, which for a
+            // floating panel lies a little outside what you see of it.
+            var edge = panelBar;
+            if (cfg.popupGap || !edge) {
+                edge = root;
+                while (edge.parent) edge = edge.parent;
+            }
+            if (edge && edge !== root) {
+                var at = edge.mapToItem(root, 0, 0);
+                // Plasma's own pop-ups sit a pixel inside the window's edge.
+                var inset = edge === panelBar ? 0 : 1;
+                if (vertical) { x = at.x + inset; w = edge.width - 2 * inset; }
+                else { y = at.y + inset; h = edge.height - 2 * inset; }
+            }
+        } catch (e) {}
+        popupAnchor.x = x;
+        popupAnchor.y = y;
+        popupAnchor.width = w;
+        popupAnchor.height = h;
+    }
+    onPointerHereChanged: if (pointerHere && popupWanted) popupVisited = true
+
+    // Start a program from the pop-up, or go to its window: asked of the task manager whose
+    // icon it is, so it does exactly what a click in the panel does.
+    function useTask(entry, button) {
+        try {
+            var model = entry.applet.tasksModel, task = entry.item;
+            var index = (typeof task.modelIndex === "function") ? task.modelIndex()
+                                                                : model.makeModelIndex(task.index);
+            if (button === Qt.MiddleButton) model.requestNewInstance(index);
+            else model.requestActivate(index);
+        } catch (e) {
+            console.warn("TIDYDRAWER cannot use this program: " + e);
+        }
+        if (!peeking) cfg.closed = true;
+    }
+
+    PlasmaCore.Dialog {
+        id: popup
+        visualParent: popupAnchor
+        location: Plasmoid.location
+        // Never takes the keyboard away from the window you are working in.
+        type: PlasmaCore.Dialog.Dock
+        flags: Qt.WindowDoesNotAcceptFocus | Qt.WindowStaysOnTopHint
+        hideOnWindowDeactivate: false
+        // The window itself is see-through; what is behind the icons is drawn below, or not.
+        backgroundHints: PlasmaCore.Dialog.NoBackground
+        visible: false
+        onVisibleChanged: if (visible) appear.restart()
+
+        mainItem: Item {
+            id: shelf
+            readonly property string look: root.cfg.popupStyle
+            readonly property int count: root.popupItems.length
+            // A row or a column of icons, a grid with names, or a list with names.
+            readonly property bool named: look === "grid" || look === "list"
+            readonly property int columns: (look === "list" || look === "column") ? 1
+                : (look === "grid" ? Math.min(4, Math.max(1, count)) : Math.max(1, count))
+            // A column stands on the panel: the first program is the one nearest to the arrow.
+            readonly property bool upwards: look === "column" && Plasmoid.location === PlasmaCore.Types.BottomEdge
+            readonly property int iconSize: look === "list" ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large
+            readonly property int pad: Kirigami.Units.smallSpacing
+            readonly property int cellWidth: look === "list" ? Kirigami.Units.gridUnit * 12
+                : (look === "grid" ? Kirigami.Units.gridUnit * 5 : iconSize + pad * 4)
+            readonly property int cellHeight: look === "grid"
+                ? iconSize + pad * 5 + Kirigami.Units.gridUnit : iconSize + pad * 3
+            // The programs, and next to (or under) them the widgets that were lifted in.
+            readonly property bool stacked: look === "column" || look === "list"
+            readonly property real thick: root.container && root.container.parent
+                ? (root.vertical ? root.container.parent.width : root.container.parent.height)
+                : Kirigami.Units.iconSizes.large
+            readonly property real programsWidth: count > 0 ? columns * cellWidth : 0
+            readonly property real programsHeight: count > 0 ? Math.ceil(count / columns) * cellHeight : 0
+            // With a background: the panel's own, so the pop-up looks like a piece of panel.
+            // Without: only the icons, on whatever is behind them.
+            readonly property int edge: root.cfg.popupBackground ? Kirigami.Units.smallSpacing * 2 : 0
+            // The window gives this item its size, so the size we want is told through the
+            // layout hints below; a binding on width and height would be lost at the first show.
+            // How much room the lifted widgets take, worked out from their holders: the grid
+            // that places them only knows its size once the window has been shown.
+            readonly property real widgetsWidth: {
+                var all = root.holders, total = 0;
+                for (var id in all) total = stacked ? Math.max(total, all[id].width) : total + all[id].width;
+                return total;
+            }
+            readonly property real widgetsHeight: {
+                var all = root.holders, total = 0;
+                for (var id in all) total = stacked ? total + all[id].height : Math.max(total, all[id].height);
+                return total;
+            }
+            readonly property real wantedWidth: (stacked ? Math.max(programsWidth, widgetsWidth)
+                                                         : programsWidth + widgetsWidth) + 2 * edge
+            readonly property real wantedHeight: (stacked ? programsHeight + widgetsHeight
+                                                          : Math.max(programsHeight, widgetsHeight)) + 2 * edge
+            implicitWidth: Math.max(Kirigami.Units.gridUnit, wantedWidth)
+            implicitHeight: Math.max(Kirigami.Units.gridUnit, wantedHeight)
+            width: implicitWidth      // a first size; the window sets it from then on
+            height: implicitHeight
+            KSvg.FrameSvgItem {
+                anchors.fill: parent
+                visible: root.cfg.popupBackground
+                imagePath: "widgets/panel-background"
+            }
+            // Never smaller than something: a window without size is an error that takes all
+            // of Plasma down with it.
+            readonly property real safeWidth: Math.max(Kirigami.Units.gridUnit, wantedWidth)
+            readonly property real safeHeight: Math.max(Kirigami.Units.gridUnit, wantedHeight)
+            Layout.minimumWidth: safeWidth
+            Layout.preferredWidth: safeWidth
+            Layout.maximumWidth: safeWidth
+            Layout.minimumHeight: safeHeight
+            Layout.preferredHeight: safeHeight
+            Layout.maximumHeight: safeHeight
+
+            HoverHandler { onHoveredChanged: root.popupHovered = hovered }
+
+            // Coming up out of the panel.
+            property real shift: 0
+            readonly property bool fromBelow: Plasmoid.location !== PlasmaCore.Types.TopEdge
+            transform: Translate { y: shelf.fromBelow ? shelf.shift : -shelf.shift }
+            ParallelAnimation {
+                id: appear
+                NumberAnimation { target: shelf; property: "opacity"; from: 0; to: 1
+                                  duration: Math.max(0, root.cfg.animationDuration); easing.type: Easing.OutCubic }
+                NumberAnimation { target: shelf; property: "shift"; from: Kirigami.Units.gridUnit; to: 0
+                                  duration: Math.max(0, root.cfg.animationDuration); easing.type: Easing.OutCubic }
+            }
+
+            Grid {
+                id: widgets
+                x: shelf.edge + (shelf.stacked ? 0 : shelf.programsWidth)
+                y: shelf.edge + (shelf.stacked ? shelf.programsHeight : 0)
+                columns: shelf.stacked ? 1 : Math.max(1, root.wholeTargets.length)
+                Repeater {
+                    model: root.wholeTargets
+                    delegate: Item {
+                        id: holder
+                        required property var modelData
+                        readonly property var hider: { root.hidersVersion; return root.hiderOf(modelData.id); }
+                        readonly property real along: hider ? hider.natural : 0
+                        // The system tray gives only its icons; in a column they stand one above
+                        // the other, otherwise in the row (or rows) they have in the panel.
+                        readonly property var icons: hider ? hider.icons : null
+                        readonly property bool lifted: hider ? hider.iconsHome !== null : false
+                        readonly property bool upright: icons !== null && shelf.stacked
+                        readonly property int rows: icons ? Math.max(1, icons.rowsOrColumns) : 1
+                        width: icons ? (upright ? icons.cellWidth : icons.cellWidth * Math.ceil(icons.count / rows))
+                                     : (root.vertical ? shelf.thick : along)
+                        height: icons ? (upright ? icons.cellHeight * icons.count : icons.cellHeight * rows)
+                                      : (root.vertical ? along : shelf.thick)
+                        Binding {
+                            target: holder.icons; property: "flow"; value: GridView.FlowLeftToRight
+                            when: holder.lifted && holder.upright
+                            restoreMode: Binding.RestoreBindingOrValue
+                        }
+                        Binding {
+                            target: holder.icons; property: "width"; value: holder.width
+                            when: holder.lifted
+                            restoreMode: Binding.RestoreBindingOrValue
+                        }
+                        Binding {
+                            target: holder.icons; property: "height"; value: holder.height
+                            when: holder.lifted
+                            restoreMode: Binding.RestoreBindingOrValue
+                        }
+                        Component.onCompleted: {
+                            var all = root.holders;
+                            all[modelData.id] = holder;
+                            root.holders = Object.assign({}, all);
+                        }
+                        Component.onDestruction: {
+                            // First the widget back to the panel, then the holder may go.
+                            root.placeWidget(hider, false);
+                            var all = Object.assign({}, root.holders);
+                            delete all[modelData.id];
+                            root.holders = all;
+                        }
+                    }
+                }
+            }
+
+            Grid {
+                x: shelf.edge
+                y: shelf.edge
+                columns: shelf.columns
+                Repeater {
+                    model: shelf.upwards ? root.popupItems.slice().reverse() : root.popupItems
+                    delegate: MouseArea {
+                        id: cell
+                        required property var modelData
+                        // The icon in the task manager that this stands for, and what it tells.
+                        readonly property var info: {
+                            try { return modelData.item.model; } catch (e) { return null; }
+                        }
+                        readonly property bool running: info ? info.IsLauncher !== true : false
+                        readonly property string name: info ? String((running ? info.display : info.AppName)
+                                                                     || info.AppName || info.display || "") : ""
+                        width: shelf.cellWidth
+                        height: shelf.cellHeight
+                        hoverEnabled: true
+                        // Left: start it, or go to its window. Middle: a new window.
+                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                        onClicked: mouse => root.useTask(modelData, mouse.button)
+                        QQC2.ToolTip.visible: containsMouse && !shelf.named && name !== ""
+                        QQC2.ToolTip.text: name
+                        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: Kirigami.Units.smallSpacing
+                            color: Kirigami.Theme.highlightColor
+                            opacity: cell.containsMouse ? 0.25 : 0
+                        }
+                        Kirigami.Icon {
+                            id: picture
+                            width: shelf.iconSize
+                            height: shelf.iconSize
+                            source: cell.info ? cell.info.decoration : ""
+                            active: cell.containsMouse
+                            x: shelf.look === "list" ? shelf.pad : Math.round((parent.width - width) / 2)
+                            y: shelf.pad
+                        }
+                        // A program that is open: a small bar under its icon, as in the panel.
+                        Rectangle {
+                            visible: cell.running
+                            width: Math.round(picture.width * 0.4)
+                            height: 2
+                            radius: 1
+                            color: (cell.info && cell.info.IsDemandingAttention === true)
+                                ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.highlightColor
+                            anchors.horizontalCenter: picture.horizontalCenter
+                            anchors.top: picture.bottom
+                            anchors.topMargin: 1
+                        }
+                        Text {
+                            visible: shelf.named
+                            text: cell.name
+                            color: Kirigami.Theme.textColor
+                            font: Kirigami.Theme.defaultFont
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            horizontalAlignment: shelf.look === "grid" ? Text.AlignHCenter : Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
+                            x: shelf.look === "grid" ? shelf.pad : picture.x + picture.width + shelf.pad * 2
+                            y: shelf.look === "grid" ? picture.y + picture.height + shelf.pad * 2 : 0
+                            width: parent.width - x - shelf.pad
+                            height: shelf.look === "grid" ? Kirigami.Units.gridUnit : parent.height
+                        }
+                    }
+                }
+            }
+        }
     }
     // For Tidy's settings window: which programs the task manager shows, so that you can
     // choose per program. Written only when the list changes.
@@ -411,7 +866,7 @@ PlasmoidItem {
     // In a cascade the icons go one after the other: closing, the one furthest from the
     // arrow first; opening, the nearest first.
     function cascadeDelay(hider) {
-        if (cfg.animation !== "cascade" || !hider.task) return 0;
+        if (animation !== "cascade" || !hider.task) return 0;
         var along = t => vertical ? t.y : t.x;
         var mine = along(hider.task), before = 0;
         taskHiders.forEach(h => {
@@ -858,6 +1313,10 @@ PlasmoidItem {
             // For testing: opens the widget's own settings.
             if (root.cfg.debug === "configure") Plasmoid.internalAction("configure").trigger();
             // For testing: as if the panel were clicked at this place, "tap:<pixels>".
+            // As if a program in the pop-up were clicked: "use:<number>".
+            var act = String(root.cfg.debug).split(":");
+            if (act[0] === "use" && root.popupItems[Number(act[1])])
+                root.useTask(root.popupItems[Number(act[1])], Qt.LeftButton);
             if (String(root.cfg.debug).indexOf("tap:") === 0) {
                 var at = parseFloat(String(root.cfg.debug).split(":")[1]);
                 var before = root.cfg.closed;
@@ -1181,8 +1640,9 @@ PlasmoidItem {
             Component.onDestruction: { try { if (handler) handler.destroy(); } catch (e) {} }
         }
     }
-    readonly property bool pointerInDrawer: arrowHovered || itemsHovered
-    readonly property bool pointerHere: cfg.closeScope === "panel" ? pointerInPanel : pointerInDrawer
+    readonly property bool pointerInDrawer: arrowHovered || itemsHovered || popupHovered
+    readonly property bool pointerHere: cfg.closeScope === "panel" ? (pointerInPanel || popupHovered)
+                                                                   : pointerInDrawer
     function hasPopupOpen(applet) {
         // Widgets shown in full in the panel (task manager, pager, ...) always count as
         // "expanded"; only a widget with an icon in the panel has a real pop-up.
@@ -1195,8 +1655,11 @@ PlasmoidItem {
 
     Timer {
         id: closeTimer
-        interval: Math.max(0, root.cfg.closeDelay)
-        running: root.cfg.autoClose && !root.cfg.closed && !root.cfg.paused && !root.editing
+        interval: root.cfg.autoClose ? Math.max(0, root.cfg.closeDelay) : 700
+        // A pop-up closes when the pointer leaves it, whether or not "close by itself" is set:
+        // it lies over your windows.
+        running: (root.cfg.autoClose || (root.popupMode && root.popupVisited))
+                 && !root.cfg.closed && !root.cfg.paused && !root.editing
                  && !root.pointerHere && !root.popupOpen
                  && (root.cfg.closeScope !== "panel" || root.panelHover !== null)
         onTriggered: root.cfg.closed = true
@@ -1243,9 +1706,14 @@ PlasmoidItem {
         var at = (vertical ? container.y : container.x) + thickness / 2;
         return at < (vertical ? container.parent.height : container.parent.width) / 2;
     }
-    readonly property bool pointsForward: (cfg.closed === inFirstHalf) !== cfg.reverseArrow
+    // As a pop-up it points to where the pop-up comes: away from the screen edge.
+    readonly property bool popupAhead: Plasmoid.location === PlasmaCore.Types.TopEdge
+                                       || Plasmoid.location === PlasmaCore.Types.LeftEdge
+    readonly property bool pointsForward: popupMode ? ((cfg.closed === popupAhead) !== cfg.reverseArrow)
+                                                    : ((cfg.closed === inFirstHalf) !== cfg.reverseArrow)
+    readonly property bool arrowUpDown: popupMode ? !vertical : vertical
     readonly property string arrowIcon: {
-        var f = pointsForward;
+        var f = pointsForward, vertical = arrowUpDown;
         switch (cfg.icon) {
         case "double":
             return vertical ? (f ? "arrow-down-double" : "arrow-up-double")
@@ -1253,7 +1721,7 @@ PlasmoidItem {
         case "triangle":
             return vertical ? (f ? "pan-down-symbolic" : "pan-up-symbolic")
                             : (f ? "pan-end-symbolic" : "pan-start-symbolic");
-        case "dots": return vertical ? "view-more-symbolic" : "view-more-horizontal-symbolic";
+        case "dots": return root.vertical ? "view-more-symbolic" : "view-more-horizontal-symbolic";
         case "menu": return "application-menu";
         case "handle": return "drag-handle-symbolic";
         case "custom": return cfg.iconCustom;

@@ -121,6 +121,7 @@ class Tidy(QObject):
 
         QTimer.singleShot(5000, self.backup_launchers)
         QTimer.singleShot(2500, self.update_helpers)
+        QTimer.singleShot(4000, self.update_fit_panels)
 
         # New icons in the system tray.
         self.tray_timer = QTimer(self, interval=2000, singleShot=True)
@@ -369,12 +370,26 @@ class Tidy(QObject):
         """A helper has started on a desktop (at Tidy's start, or Plasma's): tell it how
         things are."""
         self.helpers.add(desktop)
+        if self.hidden and not self.hidden_by_helper and self.helper_way():
+            # The icons were hidden the other way while the helper was not there yet (it was
+            # just switched on, or Plasma has just started): hand them over to the helper.
+            self.show()
+            self.hide()
         self.send_state()
 
     def on_desktop_click(self):
         """Reported by a helper: a click on the desktop while the icons are away."""
         if self.hidden and not self.hold_icons:
             self.show()
+
+    def update_fit_panels(self):
+        """Tell each drawer whether its panel is as long as its contents; it then fades
+        instead of sliding. Looked at when Tidy or Plasma starts and when settings change."""
+        fit = {panel["panel"]: bool(panel.get("fit")) for panel in self.plasma.panel_widgets()}
+        for drawer in self.plasma.drawers():
+            wanted = fit.get(drawer["panel"], False)
+            if drawer["config"]["fitPanel"] != wanted:
+                self.plasma.set_drawer_config(drawer["id"], {"fitPanel": wanted})
 
     def update_helpers(self):
         """Put a helper on the desktops, or take it away, as the setting says."""
@@ -396,6 +411,7 @@ class Tidy(QObject):
     def on_plasma_restarted(self):
         self.helpers.clear()  # the new Plasma's helpers report by themselves
         self.update_helpers()
+        self.update_fit_panels()
         if not self.hidden:
             self.recover_after_crash()
         if not self.focus:
@@ -788,6 +804,7 @@ class Tidy(QObject):
         dlg.tray_tab.apply()
         self.backup_launchers()  # before a drawer may start holding them
         dlg.drawer_tab.apply()
+        self.update_fit_panels()
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
         if self.kwin_setup() != old_kwin:
             self.load_kwin()

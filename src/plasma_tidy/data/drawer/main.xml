@@ -9,6 +9,12 @@
     <entry name="name" type="String"><default></default></entry>
     <entry name="targets" type="StringList"><default></default></entry>
     <entry name="taskMode" type="String"><default>all</default></entry>
+    <entry name="display" type="String"><default>panel</default></entry>
+    <entry name="popupStyle" type="String"><default>row</default></entry>
+    <entry name="popupBackground" type="Bool"><default>true</default></entry>
+    <entry name="popupGap" type="Bool"><default>true</default></entry>
+    <entry name="trayArrow" type="String"><default>open</default></entry>
+    <entry name="fitPanel" type="Bool"><default>false</default></entry>
     <entry name="taskKeep" type="StringList"><default></default></entry>
     <entry name="taskList" type="String"><default></default></entry>
     <entry name="openOn" type="String"><default>click</default></entry>

@@ -7,8 +7,10 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                              QHBoxLayout, QLabel, QSpinBox, QVBoxLayout)
 
-from .consts import APP_NAME, MODE_ACTIVITY, MODE_CLICK
+from .consts import APP, APP_NAME, MODE_ACTIVITY, MODE_CLICK, TASK_PLUGINS
 from .i18n import tr
+from .tray import remember_tray, tray_app_items, tray_minimal
+from .widgets import drawer_texts, install_drawer
 
 
 class Welcome(QDialog):
@@ -35,7 +37,7 @@ class Welcome(QDialog):
         layout.addLayout(head)
 
         intro = QLabel(tr("{app} keeps your desktop clean. It hides the desktop icons when you "
-                          "don't need them and brings them back when you do. Three choices to "
+                          "don't need them and brings them back when you do. A few choices to "
                           "start with; everything can be changed later.").format(app=APP_NAME))
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -54,9 +56,27 @@ class Welcome(QDialog):
         form.addRow(self.autostart)
         layout.addLayout(form)
 
-        more = QLabel(tr("There is more in the settings: drawers that tuck panel icons away, a "
-                         "tidy system tray, focus mode, rules and profiles. {app} lives in the "
-                         "system tray: click its eye icon to open the settings.")
+        # The two things you would not find by yourself. They change the panel, so they are
+        # offered, not done.
+        also = QLabel(tr("{app} can also tidy your panel:").format(app=APP_NAME))
+        layout.addWidget(also)
+        self.drawer_spot = self.find_drawer_spot()
+        self.drawer = QCheckBox(tr("Add a drawer for the programs in the panel"))
+        self.drawer.setToolTip(tr("Puts an arrow next to the task manager. A click on it tucks "
+                                  "the program icons away, and brings them back."))
+        if not self.drawer_spot:
+            self.drawer.setEnabled(False)
+            self.drawer.setToolTip(tr("There is one already, or the panel has no task manager."))
+        layout.addWidget(self.drawer)
+        self.tray = QCheckBox(tr("Tidy the system tray"))
+        self.tray.setToolTip(tr("Only network, volume and battery stay in view, and Tidy's own "
+                                "icon; the rest goes under the ^ arrow."))
+        self.tray.setEnabled(autohide.plasma.tray_config() is not None)
+        layout.addWidget(self.tray)
+
+        more = QLabel(tr("There is more in the settings: focus mode, rules, profiles and a key "
+                         "to peek. {app} lives in the system tray: click its eye icon to open "
+                         "the settings.")
                       .format(app=APP_NAME))
         more.setWordWrap(True)
         more.setEnabled(False)
@@ -71,11 +91,35 @@ class Welcome(QDialog):
         settings_button.clicked.connect(self.open_settings)
         layout.addWidget(buttons)
 
+    def find_drawer_spot(self):
+        """Where a first drawer would go: (panel id, [task manager ids]) for a task manager
+        that no drawer holds yet, or None."""
+        plasma = self.autohide.plasma
+        taken = {i for d in plasma.drawers() for i in d["config"]["targets"]}
+        for panel in plasma.panel_widgets():
+            targets = [str(w["id"]) for w in panel["widgets"]
+                       if w["type"] in TASK_PLUGINS and str(w["id"]) not in taken]
+            if targets:
+                return panel["panel"], targets
+        return None
+
     def save(self):
         a = self.autohide
         a.settings.setValue("timeout", self.timeout.value())
         a.settings.setValue("mode", self.mode.currentData())
         a.set_autostart(self.autostart.isChecked())
+        if self.drawer.isChecked() and self.drawer_spot:
+            panel, targets = self.drawer_spot
+            a.backup_launchers()  # before a drawer may start holding them
+            install_drawer()
+            a.plasma.add_drawer(panel, dict(drawer_texts(), targets=targets))
+        tray = a.plasma.tray_config() if self.tray.isChecked() else None
+        if tray:
+            remember_tray(a.settings, tray)
+            extra, shown, hidden = tray_minimal(tray, tray_app_items())
+            # Tidy's own icon stays in view: it is the way to the settings.
+            hidden = [i for i in hidden if i != APP]
+            a.plasma.set_tray_config(extra, shown + ([] if APP in shown else [APP]), hidden)
         a.after_settings(a.hidden, a.hidden_setup())
 
     def accept(self):

@@ -22,6 +22,16 @@ class WhichWay(unittest.TestCase):
         tidy.on_helper_ready("29")
         self.assertTrue(tidy.helper_way())
 
+    def test_icons_hidden_the_other_way_are_handed_over(self):
+        tidy = FakeTidy()
+        tidy.helper_count = 1
+        tidy.hidden = True  # hidden before the helper was there
+        tidy.on_helper_ready("1")
+        self.assertEqual((tidy.shown, tidy.hidden_times), (1, 1))
+        tidy.hidden_by_helper = True
+        tidy.on_helper_ready("1")  # reporting again changes nothing
+        self.assertEqual((tidy.shown, tidy.hidden_times), (1, 1))
+
     def test_not_when_switched_off(self):
         tidy = FakeTidy(use_helper=False)
         tidy.helper_count = 1
