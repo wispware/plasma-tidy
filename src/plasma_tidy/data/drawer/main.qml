@@ -1865,7 +1865,9 @@ PlasmoidItem {
     function contentExtent(k) {
         var full = vertical ? k.height : k.width;
         var wanted = vertical ? k.applet.Layout.preferredHeight : k.applet.Layout.preferredWidth;
-        return (wanted > 0 && wanted < full) ? wanted : full;
+        // (Nothing wanted at all: a task manager with every icon in a closed drawer. A widget
+        // that does not say what it wants gives -1.)
+        return (wanted >= 0 && wanted < full) ? wanted : full;
     }
     function isEmptySpot(pos) {
         if (!container || !container.parent) return false;
@@ -1915,7 +1917,7 @@ PlasmoidItem {
                 var full = root.vertical ? item.height : item.width;
                 var wanted = root.vertical ? item.applet.Layout.preferredHeight
                                            : item.applet.Layout.preferredWidth;
-                return (wanted > 0 && wanted < full) ? wanted : full;
+                return (wanted >= 0 && wanted < full) ? wanted : full;
             }
             readonly property bool inside: {
                 if (!handler || !handler.hovered || !item) return false;
