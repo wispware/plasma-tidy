@@ -353,7 +353,8 @@ plasma-tidy --version   print the version
   are due to hide.
 - **A small KWin script**, loaded while Tidy runs, tells Tidy whether the desktop is the
   active window, and when the pointer moves over the desktop while another window is the
-  active one. It also handles the screen corner. It only tells changes, and it never sees
+  active one (it looks at most twice a second). It also tells when a menu opens or the
+  last one closes, and handles the screen corner. It only tells changes, and it never sees
   what you type or click.
 - **The drawer** is a small Plasma widget that ships inside Tidy and is written to
   `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
@@ -362,7 +363,7 @@ plasma-tidy --version   print the version
   when you ask for it: with the arrow *just after* the task manager it switches off *Fill
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
   drawer keeps working when Tidy is not running; Tidy is only needed to change its settings,
-  for a peek and for opening when the desktop is shown.
+  for a peek, for opening when the desktop is shown, and to stay open under any menu.
 - **Balloons and previews**: Plasma's text balloons are switched with Plasma's own setting
   (`plasmarc`), and the preview in a program's pop-up with the task manager's own. Plasma has
   no setting for the rest, so a drawer that holds the task manager does it, in the same way
@@ -446,8 +447,10 @@ The tests need nothing but Python and PyQt6:
 python3 -m unittest
 ```
 
-They cover when the icons hide and what postpones that, the rules, what the helper is told,
-the translations (every text has one), and that every name the code uses exists.
+They cover when the icons hide and what postpones that, what Tidy changes in Plasma and puts
+back (hiding and showing, focus mode, the balloons, a profile), the rules, what the helper is
+told, the translations (every text has one), and that every name the code and the widgets use
+exists.
 
 ## Feedback
 
