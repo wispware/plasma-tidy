@@ -283,7 +283,7 @@ PlasmoidItem {
             property var icons: null       // the tray's grid of icons, once found
             property var iconsHome: null   // where that grid belongs, while it is in the pop-up
             function findIcons() {
-                if (!icons && isTray && applet && !root.vertical) icons = root.trayGrid(applet);
+                if (!icons && isTray && applet) icons = root.trayGrid(applet);
             }
             property Connections later: Connections {
                 target: root
@@ -296,7 +296,9 @@ PlasmoidItem {
                 var total = 0, parts = iconsHome.children;
                 for (var i = 0; i < parts.length; i++) {
                     var c = parts[i];
-                    if (c && c !== icons && c.visible) total += c.implicitWidth > 0 ? c.implicitWidth : c.width;
+                    if (!c || c === icons || !c.visible) continue;
+                    total += root.vertical ? (c.implicitHeight > 0 ? c.implicitHeight : c.height)
+                                           : (c.implicitWidth > 0 ? c.implicitWidth : c.width);
                 }
                 return total;
             }
@@ -583,9 +585,9 @@ PlasmoidItem {
         if (!panelBar) findBar();
         var x = 0, y = 0, w = root.width, h = root.height;
         try {
-            // Standing on the panel: from the panel's own background. Floating above it, the
-            // way Plasma's own pop-ups do: from the edge of the panel's window, which for a
-            // floating panel lies a little outside what you see of it.
+            // Across the panel. Standing on it: from the panel's own background. Floating
+            // above it, the way Plasma's own pop-ups do: from the edge of the panel's window,
+            // which for a floating panel lies a little outside what you see of it.
             var edge = panelBar;
             if (cfg.popupGap || !edge) {
                 edge = root;
@@ -598,27 +600,41 @@ PlasmoidItem {
                 if (vertical) { x = at.x + inset; w = edge.width - 2 * inset; }
                 else { y = at.y + inset; h = edge.height - 2 * inset; }
             }
+            // Along the panel: in the middle of the arrow, but never past the panel's ends,
+            // so the pop-up's edge lines up with the panel's when the arrow is near an end.
+            // A pop-up is centred on what it belongs to, so that is made a thin line where
+            // the pop-up's middle must come.
+            var size = vertical ? shelf.safeHeight : shelf.safeWidth;
+            var start = thickness / 2 - size / 2;
+            if (panelBar) {
+                var bar = panelBar.mapToItem(root, 0, 0);
+                var low = vertical ? bar.y : bar.x;
+                var high = low + (vertical ? panelBar.height : panelBar.width);
+                if (high - low >= size) {
+                    start = Math.max(low, Math.min(start, high - size));
+                    // A pop-up that lies along the panel (a column beside a side panel, a row
+                    // above a bottom one) and is nearly at an end goes all the way, rather
+                    // than a small step short of it. A narrow one stays over its arrow.
+                    var near = vertical ? panelBar.width : panelBar.height;
+                    if (size > 2 * near) {
+                        if (start - low < near) start = low;
+                        else if (high - (start + size) < near) start = high - size;
+                    }
+                }
+            }
+            if (vertical) { y = start + size / 2 - 1; h = 2; }
+            else { x = start + size / 2 - 1; w = 2; }
         } catch (e) {}
         popupAnchor.x = x;
         popupAnchor.y = y;
         popupAnchor.width = w;
         popupAnchor.height = h;
     }
-    onPointerHereChanged: if (pointerHere && popupWanted) popupVisited = true
-
-    // Start a program from the pop-up, or go to its window: asked of the task manager whose
-    // icon it is, so it does exactly what a click in the panel does.
-    function useTask(entry, button) {
-        try {
-            var model = entry.applet.tasksModel, task = entry.item;
-            var index = (typeof task.modelIndex === "function") ? task.modelIndex()
-                                                                : model.makeModelIndex(task.index);
-            if (button === Qt.MiddleButton) model.requestNewInstance(index);
-            else model.requestActivate(index);
-        } catch (e) {
-            console.warn("TIDYDRAWER cannot use this program: " + e);
-        }
-        if (!peeking) cfg.closed = true;
+    // The pop-up's size changes with what is in it: keep it in place.
+    Connections {
+        target: shelf
+        function onSafeWidthChanged() { if (root.popupWanted) root.placeAnchor(); }
+        function onSafeHeightChanged() { if (root.popupWanted) root.placeAnchor(); }
     }
 
     PlasmaCore.Dialog {
