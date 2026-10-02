@@ -51,7 +51,8 @@ from PyQt6.QtGui import (QAction, QColor, QDesktopServices, QFont, QIcon, QKeySe
                          QPainter)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                              QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-                             QGroupBox, QHBoxLayout, QKeySequenceEdit, QLabel, QLineEdit,
+                             QGroupBox, QHBoxLayout, QInputDialog, QKeySequenceEdit, QLabel,
+                             QLineEdit,
                              QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
                              QSpinBox, QStackedWidget, QSystemTrayIcon, QTabWidget,
                              QVBoxLayout, QWidget)
@@ -97,7 +98,7 @@ PLACE_BEFORE = "before"
 PLACE_AFTER = "after"
 PLACE_MANUAL = "manual"
 # The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
-DRAWER_DEFAULTS = {"closed": False, "paused": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
+DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "closeAfterUse": False, "closeOnMaximized": False, "openOnDesktop": False,
@@ -144,7 +145,7 @@ ICON_STYLES = [("arrow", "Arrow"), ("double", "Double arrow"), ("triangle", "Tri
                ("custom", "My own icon"), ("none", "No icon")]
 # Texts of the drawer's own settings page (DRAWER_CONFIG_QML); it gets them translated.
 DRAWER_PAGE_TEXTS = [
-    "In this drawer", "Task manager:", "Hide all programs, open ones too",
+    "Name:", "In this drawer", "Task manager:", "Hide all programs, open ones too",
     "Hide only pinned programs that are not open", "Opening and closing", "Open with:",
     "A click on the arrow", "Pointing at the arrow (a click works too)", "Pointing opens after:",
     "Open when a program asks for attention", "Open when the desktop is shown",
@@ -161,6 +162,15 @@ DRAWER_PAGE_TEXTS = [
 
 PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left panel",
                 "right": "Right panel"}
+
+# Tidy's own settings that belong to a profile or an export, with their defaults.
+PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,middle",
+                    "rehide": "idle", "corner": "none", "only_desktop": True,
+                    "hide_panel": False, "skip_screens": "", "drawer_follow": False,
+                    "focus_icons": True, "focus_drawers": True, "focus_tray": True,
+                    "focus_panel": False, "tray_hide_new": False}
+# What a drawer is doing right now; not part of a profile.
+DRAWER_STATE = ("closed", "paused")
 
 TRAY_AUTO = "auto"
 TRAY_SHOWN = "shown"
@@ -296,6 +306,7 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <group name="General">
     <entry name="closed" type="Bool"><default>false</default></entry>
     <entry name="paused" type="Bool"><default>false</default></entry>
+    <entry name="name" type="String"><default></default></entry>
     <entry name="targets" type="StringList"><default></default></entry>
     <entry name="taskMode" type="String"><default>all</default></entry>
     <entry name="openOn" type="String"><default>click</default></entry>
@@ -1029,8 +1040,11 @@ PlasmoidItem {
         PlasmaCore.ToolTipArea {
             width: root.vertical ? parent.width : root.thickness
             height: root.vertical ? root.thickness : parent.height
-            mainText: root.cfg.paused ? root.cfg.textPaused
-                                      : (root.cfg.closed ? root.cfg.textOpen : root.cfg.textClose)
+            readonly property string action: root.cfg.paused ? root.cfg.textPaused
+                : (root.cfg.closed ? root.cfg.textOpen : root.cfg.textClose)
+            // With a name: the name, and below it what a click does.
+            mainText: root.cfg.name !== "" ? root.cfg.name : action
+            subText: root.cfg.name !== "" ? action : ""
 
             Kirigami.Icon {
                 anchors.centerIn: parent
@@ -1125,6 +1139,7 @@ KCM.SimpleKCM {
 
     // Only the settings that are edited here: Plasma writes every cfg_ property back, and
     // the drawer's state (closed, what it holds for a task manager) must not be among them.
+    property string cfg_name
     property var cfg_targets: []
     property string cfg_taskMode
     property string cfg_openOn
@@ -1182,6 +1197,12 @@ KCM.SimpleKCM {
     }
 
     Kirigami.FormLayout {
+        QQC2.TextField {
+            Kirigami.FormData.label: page.t("Name:")
+            text: page.cfg_name
+            onTextEdited: page.cfg_name = text
+        }
+
         // --- contents ---
         Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("In this drawer") }
         Repeater {
@@ -1390,7 +1411,10 @@ TRANSLATIONS = {
             "Een la is een pijltje in het paneel. Die bergt de onderdelen op die je kiest "
             "en haalt ze terug als je op het pijltje klikt of het aanwijst.",
         "Drawer:": "La:",
-        "Drawer {n} — {panel}": "La {n} — {panel}",
+        "Drawer {n}": "La {n}",
+        "Name:": "Naam:",
+        "A name of your own for this drawer. Without one it is called after what is in it.":
+            "Een eigen naam voor deze la. Zonder naam heet hij naar wat erin zit.",
         "Add a drawer": "La toevoegen",
         "Remove": "Verwijderen",
         "No drawer yet. Add one to hide panel icons behind an arrow.":
@@ -1583,6 +1607,41 @@ TRANSLATIONS = {
         "Language:": "Taal:",
         "System language": "Systeemtaal",
         "General": "Algemeen",
+        "Hide the icons on:": "Pictogrammen verbergen op:",
+        "New icons go under the ^ arrow by themselves":
+            "Nieuwe pictogrammen gaan vanzelf onder het pijltje ^",
+        "An application that shows a tray icon for the first time gets it hidden. Works while "
+        "Tidy is running.":
+            "Een programma dat voor het eerst een pictogram in het systeemvak zet, krijgt het "
+            "verborgen. Werkt zolang Tidy draait.",
+        "Profiles": "Profielen",
+        "A profile keeps all settings together: desktop, drawers, system tray and focus mode. "
+        "Switch between them here or in the tray menu.":
+            "Een profiel houdt alle instellingen bij elkaar: bureaublad, laden, systeemvak en "
+            "focusmodus. Wissel hier of in het systeemvakmenu.",
+        "Apply": "Toepassen",
+        "Cancel": "Annuleren",
+        "Save current as…": "Huidige bewaren als…",
+        "Delete": "Verwijderen",
+        "Name of the profile:": "Naam van het profiel:",
+        "None yet: save one in the settings": "Nog geen: bewaar er een in de instellingen",
+        "All settings": "Alle instellingen",
+        "Export…": "Exporteren…",
+        "Saves all settings and profiles in a file.":
+            "Bewaart alle instellingen en profielen in een bestand.",
+        "Import…": "Importeren…",
+        "Reads settings and profiles from a file and applies them.":
+            "Leest instellingen en profielen uit een bestand en past ze toe.",
+        "Defaults…": "Standaardwaarden…",
+        "Puts every setting back to how Tidy comes. Your drawers stay, with what is in them; "
+        "the system tray is left alone.":
+            "Zet elke instelling terug naar hoe Tidy geleverd wordt. Je laden blijven, met wat "
+            "erin zit; het systeemvak blijft ongemoeid.",
+        "Export settings": "Instellingen exporteren",
+        "Import settings": "Instellingen importeren",
+        "This is not a file with Tidy settings.": "Dit is geen bestand met Tidy-instellingen.",
+        "Put every setting back to how Tidy comes?":
+            "Elke instelling terugzetten naar hoe Tidy geleverd wordt?",
         "Shortcuts: System Settings → Keyboard → Shortcuts → Add New → Application… → Tidy. "
         "There you can give a key to showing and hiding the icons, switching Tidy on or off, "
         "focus mode, opening or closing the drawers, and restoring everything.":
@@ -1764,6 +1823,22 @@ class Plasma:
         try:
             return {int(k): v for k, v in json.loads(out).items()}
         except ValueError:
+            return {}
+
+    def desktop_screens(self):
+        """Where each desktop is shown: {desktop id: (x, y, width, height)}; desktops that are
+        not on a screen right now are left out."""
+        out = self.run("""
+            var r = {};
+            desktops().forEach(function (d) {
+                if (d.type != "org.kde.plasma.folder" || d.screen < 0) return;
+                var g = screenGeometry(d.screen);
+                r[d.id] = [g.x, g.y, g.width, g.height];
+            });
+            print(JSON.stringify(r));""")
+        try:
+            return {int(k): tuple(int(round(i)) for i in v) for k, v in json.loads(out).items()}
+        except (ValueError, TypeError):
             return {}
 
     def set_desktop_urls(self, urls):
@@ -2193,6 +2268,7 @@ class TrayTab(QWidget):
         self.search.setPlaceholderText(tr("Search…"))
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.filter)
+        self.search.setProperty("tidyNoSetting", True)
         layout.addWidget(self.search)
 
         area = QScrollArea(widgetResizable=True)
@@ -2254,6 +2330,12 @@ class TrayTab(QWidget):
         row.addWidget(button("Undo", "Back to how the list was when this window opened.",
                              self.undo, "edit-undo"))
         layout.addLayout(row)
+
+        self.hide_new = QCheckBox(tr("New icons go under the ^ arrow by themselves"))
+        self.hide_new.setChecked(self.settings.value("tray_hide_new", False, bool))
+        self.hide_new.setToolTip(tr("An application that shows a tray icon for the first time "
+                                    "gets it hidden. Works while Tidy is running."))
+        layout.addWidget(self.hide_new)
 
     @staticmethod
     def label(item_id, apps):
@@ -2326,6 +2408,7 @@ class TrayTab(QWidget):
     def apply(self):
         if self.config is None:
             return
+        self.settings.setValue("tray_hide_new", self.hide_new.isChecked())
         modes = {i: c.currentData() for i, c in self.combos.items()}
         if modes == {i: self.mode_of(i) for i in self.combos}:
             return  # nothing changed
@@ -2336,18 +2419,33 @@ class TrayTab(QWidget):
         hidden = [i for i, m in modes.items() if m == TRAY_HIDDEN]
         remember_tray(self.settings, self.config)
         self.plasma.set_tray_config(extra, shown, hidden)
+        self.config = dict(self.config, extra=extra, shown=shown, hidden=hidden)
 
 
 class DrawerPage(QWidget):
     """The settings of one drawer, in three parts: what is in it, how it opens and closes,
     and what its arrow looks like."""
 
-    def __init__(self, drawer, widgets):
+    def __init__(self, drawer, widgets, number, on_label=None):
         super().__init__()
         self.drawer = drawer
+        self.number = number
+        self.panel_name = ""      # which panel it is in, when there are several
+        self.on_label = on_label  # called when the name to show for this drawer changes
+        self.targets = {}
         config = drawer["config"]
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("Name:")))
+        self.name = QLineEdit(config["name"])
+        self.name.setToolTip(tr("A name of your own for this drawer. Without one it is called "
+                                "after what is in it."))
+        self.name.textChanged.connect(self.relabel)
+        row.addWidget(self.name, 1)
+        outer.addLayout(row)
+
         parts = QTabWidget()
         outer.addWidget(parts)
 
@@ -2356,13 +2454,13 @@ class DrawerPage(QWidget):
         form = QFormLayout(page)
         box = QGroupBox(tr("In this drawer"))
         box_layout = QVBoxLayout(box)
-        self.targets = {}
         for widget in widgets:
             if widget["type"] in DRAWER_SKIP:
                 continue
             check = QCheckBox(panel_widget_name(widget["type"]))
             check.setChecked(str(widget["id"]) in config["targets"])
             check.toggled.connect(self.update_enabled)
+            check.toggled.connect(self.relabel)
             self.targets[widget["id"]] = (check, widget["type"])
             box_layout.addWidget(check)
         form.addRow(box)
@@ -2503,6 +2601,20 @@ class DrawerPage(QWidget):
         parts.addTab(page, tr("Arrow"))
 
         self.update_enabled()
+        self.relabel()
+
+    def auto_name(self):
+        """What the drawer is called without a name of its own: after its contents."""
+        inside = [check.text() for check, _ in self.targets.values() if check.isChecked()]
+        return ", ".join(inside) or tr("Drawer {n}").format(n=self.number)
+
+    def label(self):
+        return self.name.text().strip() or self.auto_name()
+
+    def relabel(self, *_):
+        self.name.setPlaceholderText(self.auto_name())
+        if self.on_label:
+            self.on_label(self)
 
     def update_enabled(self):
         self.task_mode.setEnabled(any(check.isChecked() and plugin in TASK_PLUGINS
@@ -2521,7 +2633,8 @@ class DrawerPage(QWidget):
             self.icon_custom.setText(name)
 
     def values(self):
-        return {"targets": [str(i) for i, (check, _) in self.targets.items()
+        return {"name": self.name.text().strip(),
+                "targets": [str(i) for i, (check, _) in self.targets.items()
                             if check.isChecked()],
                 "taskMode": self.task_mode.currentData(),
                 "openOn": self.open_on.currentData(),
@@ -2574,6 +2687,8 @@ class DrawerTab(QWidget):
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("Drawer:")))
         self.selector = QComboBox()
+        self.selector.setProperty("tidyNoSetting", True)
+        self.rebuilt = None  # called with this tab when its pages have been made anew
         row.addWidget(self.selector, 1)
         self.add_button = QPushButton(QIcon.fromTheme("list-add"), tr("Add a drawer"))
         self.add_button.clicked.connect(self.add)
@@ -2611,12 +2726,13 @@ class DrawerTab(QWidget):
             panel = by_id.get(drawer["panel"])
             if not panel:
                 continue
-            page = DrawerPage(drawer, panel["widgets"])
+            page = DrawerPage(drawer, panel["widgets"], number, self.relabel)
+            # Which panel only matters when there is more than one.
+            page.panel_name = (tr(PANEL_PLACES.get(panel["location"], "Panel"))
+                               if len(self.panels) > 1 else "")
             self.pages.append(page)
             self.stack.addWidget(page)
-            place = tr(PANEL_PLACES.get(panel["location"], "Panel"))
-            self.selector.addItem(tr("Drawer {n} — {panel}").format(n=number, panel=place),
-                                  drawer["id"])
+            self.selector.addItem(self.label(page), drawer["id"])
         if not self.pages:
             empty = QLabel(tr("No drawer yet. Add one to hide panel icons behind an arrow."))
             empty.setWordWrap(True)
@@ -2628,6 +2744,16 @@ class DrawerTab(QWidget):
         index = max(0, self.selector.findData(select)) if select is not None else 0
         self.selector.setCurrentIndex(index)
         self.stack.setCurrentIndex(index)
+        if self.rebuilt:
+            self.rebuilt(self)
+
+    @staticmethod
+    def label(page):
+        return f"{page.label()} — {page.panel_name}" if page.panel_name else page.label()
+
+    def relabel(self, page):
+        if page in self.pages:
+            self.selector.setItemText(self.pages.index(page), self.label(page))
 
     def add(self):
         if not self.panels:
@@ -2810,6 +2936,9 @@ class SettingsDialog(QDialog):
         self.setWindowIcon(QIcon.fromTheme("view-visible"))
         outer = QVBoxLayout(self)
         tabs = QTabWidget()
+        # All tabs in view at once: the window is made wide enough rather than the tab bar
+        # getting arrows to scroll with.
+        tabs.setUsesScrollButtons(False)
         outer.addWidget(tabs)
         desktop_tab = QWidget()
         layout = QVBoxLayout(desktop_tab)
@@ -2902,6 +3031,20 @@ class SettingsDialog(QDialog):
         self.panel.setChecked(settings.value("hide_panel", False, bool))
         form.addRow(self.panel)
 
+        # Per screen, only when there is a choice to make.
+        self.skipped = [name for name in settings.value("skip_screens", "").split(",") if name]
+        self.screens = {}
+        screens = QApplication.screens()
+        if len(screens) > 1 or self.skipped:
+            row = QVBoxLayout()
+            for screen in screens:
+                box = QCheckBox(f"{screen.name()} ({screen.model()})" if screen.model()
+                                else screen.name())
+                box.setChecked(screen.name() not in self.skipped)
+                self.screens[screen.name()] = box
+                row.addWidget(box)
+            form.addRow(tr("Hide the icons on:"), row)
+
         layout.addStretch()
 
         # --- general ---
@@ -2925,19 +3068,65 @@ class SettingsDialog(QDialog):
         hint.setEnabled(False)
         form.addRow(hint)
 
+        box = QGroupBox(tr("Profiles"))
+        box_layout = QVBoxLayout(box)
+        note = QLabel(tr("A profile keeps all settings together: desktop, drawers, system tray "
+                         "and focus mode. Switch between them here or in the tray menu."))
+        note.setWordWrap(True)
+        box_layout.addWidget(note)
+        row = QHBoxLayout()
+        self.profile = QComboBox()
+        self.profile.setProperty("tidyNoSetting", True)
+        self.profile.addItems(sorted(autohide.profiles()))
+        row.addWidget(self.profile, 1)
+        self.profile_apply = QPushButton(tr("Apply"))
+        self.profile_apply.clicked.connect(
+            lambda: autohide.apply_profile(self.profile.currentText()))
+        row.addWidget(self.profile_apply)
+        save = QPushButton(QIcon.fromTheme("document-save"), tr("Save current as…"))
+        save.clicked.connect(self.save_profile)
+        row.addWidget(save)
+        self.profile_delete = QPushButton(QIcon.fromTheme("edit-delete"), tr("Delete"))
+        self.profile_delete.clicked.connect(self.delete_profile)
+        row.addWidget(self.profile_delete)
+        box_layout.addLayout(row)
+        form.addRow(box)
+        self.update_profiles()
+
+        box = QGroupBox(tr("All settings"))
+        row = QHBoxLayout(box)
+        export = QPushButton(QIcon.fromTheme("document-export"), tr("Export…"))
+        export.setToolTip(tr("Saves all settings and profiles in a file."))
+        export.clicked.connect(self.export_settings)
+        row.addWidget(export)
+        import_ = QPushButton(QIcon.fromTheme("document-import"), tr("Import…"))
+        import_.setToolTip(tr("Reads settings and profiles from a file and applies them."))
+        import_.clicked.connect(self.import_settings)
+        row.addWidget(import_)
+        defaults = QPushButton(QIcon.fromTheme("edit-reset"), tr("Defaults…"))
+        defaults.setToolTip(tr("Puts every setting back to how Tidy comes. Your drawers stay, "
+                               "with what is in them; the system tray is left alone."))
+        defaults.clicked.connect(self.reset_defaults)
+        row.addWidget(defaults)
+        row.addStretch()
         restore = QPushButton(QIcon.fromTheme("edit-undo"), tr("Restore everything…"))
         restore.setToolTip(tr("Shows everything again, puts back the Plasma settings that Tidy "
                               "changed, and switches Tidy off."))
         restore.clicked.connect(lambda: autohide.ask_restore(self))
-        row = QHBoxLayout()
         row.addWidget(restore)
-        row.addStretch()
-        form.addRow(row)
+        form.addRow(box)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                           | QDialogButtonBox.StandardButton.Apply
                                            | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
+        # Apply: use the settings without closing the window. Available once something changed.
+        self.changed = False
+        self.apply_button = self.button_box.button(QDialogButtonBox.StandardButton.Apply)
+        self.apply_button.clicked.connect(lambda: autohide.apply_settings(self))
+        self.apply_button.setText(tr("Apply"))
+        self.button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr("Cancel"))
         footer = QHBoxLayout()
         support = QLabel("<a href='#'>" + tr("♥ Support {app}").format(app=APP_NAME) + "</a>")
         support.setToolTip(tr("Donate or more information"))
@@ -2955,6 +3144,40 @@ class SettingsDialog(QDialog):
         self.ticker.start()
         self.update_status()
 
+        self.drawer_tab.rebuilt = self.watch_changes
+        self.watch_changes(self)
+        self.update_enabled()
+
+    def watch_changes(self, root):
+        """Notice every change to a setting below this widget; called again for the drawer
+        pages when they are rebuilt."""
+        for widget in root.findChildren(QWidget):
+            if widget.property("tidyWatched") or widget.property("tidyNoSetting"):
+                continue
+            if isinstance(widget, QComboBox):
+                signal = widget.currentIndexChanged
+            elif isinstance(widget, QCheckBox):
+                signal = widget.toggled
+            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                signal = widget.valueChanged
+            elif isinstance(widget, QKeySequenceEdit):
+                signal = widget.keySequenceChanged
+            elif isinstance(widget, QLineEdit):
+                signal = widget.textEdited
+            else:
+                continue
+            signal.connect(self.mark_changed)
+            widget.setProperty("tidyWatched", True)
+
+    def mark_changed(self, *_):
+        self.changed = True
+        self.update_enabled()
+
+    def applied(self):
+        """The settings in the window are the ones in use now."""
+        self.changed = False
+        self.update_enabled()
+
     def on_support(self, _link):
         # With a donation page: go straight there. Otherwise to the About tab.
         if DONATE_URL:
@@ -2968,8 +3191,9 @@ class SettingsDialog(QDialog):
             box.setEnabled(click)
         self.rehide.setEnabled(click)
         # In click mode at least one button must be chosen.
-        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-            not click or any(b.isChecked() for b in self.buttons.values()))
+        valid = not click or any(b.isChecked() for b in self.buttons.values())
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
+        self.apply_button.setEnabled(valid and self.changed)
 
     def update_status(self):
         a = self.autohide
@@ -3001,6 +3225,75 @@ class SettingsDialog(QDialog):
 
     def chosen_buttons(self):
         return ",".join(k for k, b in self.buttons.items() if b.isChecked())
+
+    # --- profiles, export and import (General tab) ---
+
+    def update_profiles(self):
+        some = self.profile.count() > 0
+        self.profile.setEnabled(some)
+        self.profile_apply.setEnabled(some)
+        self.profile_delete.setEnabled(some)
+
+    def save_profile(self):
+        name, ok = QInputDialog.getText(self, APP_NAME, tr("Name of the profile:"),
+                                        text=self.profile.currentText())
+        name = name.strip()
+        if not ok or not name:
+            return
+        # What is in the window now is what gets saved.
+        self.autohide.apply_settings(self)
+        self.autohide.save_profile(name)
+        if self.profile.findText(name) < 0:
+            self.profile.addItem(name)
+        self.profile.setCurrentText(name)
+        self.update_profiles()
+
+    def delete_profile(self):
+        self.autohide.delete_profile(self.profile.currentText())
+        self.profile.removeItem(self.profile.currentIndex())
+        self.update_profiles()
+
+    def export_settings(self):
+        name, _ = QFileDialog.getSaveFileName(
+            self, tr("Export settings"), os.path.expanduser(f"~/{APP}-settings.json"),
+            "(*.json)")
+        if not name:
+            return
+        self.autohide.apply_settings(self)
+        data = dict(self.autohide.snapshot(), profiles=self.autohide.profiles())
+        try:
+            with open(name, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except OSError as error:
+            QMessageBox.warning(self, APP_NAME, str(error))
+
+    def import_settings(self):
+        name, _ = QFileDialog.getOpenFileName(
+            self, tr("Import settings"), os.path.expanduser("~"), "(*.json)")
+        if not name:
+            return
+        try:
+            with open(name) as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or data.get("app") != APP:
+                raise ValueError
+        except (OSError, ValueError):
+            QMessageBox.warning(self, APP_NAME, tr("This is not a file with Tidy settings."))
+            return
+        self.autohide.import_snapshot(data)
+
+    def reset_defaults(self):
+        answer = QMessageBox.question(
+            self, APP_NAME, tr("Put every setting back to how Tidy comes?"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        if answer == QMessageBox.StandardButton.Yes:
+            self.autohide.reset_defaults()
+
+    def skipped_screens(self):
+        """Screens whose icons stay; one that is not connected now keeps its choice."""
+        names = [n for n in self.skipped if n not in self.screens]
+        names += [n for n, box in self.screens.items() if not box.isChecked()]
+        return ",".join(names)
 
 
 class Tidy(QObject):
@@ -3057,6 +3350,9 @@ class Tidy(QObject):
                                       lambda: self.show_settings(about=True))
         donate_action = menu.addAction("", self.on_donate)
         menu.addSeparator()
+        self.profiles_menu = menu.addMenu("")
+        self.profiles_menu.aboutToShow.connect(self.fill_profiles_menu)
+        menu.addSeparator()
         quit_action = menu.addAction("", self.quit)
         # English texts; retranslate() fills them in, and again when the language changes.
         self.menu_texts = [(self.enabled_action, "Enabled"), (self.focus_action, "Focus mode"),
@@ -3076,6 +3372,14 @@ class Tidy(QObject):
         if self.enabled_action.isChecked():
             self.start_idle()
         QTimer.singleShot(5000, self.backup_launchers)
+
+        # New icons in the system tray.
+        self.tray_timer = QTimer(self, interval=2000, singleShot=True)
+        self.tray_timer.timeout.connect(self.check_tray_items)
+        bus.connect("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+                    "org.kde.StatusNotifierWatcher", "StatusNotifierItemRegistered",
+                    self.on_tray_item)
+        QTimer.singleShot(6000, self.check_tray_items)  # note which icons are there now
 
     def mode(self):
         return self.settings.value("mode", MODE_ACTIVITY)
@@ -3133,8 +3437,23 @@ class Tidy(QObject):
         if self.hidden:
             return
         urls = {k: v for k, v in self.plasma.desktop_urls().items() if v != EMPTY_URL}
+        skipped = self.skipped_screens()
+        if skipped:
+            # Leave the screens alone that are set to keep their icons.
+            where = self.plasma.desktop_screens()
+
+            def screen_name(desktop_id):
+                # Plasma and Qt may round a scaled screen's size differently.
+                for screen in self.app.screens():
+                    g = screen.geometry()
+                    if desktop_id in where and all(abs(a - b) <= 2 for a, b in zip(
+                            where[desktop_id], (g.x(), g.y(), g.width(), g.height()))):
+                        return screen.name()
+                return None
+
+            urls = {k: v for k, v in urls.items() if screen_name(k) not in skipped}
         if not urls:
-            return  # plasmashell unreachable (e.g. restarting right now)
+            return  # plasmashell unreachable (e.g. restarting right now), or nothing to hide
         state = {"urls": urls}
         if self.settings.value("hide_panel", False, bool):
             modes = self.plasma.panel_modes()
@@ -3251,7 +3570,10 @@ class Tidy(QObject):
 
     def show_catchers(self):
         self.hide_catchers()
+        skipped = self.skipped_screens()
         for screen in self.app.screens():
+            if screen.name() in skipped:
+                continue
             catcher = Catcher(screen, self.on_catcher_click)
             catcher.show()
             self.catchers.append(catcher)
@@ -3356,6 +3678,7 @@ class Tidy(QObject):
     def retranslate(self):
         for action, text in self.menu_texts:
             action.setText(tr(text).format(app=APP_NAME))
+        self.profiles_menu.setTitle(tr("Profiles"))
         self.update_icon()
         self.plasma.set_drawer_config(None, drawer_texts())
 
@@ -3477,6 +3800,7 @@ class Tidy(QObject):
         self.settings.setValue("corner", dlg.corner.currentData())
         self.settings.setValue("hide_panel", dlg.panel.isChecked())
         self.settings.setValue("only_desktop", dlg.only_desktop.isChecked())
+        self.settings.setValue("skip_screens", dlg.skipped_screens())
         self.set_autostart(dlg.autostart.isChecked())
         if dlg.language.currentData() != self.settings.value("language", "auto"):
             self.settings.setValue("language", dlg.language.currentData())
@@ -3488,6 +3812,128 @@ class Tidy(QObject):
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
         if dlg.corner.currentData() != old_corner:
             self.kwin.load(dlg.corner.currentData())
+        dlg.applied()
+
+    def skipped_screens(self):
+        return {name for name in self.settings.value("skip_screens", "").split(",") if name}
+
+    # --- new icons in the system tray ---------------------------------------------
+
+    @pyqtSlot(str)
+    def on_tray_item(self, _service):
+        self.tray_timer.start()  # a moment later: by then the icon has a name
+
+    def check_tray_items(self):
+        """Hide the icon of an application that shows one for the first time, if that is
+        switched on. Which icons have been seen is always kept, so that switching it on
+        later doesn't hide the ones you already had."""
+        apps = set(tray_app_items())
+        raw = self.settings.value("tray_seen", None)
+        seen = set(json.loads(raw)) if raw else None
+        if seen is not None and self.settings.value("tray_hide_new", False, bool):
+            config = self.plasma.tray_config()
+            new = [i for i in sorted(apps - seen) if i != APP and config
+                   and i not in config["shown"] and i not in config["hidden"]]
+            if new:
+                remember_tray(self.settings, config)
+                self.plasma.set_tray_config(config["extra"], config["shown"],
+                                            config["hidden"] + new)
+        if apps or seen is None:
+            self.settings.setValue("tray_seen", json.dumps(sorted(apps | (seen or set()))))
+
+    # --- profiles, export and import ------------------------------------------------
+
+    def snapshot(self):
+        """Every setting as one piece of data: for a profile or an export."""
+        tray = self.plasma.tray_config()
+        return {"app": APP, "version": VERSION,
+                "settings": {key: self.settings.value(key, default, type(default))
+                             for key, default in PROFILE_SETTINGS.items()},
+                "tray": {k: tray[k] for k in ("extra", "shown", "hidden")} if tray else None,
+                "drawers": [{"id": d["id"], "shortcut": d.get("shortcut", ""),
+                             "config": {k: v for k, v in d["config"].items()
+                                        if k not in DRAWER_STATE}}
+                            for d in self.plasma.drawers()]}
+
+    def apply_snapshot(self, data):
+        """Apply settings from a profile or an import. Drawers are matched by the place they
+        have in the panel's bookkeeping (their id); a drawer that isn't there is skipped."""
+        self.set_focus(False)
+        self.show()
+        for key, default in PROFILE_SETTINGS.items():
+            value = data.get("settings", {}).get(key)
+            if isinstance(value, type(default)):
+                self.settings.setValue(key, value)
+        tray = data.get("tray")
+        current = self.plasma.tray_config()
+        if tray and current:
+            remember_tray(self.settings, current)
+            self.plasma.set_tray_config(tray["extra"], tray["shown"], tray["hidden"])
+        self.backup_launchers()  # before a drawer may start holding them
+        existing = {d["id"]: d for d in self.plasma.drawers()}
+        for saved in data.get("drawers", []):
+            if saved.get("id") not in existing:
+                continue
+            config = {k: v for k, v in saved.get("config", {}).items()
+                      if k in DRAWER_DEFAULTS and k not in DRAWER_STATE
+                      and isinstance(v, type(DRAWER_DEFAULTS[k]))}
+            self.plasma.set_drawer_config(saved["id"], config)
+            if "targets" in config:
+                self.plasma.place_drawer(saved["id"], config["targets"],
+                                         config.get("place", PLACE_BEFORE))
+            if "shortcut" in saved:
+                self.plasma.set_drawer_shortcut(saved["id"], saved["shortcut"])
+        self.kwin.load(self.settings.value("corner", "none"))
+        self.shown_at = time.monotonic()
+        if self.dialog:
+            # The window shows the old values: open it afresh.
+            self.dialog.reject()
+            QTimer.singleShot(0, self.show_settings)
+
+    def profiles(self):
+        try:
+            found = json.loads(self.settings.value("profiles", "") or "{}")
+            return found if isinstance(found, dict) else {}
+        except ValueError:
+            return {}
+
+    def save_profile(self, name):
+        self.settings.setValue("profiles", json.dumps(dict(self.profiles(),
+                                                           **{name: self.snapshot()})))
+
+    def delete_profile(self, name):
+        found = self.profiles()
+        found.pop(name, None)
+        self.settings.setValue("profiles", json.dumps(found))
+
+    def apply_profile(self, name):
+        data = self.profiles().get(name)
+        if data:
+            self.apply_snapshot(data)
+
+    def fill_profiles_menu(self):
+        self.profiles_menu.clear()
+        names = sorted(self.profiles())
+        for name in names:
+            self.profiles_menu.addAction(name, lambda name=name: self.apply_profile(name))
+        if not names:
+            self.profiles_menu.addAction(tr("None yet: save one in the settings")).setEnabled(False)
+
+    def import_snapshot(self, data):
+        found = self.profiles()
+        if isinstance(data.get("profiles"), dict):
+            found.update(data["profiles"])
+            self.settings.setValue("profiles", json.dumps(found))
+        self.apply_snapshot(data)
+
+    def reset_defaults(self):
+        """Every setting back to how Tidy comes; the drawers keep what is in them."""
+        keep = ("targets", "place")
+        defaults = {k: v for k, v in DRAWER_DEFAULTS.items()
+                    if k not in DRAWER_STATE and k not in keep}
+        self.apply_snapshot({"settings": dict(PROFILE_SETTINGS),
+                             "drawers": [{"id": d["id"], "shortcut": "", "config": defaults}
+                                         for d in self.plasma.drawers()]})
 
     def set_autostart(self, on):
         if on:

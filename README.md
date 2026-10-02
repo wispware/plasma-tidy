@@ -48,6 +48,10 @@ Tidy shows an eye in the system tray: open when your icons are visible, crossed 
 are hidden, grey when Tidy is switched off. Click it to open the settings; right-click for
 the menu.
 
+In the settings window, *Apply* puts your changes to work and keeps the window open, so you
+can try them out; *OK* does the same and closes it. *Apply* becomes available as soon as you
+change something.
+
 ### Desktop
 
 | Setting | What it does | Default |
@@ -59,6 +63,7 @@ the menu.
 | Screen corner shows | Moving the mouse into this corner shows the icons | none |
 | Activity in other windows doesn't count | The icons hide behind the window you're working in | on |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
+| Hide the icons on | With more than one screen: the screens whose icons are hidden; the others keep theirs | every screen |
 
 *Show desktop* (Meta+D) always brings the icons back.
 
@@ -75,6 +80,9 @@ you point at the arrow, and closes by itself or on a click on an empty spot of t
 drawer starts with the system tray. The arrow sits next to the widgets it hides and moves
 along when you change them. To place it yourself, choose *Where I put it myself*, right-click
 the panel, choose *Enter Edit Mode* and drag it.
+
+You can give a drawer a name; without one it is called after what is in it. The name shows in
+the list of drawers and in the arrow's tooltip.
 
 The settings of a drawer come in three parts.
 
@@ -138,7 +146,8 @@ The *System tray* tab lists every icon in your system tray. For each one, choose
 - **Off**: switched off completely (Plasma's own items only; icons that belong to an
   application can be shown or hidden, not switched off)
 
-The buttons below the list set every icon at once. Nothing changes until you press OK.
+The buttons below the list set every icon at once. Nothing changes until you press *Apply* or
+*OK*.
 
 - **Minimal**: network, volume and battery shown; notifications, devices, camera and Caps Lock
   indicators automatic; everything else hidden
@@ -150,12 +159,25 @@ The buttons below the list set every icon at once. Nothing changes until you pre
 
 The search field above the list narrows it down by name.
 
+With *New icons go under the ^ arrow by themselves*, an application that shows a tray icon for
+the first time gets it hidden. Icons you already had are left as they are. It works while Tidy
+is running.
+
 ### General
 
 | Setting | What it does | Default |
 | --- | --- | --- |
 | Start at login | Adds or removes the autostart entry | off |
 | Language | System language, English or Nederlands; takes effect at once | system language |
+
+**Profiles** keep all settings together: the desktop, the drawers, the system tray and focus
+mode. *Save current as…* stores what is in the window under a name; *Apply* switches to a
+profile, and so does the *Profiles* menu of the tray icon. A profile changes the settings of the
+drawers that are in your panel; it does not add or remove drawers.
+
+*Export…* writes all settings and profiles to a file and *Import…* reads them back, for
+instance on another computer. *Defaults…* puts every setting back to how Tidy comes: your
+drawers stay, with what is in them, and the system tray is left alone.
 
 *Restore everything* is on this tab too.
 
