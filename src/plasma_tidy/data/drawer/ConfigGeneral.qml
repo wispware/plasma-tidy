@@ -38,6 +38,8 @@ KCM.SimpleKCM {
     property bool cfg_popupGap
     property string cfg_trayArrow
     property bool cfg_arrowTip
+    property bool cfg_arrowSlim
+    property bool cfg_arrowSlimMark
     property int cfg_animationDuration
     property string cfg_activePlace
     property bool cfg_reverseArrow
@@ -203,6 +205,19 @@ KCM.SimpleKCM {
             placeholderText: page.t("Icon name or image file")
             text: page.cfg_iconCustom
             onEditingFinished: page.cfg_iconCustom = text
+        }
+        QQC2.CheckBox {
+            visible: page.cfg_icon === "none"
+            text: page.t("Without an icon the arrow takes no room in the panel")
+            checked: page.cfg_arrowSlim
+            onToggled: page.cfg_arrowSlim = checked
+        }
+        QQC2.CheckBox {
+            visible: page.cfg_icon === "none"
+            enabled: page.cfg_arrowSlim
+            text: page.t("Its room comes back while the mark has something to tell")
+            checked: page.cfg_arrowSlimMark
+            onToggled: page.cfg_arrowSlimMark = checked
         }
         Choice {
             Kirigami.FormData.label: page.t("Mark on the closed drawer:")

@@ -182,6 +182,8 @@ PlasmoidItem {
                 + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
                 + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length, tipShowing: tipShowing,
             menus: taskMenuOpen + "/" + menuOpen, closing: closeTimer.running,
+            slim: slim + "/room " + room + (container && !container.visible ? "/out of the panel" : "")
+                + "/shortcut " + hasShortcut,
             tipTexts: cfg.debug === "on" ? tipFind().map(a => String(a.mainText)).filter(t => t !== "") : [],
             display: cfg.display, shelf: popupMode ? (popup.visible ? "open" : "closed") + "/" + popupItems.length
                 + "/" + Math.round(popup.width) + "x" + Math.round(popup.height) : "",
@@ -203,7 +205,7 @@ PlasmoidItem {
             }),
             siblings: siblings.map(s => s.plugin.replace("org.kde.plasma.", "") + "#" + s.id + "@" + s.pos
                                         + (s.item.visible ? "" : "/hidden") + "/o" + s.item.opacity
-                                        + "/w" + Math.round(s.item.width)
+                                        + "/w" + Math.round(s.item.width) + "/x" + Math.round(vertical ? s.item.y : s.item.x)
                                         + (isTasks(s.plugin) ? "/L" + Array.from(s.item.applet.plasmoid.configuration.launchers).length : "")),
             whole: wholeTargets.map(s => s.id),
             tasks: taskHiders.slice().sort((a, b) => (vertical ? a.item.y - b.item.y : a.item.x - b.item.x)).map(h => {
@@ -1672,11 +1674,11 @@ PlasmoidItem {
             if (String(root.cfg.debug).indexOf("tap:") === 0) {
                 var at = parseFloat(String(root.cfg.debug).split(":")[1]);
                 var before = root.cfg.closed;
-                var others = root.anyClosesOnClick();
+                var others = root.anyOpensOnClick();
                 root.panelTapped(at);
                 Qt.callLater(() => console.warn("TIDYTAP " + JSON.stringify({id: Plasmoid.id,
                     at: at, empty: root.isEmptySpot(at), opens: root.cfg.openOnPanelClick,
-                    closes: root.cfg.closeOnPanelClick, anyCloses: others,
+                    closes: root.cfg.closeOnPanelClick, anyOpens: others,
                     before: before, closed: root.cfg.closed})));
             }
         }
@@ -1880,20 +1882,21 @@ PlasmoidItem {
         }
     }
     property var panelTap: null
-    // Every drawer in the panel hears the same click. Together they do one thing: if a
-    // drawer that closes on such a click is open, the click closes; only when none is, it
-    // opens the drawers that are set to open that way. Each drawer decides from how things
-    // are at the moment of the click and acts a moment later, so that one drawer closing
-    // does not make the next one think nothing was open.
-    function closesOnClick(conf) {
-        return !conf.closed && !conf.paused && conf.closeOnPanelClick;
+    // Every drawer in the panel hears the same click. Together they do one thing: as long
+    // as a drawer that opens on such a click is closed, the click opens (one drawer may
+    // have closed by itself while you were busy in another); only when all of those are
+    // open, it closes the ones that are set to close that way. Each drawer decides from how
+    // things are at the moment of the click and acts a moment later, so that one drawer
+    // opening does not make the next one think all were open.
+    function opensOnClick(conf) {
+        return conf.closed && !conf.paused && conf.openOnPanelClick;
     }
-    function anyClosesOnClick() {
-        if (closesOnClick(cfg)) return true;
+    function anyOpensOnClick() {
+        if (opensOnClick(cfg)) return true;
         for (var i = 0; i < siblings.length; i++) {
             if (siblings[i].plugin !== Plasmoid.pluginName) continue;
             try {
-                if (closesOnClick(siblings[i].item.applet.plasmoid.configuration)) return true;
+                if (opensOnClick(siblings[i].item.applet.plasmoid.configuration)) return true;
             } catch (e) {}
         }
         return false;
@@ -1901,11 +1904,11 @@ PlasmoidItem {
     function panelTapped(pos) {
         if (cfg.paused) return;
         if (cfg.closed) {
-            if (cfg.openOnPanelClick && isEmptySpot(pos) && !anyClosesOnClick())
+            if (cfg.openOnPanelClick && isEmptySpot(pos))
                 Qt.callLater(() => { root.cfg.closed = false; });
             return;
         }
-        if (cfg.closeOnPanelClick && isEmptySpot(pos))
+        if (cfg.closeOnPanelClick && isEmptySpot(pos) && !anyOpensOnClick())
             Qt.callLater(() => { root.cfg.closed = true; });
         else if (cfg.closeAfterUse && inDrawerItem(pos))
             useTimer.restart();
@@ -2057,14 +2060,37 @@ PlasmoidItem {
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
     readonly property int thickness: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+    // An arrow without an icon is only empty room in the panel. It can give that up, as long
+    // as the drawer can be opened another way. The room is back whenever it is needed: while
+    // you edit the panel, while the drawer is paused (a click on it resumes), and, if that is
+    // set, while the mark has something to tell.
+    readonly property bool opensOtherwise: cfg.openOnPanelClick || cfg.openOnDesktop || hasShortcut
+    readonly property bool hasShortcut: {
+        try { return String(Plasmoid.globalShortcut) !== "" && Plasmoid.globalShortcut.toString() !== ""; }
+        catch (e) { return false; }
+    }
+    readonly property bool slim: cfg.arrowSlim && cfg.icon === "none" && opensOtherwise
+                                 && !editing && !leaving && !cfg.paused && !stretching
+                                 && !(cfg.arrowSlimMark && markShown)
+    readonly property int room: slim ? 0 : thickness
+    // No width alone leaves the space the panel keeps between two widgets, twice. So the
+    // drawer's place in the panel is taken out altogether, the way it does that for a widget
+    // it hides. Not while a pop-up is up: that needs to know where the arrow stands.
+    Binding {
+        target: root.container
+        property: "visible"
+        value: false
+        when: root.slim && !(root.popupMode && (root.peeking || !root.cfg.closed))
+        restoreMode: Binding.RestoreBindingOrValue
+    }
     Layout.fillWidth: !vertical && stretching
     Layout.fillHeight: vertical && stretching
-    Layout.minimumWidth: vertical ? -1 : thickness
-    Layout.preferredWidth: vertical ? -1 : thickness
-    Layout.maximumWidth: vertical ? -1 : (stretching ? Infinity : thickness)
-    Layout.minimumHeight: vertical ? thickness : -1
-    Layout.preferredHeight: vertical ? thickness : -1
-    Layout.maximumHeight: vertical ? (stretching ? Infinity : thickness) : -1
+    Layout.minimumWidth: vertical ? -1 : room
+    Layout.preferredWidth: vertical ? -1 : room
+    Layout.maximumWidth: vertical ? -1 : (stretching ? Infinity : room)
+    Layout.minimumHeight: vertical ? room : -1
+    Layout.preferredHeight: vertical ? room : -1
+    Layout.maximumHeight: vertical ? (stretching ? Infinity : room) : -1
 
     // Closed, the arrow points the way the drawer opens: away from the nearest end of the
     // panel. Open, it points back.
@@ -2104,6 +2130,8 @@ PlasmoidItem {
         // rest of it is empty panel space.
         PlasmaCore.ToolTipArea {
             active: root.cfg.arrowTip
+            // Without room the arrow is not there at all: nothing to point at or to click.
+            visible: !root.slim
             width: root.vertical ? parent.width : root.thickness
             height: root.vertical ? root.thickness : parent.height
             // Standing after the icons, the arrow slides along with them.

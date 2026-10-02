@@ -175,6 +175,22 @@ TRANSLATIONS = {
         "Without an icon the spot stays clickable and lights up under the pointer.":
             "Zonder pictogram blijft de plek aanklikbaar en licht hij op onder de muis.",
         "Icon name or image file": "Pictogramnaam of afbeeldingsbestand",
+        "Without an icon the arrow takes no room in the panel":
+            "Zonder pictogram neemt het pijltje geen ruimte in het paneel",
+        "The empty spot goes, and with it pointing at it and clicking it. Only while the "
+        "drawer can be opened another way: a click on an empty spot of the panel, a shortcut, "
+        "or when the desktop is shown. The room is back while you edit the panel and while "
+        "the drawer is paused.":
+            "De lege plek verdwijnt, en daarmee ook het aanwijzen en aanklikken ervan. Alleen "
+            "zolang de la op een andere manier open kan: een klik op een lege plek van het "
+            "paneel, een sneltoets, of wanneer het bureaublad wordt getoond. De ruimte is "
+            "terug terwijl je het paneel bewerkt en terwijl de la gepauzeerd is.",
+        "Its room comes back while the mark has something to tell":
+            "De ruimte komt terug zolang de stip iets te melden heeft",
+        "On: the spot returns to show the mark, so the panel shifts a little at that moment. "
+        "Off: the mark is not shown.":
+            "Aan: de plek komt terug om de stip te tonen, dus het paneel verschuift dan even "
+            "een stukje. Uit: de stip wordt niet getoond.",
         "Choose…": "Kiezen…",
         "Choose an image": "Kies een afbeelding",
         "The place of the arrow is set in Tidy.": "De plaats van het pijltje stel je in Tidy in.",
@@ -493,10 +509,10 @@ TRANSLATIONS = {
             "scherm blijft boven het paneel.",
         "Open with a click on an empty spot in the panel":
             "Openen met een klik op een lege plek in het paneel",
-        "A left click where the panel is empty opens this drawer. If a drawer that closes on "
-        "such a click is open, the click only closes; it opens when none is.":
-            "Een linkerklik waar het paneel leeg is opent deze la. Staat er een la open die op "
-            "zo'n klik sluit, dan sluit de klik alleen; openen gebeurt als er geen open staat.",
+        "A left click where the panel is empty opens this drawer. As long as a drawer that "
+        "opens this way is closed, the click only opens; it closes when all of them are open.":
+            "Een linkerklik waar het paneel leeg is opent deze la. Zolang er een la dicht is "
+            "die zo opent, opent de klik alleen; sluiten gebeurt als ze allemaal open staan.",
         "and":
             "en",
         "Applies right now":

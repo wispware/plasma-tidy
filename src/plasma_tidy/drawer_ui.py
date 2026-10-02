@@ -157,8 +157,8 @@ class DrawerPage(QWidget):
         self.panel_open = QCheckBox(tr("Open with a click on an empty spot in the panel"))
         self.panel_open.setChecked(config["openOnPanelClick"])
         self.panel_open.setToolTip(tr("A left click where the panel is empty opens this drawer. "
-                                      "If a drawer that closes on such a click is open, the "
-                                      "click only closes; it opens when none is."))
+                                      "As long as a drawer that opens this way is closed, the "
+                                      "click only opens; it closes when all of them are open."))
         if self.fit:
             self.panel_open.setToolTip(tr("This panel is as long as its contents: it has no "
                                           "empty spot to click on."))
@@ -227,6 +227,22 @@ class DrawerPage(QWidget):
         row.addWidget(self.icon_custom, 1)
         row.addWidget(self.icon_choose)
         form.addRow("", row)
+
+        self.arrow_slim = QCheckBox(tr("Without an icon the arrow takes no room in the panel"))
+        self.arrow_slim.setChecked(config["arrowSlim"])
+        self.arrow_slim.setToolTip(tr(
+            "The empty spot goes, and with it pointing at it and clicking it. Only while the "
+            "drawer can be opened another way: a click on an empty spot of the panel, a "
+            "shortcut, or when the desktop is shown. The room is back while you edit the "
+            "panel and while the drawer is paused."))
+        self.arrow_slim.toggled.connect(self.update_enabled)
+        form.addRow(self.arrow_slim)
+        self.arrow_slim_mark = QCheckBox(tr("Its room comes back while the mark has something to tell"))
+        self.arrow_slim_mark.setChecked(config["arrowSlimMark"])
+        self.arrow_slim_mark.setToolTip(tr(
+            "On: the spot returns to show the mark, so the panel shifts a little at that "
+            "moment. Off: the mark is not shown."))
+        form.addRow(self.arrow_slim_mark)
 
         self.mark = QComboBox()
         self.mark.addItem(tr("None"), MARK_NONE)
@@ -369,6 +385,9 @@ class DrawerPage(QWidget):
         custom = self.icon.currentData() == "custom"
         self.icon_custom.setEnabled(custom)
         self.icon_choose.setEnabled(custom)
+        bare = self.icon.currentData() == "none"
+        self.arrow_slim.setEnabled(bare)
+        self.arrow_slim_mark.setEnabled(bare and self.arrow_slim.isChecked())
 
     def choose_icon(self):
         name, _ = QFileDialog.getOpenFileName(
@@ -408,6 +427,8 @@ class DrawerPage(QWidget):
                 "popupGap": self.popup_gap.isChecked(),
                 "trayArrow": self.tray_arrow.currentData(),
                 "arrowTip": self.arrow_tip.isChecked(),
+                "arrowSlim": self.arrow_slim.isChecked(),
+                "arrowSlimMark": self.arrow_slim_mark.isChecked(),
                 "animation": self.animation.currentData(),
                 "animationDuration": self.duration.value()}
 

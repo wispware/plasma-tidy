@@ -15,6 +15,8 @@
     <entry name="popupGap" type="Bool"><default>true</default></entry>
     <entry name="trayArrow" type="String"><default>open</default></entry>
     <entry name="arrowTip" type="Bool"><default>true</default></entry>
+    <entry name="arrowSlim" type="Bool"><default>false</default></entry>
+    <entry name="arrowSlimMark" type="Bool"><default>true</default></entry>
     <entry name="taskTips" type="Bool"><default>true</default></entry>
     <entry name="balloons" type="Bool"><default>true</default></entry>
     <entry name="taskBare" type="Bool"><default>false</default></entry>

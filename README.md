@@ -124,7 +124,7 @@ The settings of a drawer come in three parts.
 | Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
 | Shortcut | A key for this drawer alone | none |
 | Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
-| Open with a click on an empty spot in the panel | A left click where the panel is empty opens the drawer. If a drawer that closes on such a click is open, the click only closes; it opens when none is | off |
+| Open with a click on an empty spot in the panel | A left click where the panel is empty opens the drawer. As long as a drawer that opens this way is closed, the click only opens; it closes when all of them are open | off |
 | Open when the desktop is shown | Opens when you go to the desktop; needs Tidy running | off |
 | Close by itself | Never, when the pointer leaves the drawer (the arrow and the items it shows), or when it leaves the panel | never |
 | Closes after | How long after the pointer left | 2 s |
@@ -137,6 +137,8 @@ The settings of a drawer come in three parts.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | Icon | Arrow, double arrow, triangle, dots, menu lines, grip, an icon or image of your own, or none at all: the spot then stays clickable and lights up under the pointer | arrow |
+| Without an icon the arrow takes no room in the panel | The empty spot goes, and with it pointing at it and clicking it. Only while the drawer can be opened another way: a click on an empty spot of the panel, a shortcut, or when the desktop is shown. The room is back while you edit the panel and while the drawer is paused | off |
+| Its room comes back while the mark has something to tell | On: the spot returns to show the mark, so the panel shifts a little at that moment. Off: the mark is not shown | on |
 | Mark on the closed drawer | A dot on the arrow when hidden programs are open, their number, a dot only when one asks for attention, or nothing. Applies when the drawer hides a task manager with all its programs | a dot |
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
