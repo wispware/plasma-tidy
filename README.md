@@ -483,9 +483,9 @@ python3 -m unittest
 ```
 
 They cover when the icons hide and what postpones that, what Tidy changes in Plasma and puts
-back (hiding and showing, focus mode, the balloons, a profile), the rules, what the helper is
-told, the translations (every text has one), and that every name the code and the widgets use
-exists.
+back (hiding and showing, focus mode, switching off and quitting, the balloons, a profile),
+the rules, what the helper is told, Tidy's look at itself (`--check`), the translations (every
+text has one), and that every name the code and the widgets use exists.
 
 ## Feedback
 
