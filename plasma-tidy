@@ -33,6 +33,15 @@ System tray:
 
 - Choose per icon: automatic, show, hide (under ^) or off.
 
+Rules and profiles:
+
+- A profile keeps all settings together. A rule uses a profile, or focus mode, while
+  something is the case: on battery, an external screen, a time of day, the program
+  in front, a virtual desktop or an activity.
+
+Nothing here polls: Tidy sleeps until it is told something changed, or until the
+moment the icons are due to hide.
+
 Only one copy ever runs. A second invocation (e.g. with --show from a shortcut)
 passes its command to the running copy over D-Bus.
 """
@@ -42,22 +51,26 @@ import os
 import re
 import shutil
 import signal
+import socket
 import sys
 import time
 
-from PyQt6.QtCore import (QLocale, QObject, QProcess, QSettings, Qt, QTimer,
+from PyQt6.QtCore import (QLibraryInfo, QLocale, QMetaType, QObject, QProcess, QSettings, QSocketNotifier,
+                          Qt, QTime, QTimer,
                           pyqtClassInfo, pyqtSlot)
-from PyQt6.QtDBus import (QDBusAbstractAdaptor, QDBusConnection, QDBusInterface,
+from PyQt6.QtDBus import (QDBusAbstractAdaptor, QDBusArgument, QDBusConnection, QDBusInterface,
                           QDBusMessage, QDBusServiceWatcher)
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import (QAction, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
                          QPainter)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                              QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+                             QFrame, QGridLayout,
                              QGroupBox, QHBoxLayout, QInputDialog, QKeySequenceEdit, QLabel,
                              QLineEdit,
                              QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-                             QSpinBox, QStackedWidget, QSystemTrayIcon, QTabWidget,
+                             QSizePolicy,
+                             QSpinBox, QStackedWidget, QSystemTrayIcon, QTabWidget, QTimeEdit,
                              QVBoxLayout, QWidget)
 
 APP = "plasma-tidy"
@@ -103,7 +116,8 @@ PLACE_BEFORE = "before"
 PLACE_AFTER = "after"
 PLACE_MANUAL = "manual"
 # The drawer's settings and their defaults (the same as in DRAWER_CONFIG_XML).
-DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
+DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [],
+                   "taskMode": TASKS_ALL, "taskKeep": [], "taskList": "", "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "closeAfterUse": False, "closeOnMaximized": False, "openOnDesktop": False,
@@ -177,13 +191,29 @@ PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left pane
 # Tidy's own settings that belong to a profile or an export, with their defaults.
 PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,middle",
                     "rehide": "idle", "corner": "none", "only_desktop": True,
-                    "panel_counts": True,
+                    "panel_counts": True, "clicks": "single", "double_hides": False,
+                    "hide_widgets": False, "widgets_keep": "",
                     "hide_panel": False, "skip_screens": "", "fade_icons": False,
                     "fade_duration": 300, "drawer_follow": False,
                     "focus_icons": True, "focus_drawers": True, "focus_tray": True,
-                    "focus_panel": False, "tray_hide_new": False}
+                    "focus_panel": False, "tray_hide_new": False, "tray_rules": "",
+                    "peek_key": ""}
 # What a drawer is doing right now; not part of a profile.
-DRAWER_STATE = ("closed", "paused")
+DRAWER_STATE = ("closed", "paused", "taskList")
+
+# Rules: when something is the case, use a profile or switch focus mode on.
+RULE_WHEN = [("battery", "On battery"), ("mains", "On mains power"),
+             ("external", "An external screen is connected"),
+             ("time", "Between these times"),
+             ("app", "This program is in front"),
+             ("fullscreen", "A program fills the whole screen"),
+             ("vdesktop", "On this virtual desktop"),
+             ("activity", "In this activity")]
+RULE_FOCUS = "focus"
+RULE_PROFILE = "profile"
+CLICKS_SINGLE = "single"
+CLICKS_DOUBLE = "double"
+PEEK_ACTION = [APP, "peek", APP_NAME, "Peek: show everything while held"]
 
 TRAY_AUTO = "auto"
 TRAY_SHOWN = "shown"
@@ -305,32 +335,50 @@ workspace.windowAdded.connect(trackPopup);
 reportPopups();
 """
 
-KWIN_POINTER_JS = """
-// Is the pointer above the desktop itself (or a window of ours, or a panel if that is set
-// to count)? Looked at a few times
-// a second at most while the pointer moves, and reported only when the answer changes.
-var pointerOnDesktop = null;
-var pointerChecked = 0;
-var pointerLater = new QTimer();
-pointerLater.singleShot = true;
-pointerLater.interval = 250;
-
-function checkPointer() {
-    pointerChecked = Date.now();
-    var top = workspace.windowAt(workspace.cursorPos, 1)[0];
-    var on = !top || top.desktopWindow || top.resourceClass == "%(app)s" ||
-        (%(panel)s && top.dock);
-    if (on === pointerOnDesktop) return;
-    pointerOnDesktop = on;
-    callDBus("%(name)s", "/", "%(name)s", "PointerOnDesktop", on);
+KWIN_RULES_JS = """
+// For the rules: which program is in front, does it fill the screen, and which virtual
+// desktop is shown.
+function reportWindow() {
+    var w = workspace.activeWindow;
+    if (isCatcher(w)) return;
+    callDBus("%(name)s", "/", "%(name)s", "ActiveWindow",
+             w ? String(w.resourceClass) : "", !!(w && w.fullScreen));
 }
-pointerLater.timeout.connect(checkPointer);
+function watchWindow(w) {
+    w.fullScreenChanged.connect(function () {
+        if (workspace.activeWindow === w) reportWindow();
+    });
+}
+workspace.windowList().forEach(watchWindow);
+workspace.windowAdded.connect(watchWindow);
+workspace.windowActivated.connect(reportWindow);
+reportWindow();
+
+function reportDesktop() {
+    var names = workspace.desktops.map(function (d) { return d.name; });
+    callDBus("%(name)s", "/", "%(name)s", "VirtualDesktop",
+             workspace.desktops.indexOf(workspace.currentDesktop) + 1, names.join("\\n"));
+}
+workspace.currentDesktopChanged.connect(reportDesktop);
+workspace.desktopsChanged.connect(reportDesktop);
+reportDesktop();
+"""
+
+KWIN_POINTER_JS = """
+// While another window is the active one: tell when the pointer moves over the desktop
+// itself (or over a panel, if that is set to count). Only the movement is told, twice a
+// second at most; what you type or do in the other window never counts.
+var pointerChecked = 0;
 workspace.cursorPosChanged.connect(function () {
-    if (Date.now() - pointerChecked >= 250) checkPointer();
-    else if (!pointerLater.active) pointerLater.start();  // so the last position is seen too
+    var now = Date.now();
+    if (now - pointerChecked < 500) return;
+    pointerChecked = now;
+    var active = workspace.activeWindow;
+    if (!active || active.desktopWindow || isCatcher(active)) return;  // the desktop is in use anyway
+    var top = workspace.windowAt(workspace.cursorPos, 1)[0];
+    if (!top || top.desktopWindow || (%(panel)s && top.dock))
+        callDBus("%(name)s", "/", "%(name)s", "DesktopMotion");
 });
-workspace.windowActivated.connect(checkPointer);
-checkPointer();
 """
 
 KWIN_EDGE_JS = """
@@ -347,9 +395,12 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <group name="General">
     <entry name="closed" type="Bool"><default>false</default></entry>
     <entry name="paused" type="Bool"><default>false</default></entry>
+    <entry name="peek" type="Bool"><default>false</default></entry>
     <entry name="name" type="String"><default></default></entry>
     <entry name="targets" type="StringList"><default></default></entry>
     <entry name="taskMode" type="String"><default>all</default></entry>
+    <entry name="taskKeep" type="StringList"><default></default></entry>
+    <entry name="taskList" type="String"><default></default></entry>
     <entry name="openOn" type="String"><default>click</default></entry>
     <entry name="hoverDelay" type="Int"><default>200</default></entry>
     <entry name="autoClose" type="Bool"><default>false</default></entry>
@@ -423,7 +474,8 @@ PlasmoidItem {
     }
     // Paused (Tidy's "Restore everything"): the drawer lets go of everything, as if it were
     // not there, until Tidy is switched on again or the arrow is clicked.
-    readonly property bool wantClosed: cfg.closed && !editing && !leaving && !cfg.paused
+    // Peek (Tidy's key to hold): open for as long as the key is held, whatever else is set.
+    readonly property bool wantClosed: cfg.closed && !editing && !leaving && !cfg.paused && !cfg.peek
 
     property Item container: null   // our own applet container
     property var siblings: []       // the other widgets: [{item, id, plugin, pos}]
@@ -510,6 +562,7 @@ PlasmoidItem {
             tasks: taskHiders.slice().sort((a, b) => (vertical ? a.item.y - b.item.y : a.item.x - b.item.x)).map(h => {
                 var m = h.item.model;
                 return (m.IsLauncher ? "L" : "W") + ":" + String(m.AppName || m.display).slice(0, 10)
+                    + "#" + m.AppId + (h.hider.kept ? "/kept" : "")
                     + "@" + Math.round(vertical ? h.item.y : h.item.x)
                     + "/w" + Math.round(vertical ? h.item.height : h.item.width)
                     + "/f" + h.hider.factor.toFixed(2) + (h.item.visible ? "" : "/hidden");
@@ -730,6 +783,43 @@ PlasmoidItem {
                     root, {task: w.item, after: w.after})});
         });
         taskHiders = kept;
+        countOwn();
+        listTasks.restart();
+    }
+    // The programs you chose to keep in the panel, by their application id.
+    readonly property var keepIds: Array.from(cfg.taskKeep || []).map(String)
+    // With some programs kept in the panel, the mark on the arrow counts the icons that are
+    // really in the drawer.
+    property int ownWindows: 0
+    function countOwn() {
+        var n = 0;
+        taskHiders.forEach(h => { if (h.hider && h.hider.takesPart && !h.hider.launcherOnly) n++; });
+        ownWindows = n;
+    }
+    // For Tidy's settings window: which programs the task manager shows, so that you can
+    // choose per program. Written only when the list changes.
+    Timer { id: listTasks; interval: 2000; onTriggered: root.writeTaskList() }
+    function writeTaskList() {
+        var along = t => vertical ? t.y : t.x, seen = {}, list = [];
+        taskHiders.slice().sort((a, b) => along(a.item) - along(b.item)).forEach(h => {
+            var m = null;
+            try { m = h.item.model; } catch (e) {}
+            if (!m || !m.AppId) return;
+            var id = String(m.AppId);
+            if (seen[id]) return;
+            seen[id] = true;
+            list.push({id: id, name: String(m.AppName || m.display || id)});
+        });
+        // A program that is not there right now keeps its place in the list while it is kept.
+        var old = [];
+        try { old = JSON.parse(cfg.taskList || "[]") || []; } catch (e) { old = []; }
+        old.forEach(o => {
+            if (o && o.id && !seen[o.id] && keepIds.indexOf(String(o.id)) >= 0) list.push(o);
+        });
+        var text = JSON.stringify(list);
+        if (text === cfg.taskList || !list.length) return;
+        cfg.taskList = text;
+        persist(cfg);
     }
     // In a cascade the icons go one after the other: closing, the one furthest from the
     // arrow first; opening, the nearest first.
@@ -860,8 +950,13 @@ PlasmoidItem {
             property bool after: true
             readonly property bool launcherOnly: task && task.model ? task.model.IsLauncher === true : false
             // Does this icon go into the drawer at all, and should it be hidden now?
-            readonly property bool takesPart: task !== null
+            // A program you chose to keep in the panel stays out of the drawer.
+            readonly property bool kept: task && task.model
+                ? root.keepIds.indexOf(String(task.model.AppId)) >= 0 : false
+            readonly property bool takesPart: task !== null && !kept
                 && (root.cfg.taskMode === "all" || (root.cfg.taskMode === "pinned" && launcherOnly))
+            onTakesPartChanged: root.countOwn()
+            onLauncherOnlyChanged: root.countOwn()
             readonly property bool hideMe: root.wantClosed && takesPart
             property real size: 0     // natural size, remembered while visible
             readonly property real naturalSize: size > 0 ? size : root.someTaskSize
@@ -1279,7 +1374,8 @@ PlasmoidItem {
             }
         }
     }
-    readonly property int hiddenWindows: counter.item ? counter.item.windows : 0
+    readonly property int hiddenWindows: !counter.item ? 0
+        : (keepIds.length ? ownWindows : counter.item.windows)
     readonly property bool hiddenAttention: counter.item ? counter.item.attention : false
     readonly property bool markShown: wantClosed && counter.item !== null
         && (hiddenAttention || (cfg.indicator !== "attention" && hiddenWindows > 0))
@@ -1632,22 +1728,29 @@ FADE_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <group name="General">
     <entry name="fade" type="String"><default></default></entry>
     <entry name="duration" type="Int"><default>300</default></entry>
+    <entry name="widgets" type="Bool"><default>false</default></entry>
+    <entry name="keep" type="StringList"><default></default></entry>
+    <entry name="doubleClick" type="Bool"><default>false</default></entry>
+    <entry name="service" type="String"><default></default></entry>
     <entry name="debug" type="String"><default></default></entry>
   </group>
 </kcfg>
 """
 
-# The fade helper (QML): an invisible widget on the desktop that fades the icons. Tidy still
-# hides them the usual way; this only makes them go and come gently.
+# The desktop helper (QML): an invisible widget on the desktop. It fades the icons, takes the
+# widgets on the desktop along, and notices a double-click on an empty spot. Tidy still hides
+# the icons the usual way; this only does what cannot be done from outside Plasma.
 FADE_QML = r"""// SPDX-FileCopyrightText: 2026 Ivar
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Tidy's fade helper: sits on the desktop, unseen, and fades the desktop icons out and in
-// when Tidy asks. Generated by plasma-tidy; edit it there.
+// Tidy's helper on the desktop: sits there unseen. When Tidy asks, it fades the desktop icons
+// out and in and makes the widgets on the desktop go and come with them; and it tells Tidy
+// about a double-click on an empty spot. Generated by plasma-tidy; edit it there.
 //
-// Plasma has no public way to fade the icons, so this reaches into the desktop it sits on
-// and changes the opacity of the layer that holds them. Nothing else is touched; when the
-// helper goes, the icons are fully visible again.
+// Plasma has no public way to do these things, so this reaches into the desktop it sits on:
+// it changes how see-through the layer of icons and the widgets are, and listens to the
+// desktop's own "pressed" signal. Nothing else is touched; when the helper goes, everything
+// is fully visible again.
 
 import QtQuick
 import org.kde.plasma.plasmoid
@@ -1657,8 +1760,17 @@ PlasmoidItem {
     id: root
 
     readonly property var cfg: Plasmoid.configuration
-    property Item icons: null   // the desktop's layer of icons
+    property Item icons: null     // the desktop's layer of icons
+    property Item layout: null    // what the desktop's widgets sit in
     property int tries: 0
+    property real level: 1        // 1: everything in view, 0: gone
+    property bool takeWidgets: false
+    property var taken: []        // widgets we made invisible
+    property double lastPress: 0
+    property var bus: null
+    readonly property bool editing: {
+        try { return Plasmoid.containment.corona.editMode === true; } catch (e) { return false; }
+    }
 
     preferredRepresentation: fullRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
@@ -1676,6 +1788,8 @@ PlasmoidItem {
         while (c && hops < 10) {
             if (c.folderViewLayer !== undefined && c.folderViewLayer) {
                 icons = c.folderViewLayer;
+                layout = (c.appletsLayout !== undefined && c.appletsLayout) ? c.appletsLayout : null;
+                apply();
                 return;
             }
             c = c.parent;
@@ -1687,30 +1801,134 @@ PlasmoidItem {
     onParentChanged: look.restart()
     Component.onCompleted: look.restart()
 
+    function isOwn(c) {
+        try { return c.applet.plasmoid.pluginName === Plasmoid.pluginName; } catch (e) { return false; }
+    }
+    // The widgets you chose to keep in view, by their number in Plasma's bookkeeping.
+    readonly property var keepIds: Array.from(cfg.keep || []).map(String)
+    function isKept(c) {
+        try { return keepIds.indexOf(String(c.applet.plasmoid.id)) >= 0; } catch (e) { return false; }
+    }
+    onKeepIdsChanged: apply()
+    // Bring the desktop in line with "level". While you edit the desktop its widgets are
+    // always there.
+    function apply() {
+        if (icons) icons.opacity = level;
+        if (!layout) return;
+        var show = (takeWidgets && !editing) ? level : 1;
+        var kids = layout.children, still = [];
+        for (var i = 0; i < kids.length; i++) {
+            var c = kids[i];
+            if (!c || c === icons || c.applet === undefined || !c.applet || isOwn(c)) continue;
+            var mine = isKept(c) ? 1 : show;
+            c.opacity = mine;
+            if (mine > 0) {
+                if (taken.indexOf(c) >= 0) c.visible = true;
+                continue;
+            }
+            if (show <= 0 && c.visible) {
+                c.visible = false;
+                still.push(c);
+            } else if (show <= 0 && taken.indexOf(c) >= 0) {
+                still.push(c);
+            } else if (show > 0 && taken.indexOf(c) >= 0) {
+                c.visible = true;
+            }
+        }
+        taken = still;
+    }
+    onLevelChanged: apply()
+    onEditingChanged: apply()
+
     NumberAnimation {
         id: fader
-        target: root.icons
-        property: "opacity"
+        target: root
+        property: "level"
         duration: Math.max(0, root.cfg.duration)
         easing.type: Easing.InOutQuad
-        onFinished: if (root.cfg.debug === "on") console.warn("TIDYFADE at " + root.icons.opacity)
+        onFinished: {
+            if (root.level >= 1) root.takeWidgets = false;
+            if (root.cfg.debug === "on") root.report();
+        }
+    }
+    function report() {
+        var kids = layout ? layout.children : [], list = [];
+        for (var i = 0; i < kids.length; i++) {
+            var c = kids[i];
+            if (c && c !== icons && c.applet !== undefined && c.applet && !isOwn(c))
+                list.push(c.applet.plasmoid.pluginName + "#" + c.applet.plasmoid.id + "/o" + c.opacity
+                          + (c.visible ? "" : "/hidden") + (isKept(c) ? "/kept" : ""));
+        }
+        console.warn("TIDYFADE " + JSON.stringify({level: level, icons: icons ? icons.opacity : null,
+            widgets: list, takeWidgets: takeWidgets, editing: editing,
+            view: !!(icons && icons.view), doubleClick: cfg.doubleClick}));
     }
     // Tidy writes "out <n>" or "in <n>"; the number makes every request a change.
     Connections {
         target: root.cfg
         function onFadeChanged() {
             if (!root.icons) return;
+            var out = String(root.cfg.fade).indexOf("out") === 0;
             fader.stop();
-            fader.to = String(root.cfg.fade).indexOf("out") === 0 ? 0 : 1;
+            if (out) root.takeWidgets = root.cfg.widgets;
+            if (fader.duration <= 0 || root.level === (out ? 0 : 1)) {
+                root.level = out ? 0 : 1;
+                if (!out) root.takeWidgets = false;
+                root.apply();
+                if (root.cfg.debug === "on") root.report();
+                return;
+            }
+            fader.to = out ? 0 : 1;
             fader.start();
+        }
+        function onDebugChanged() {
+            if (root.cfg.debug === "on") root.report();
+            if (root.cfg.debug === "double") root.tell("DesktopDoubleClick");
+            // For testing: as if the desktop were pressed on an empty spot.
+            if (String(root.cfg.debug).indexOf("press") === 0 && root.icons && root.icons.view)
+                root.icons.view.pressed();
         }
     }
 
-    // Never leave the icons invisible: not when the helper is removed, not after a restart
-    // of Plasma (it starts with the icons fully visible, whatever was asked last).
+    // A double-click on an empty spot of the desktop. The desktop tells when it is pressed
+    // and which icon is under the pointer then; two presses on nothing, shortly after each
+    // other, are a double-click.
+    Connections {
+        target: (root.cfg.doubleClick && root.icons && root.icons.view) ? root.icons.view : null
+        ignoreUnknownSignals: true
+        function onPressed() {
+            var item = null;
+            try { item = root.icons.view.hoveredItem; } catch (e) {}
+            if (item && !item.blank) { root.lastPress = 0; return; }
+            var now = Date.now();
+            if (now - root.lastPress <= Qt.styleHints.mouseDoubleClickInterval) {
+                root.lastPress = 0;
+                root.tell("DesktopDoubleClick");
+            } else {
+                root.lastPress = now;
+            }
+        }
+    }
+    function tell(member) {
+        try {
+            if (!bus)
+                bus = Qt.createQmlObject('import QtQuick; import org.kde.plasma.workspace.dbus as DBus; '
+                    + 'QtObject { function call(service, member) { DBus.SessionBus.asyncCall({'
+                    + '"service": service, "path": "/", "iface": service, "member": member, '
+                    + '"arguments": []}); } }', root, "tidyBus");
+            bus.call(String(cfg.service), member);
+        } catch (e) {
+            console.warn("TIDYFADE cannot reach Tidy: " + e);
+        }
+    }
+
+    // Never leave anything invisible: not when the helper is removed, not after a restart
+    // of Plasma (it starts with everything fully visible, whatever was asked last).
     function letGo() {
         fader.stop();
-        if (icons) icons.opacity = 1;
+        level = 1;
+        takeWidgets = false;
+        apply();
     }
     Connections {
         target: Plasmoid
@@ -2358,10 +2576,104 @@ TRANSLATIONS = {
         "{app} — icons hidden": "{app} — pictogrammen verborgen",
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
-        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | "
+        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]":
-            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --focus | "
+            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
             "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]",
+        "for example: discord":
+            "bijvoorbeeld: discord",
+        "Remove this rule":
+            "Deze regel verwijderen",
+        "Add a rule for a name":
+            "Regel voor een naam toevoegen",
+        "A rule decides by name how an application's icon appears: when the rule is made, and every time such an icon shows up for the first time. A rule goes before the choice on the left.":
+            "Een regel bepaalt op naam hoe het pictogram van een programma verschijnt: op het moment dat je de regel maakt, en elke keer dat zo'n pictogram voor het eerst opduikt. Een regel gaat voor op de keuze links.",
+        "Name contains:":
+            "Naam bevat:",
+        "Programs that go in the drawer":
+            "Programma's die in de la gaan",
+        "A program without a tick stays in the panel, also while the drawer is closed.":
+            "Een programma zonder vinkje blijft in het paneel staan, ook als de la dicht is.",
+        "The programs of the task manager appear here a moment after the drawer has one in it. Open this window again to see them.":
+            "De programma's van het takenbeheer verschijnen hier kort nadat er een in de la zit. Open dit venster opnieuw om ze te zien.",
+        "Program name":
+            "Naam van het programma",
+        "The list holds the programs that were in front since Tidy started. You can also type the name.":
+            "In de lijst staan de programma's die vooraan stonden sinds Tidy is gestart. Je kunt de naam ook typen.",
+        "A rule uses one of your profiles, or switches focus mode on, for as long as something is the case. For the profile the highest rule that applies decides. You make profiles on the General tab.":
+            "Een regel gebruikt een van je profielen, of zet de focusmodus aan, zolang iets het geval is. Voor het profiel beslist de bovenste regel die geldt. Profielen maak je op het tabblad Algemeen.",
+        "No rules yet.":
+            "Nog geen regels.",
+        "Add a rule":
+            "Regel toevoegen",
+        "The profile for when no rule with a profile applies.":
+            "Het profiel voor als er geen regel met een profiel geldt.",
+        "Otherwise:":
+            "Anders:",
+        "A ✓ marks the rules that apply right now. A profile is put to use at the moment the choice changes; what you change by hand afterwards stays until the next change, so save it in the profile to keep it. Rules work while Tidy is running and switched on.":
+            "Een ✓ staat bij de regels die nu gelden. Een profiel wordt gebruikt op het moment dat de keuze verandert; wat je daarna met de hand wijzigt blijft tot de volgende wissel, dus sla het op in het profiel om het te houden. Regels werken zolang Tidy draait en aan staat.",
+        "Leave everything as it is":
+            "Alles laten zoals het is",
+        "Hide the icons after:":
+            "Pictogrammen verbergen na:",
+        "Start":
+            "Starten",
+        "More settings…":
+            "Meer instellingen…",
+        "Rules":
+            "Regels",
+        "One click":
+            "Eén klik",
+        "A double-click":
+            "Een dubbelklik",
+        "Number of clicks:":
+            "Aantal klikken:",
+        "A double-click on an empty spot of the desktop hides the icons":
+            "Dubbelklikken op een lege plek van het bureaublad verbergt de pictogrammen",
+        "Also hide the widgets on the desktop":
+            "Widgets op het bureaublad ook verbergen",
+        "Without a tick this widget stays in view.":
+            "Zonder vinkje blijft deze widget in beeld.",
+        "Clocks, notes and other widgets on the desktop go and come with the icons. Uses the helper widget too.":
+            "Klokken, notities en andere widgets op het bureaublad verdwijnen en verschijnen samen met de pictogrammen. Gebruikt ook de hulpwidget.",
+        "While you hold this key, the desktop icons and everything in the drawers are shown; let go and they are away again. Works in focus mode too.":
+            "Zolang je deze toets ingedrukt houdt, zijn de bureaubladpictogrammen en alles in de la's te zien; laat los en ze zijn weer weg. Werkt ook in de focusmodus.",
+        "Hold to peek:":
+            "Ingedrukt houden om te gluren:",
+        "and":
+            "en",
+        "Applies right now":
+            "Geldt nu",
+        "Welcome to {app}":
+            "Welkom bij {app}",
+        "{app} keeps your desktop clean. It hides the desktop icons when you don't need them and brings them back when you do. Three choices to start with; everything can be changed later.":
+            "{app} houdt je bureaublad schoon. Het verbergt de bureaubladpictogrammen als je ze niet nodig hebt en haalt ze terug als je ze wel nodig hebt. Drie keuzes om mee te beginnen; alles is later te wijzigen.",
+        "There is more in the settings: drawers that tuck panel icons away, a tidy system tray, focus mode, rules and profiles. {app} lives in the system tray: click its eye icon to open the settings.":
+            "In de instellingen zit meer: la's die paneelpictogrammen wegstoppen, een opgeruimd systeemvak, focusmodus, regels en profielen. {app} staat in het systeemvak: klik op het oog-pictogram om de instellingen te openen.",
+        "Profile: {name}":
+            "Profiel: {name}",
+        "Desktop {n}":
+            "Bureaublad {n}",
+        "Higher: goes before the rules below it":
+            "Hoger: gaat voor op de regels eronder",
+        "Lower":
+            "Lager",
+        "On battery":
+            "Op de accu",
+        "On mains power":
+            "Op netstroom",
+        "An external screen is connected":
+            "Er is een extern scherm aangesloten",
+        "Between these times":
+            "Tussen deze tijden",
+        "This program is in front":
+            "Dit programma staat vooraan",
+        "A program fills the whole screen":
+            "Een programma vult het hele scherm",
+        "On this virtual desktop":
+            "Op dit virtuele bureaublad",
+        "In this activity":
+            "In deze activiteit",
         "swayidle is missing.\n\nInstall it with:\nsudo dnf install swayidle":
             "swayidle ontbreekt.\n\nInstalleer het met:\nsudo dnf install swayidle",
     },
@@ -2477,6 +2789,74 @@ def drawer_value(key, raw):
     return str(raw)
 
 
+def app_icon(app_id):
+    """The icon of a program, looked up in its .desktop file; an empty icon if not found."""
+    name = app_id if app_id.endswith(".desktop") else app_id + ".desktop"
+    bases = [os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")]
+    bases += (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
+    for base in bases:
+        try:
+            with open(os.path.join(base, "applications", name), errors="replace") as f:
+                for line in f:
+                    if line.startswith("Icon="):
+                        icon = line[5:].strip()
+                        return QIcon(icon) if os.path.isabs(icon) else QIcon.fromTheme(icon)
+        except OSError:
+            continue
+    return QIcon()
+
+
+def widget_name(plugin):
+    """What a widget is called, from its own description; in Dutch when Tidy speaks Dutch."""
+    for base in (os.path.expanduser("~/.local/share"), "/usr/local/share", "/usr/share"):
+        try:
+            with open(os.path.join(base, "plasma/plasmoids", plugin, "metadata.json")) as f:
+                about = json.load(f).get("KPlugin", {})
+        except (OSError, ValueError):
+            continue
+        name = (about.get("Name[nl]") if CATALOG is TRANSLATIONS.get("nl") else None) or about.get("Name")
+        if name:
+            return name
+    return compiled_widget_name(plugin) or panel_widget_name(plugin)
+
+
+def compiled_widget_name(plugin):
+    """The name of a widget that Plasma ships as a compiled plugin. Its description sits in
+    the file in Qt's packed form (CBOR); the name is picked out of it by hand."""
+    path = os.path.join(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath),
+                        "plasma", "applets", plugin + ".so")
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+
+    def text_at(pos):
+        # A short text: one byte 0x60 + length, or 0x78 and a length byte; then the text.
+        if pos >= len(data):
+            return None, pos
+        if 0x60 <= data[pos] < 0x78:
+            length, pos = data[pos] - 0x60, pos + 1
+        elif data[pos] == 0x78 and pos + 1 < len(data):
+            length, pos = data[pos + 1], pos + 2
+        else:
+            return None, pos
+        try:
+            return data[pos:pos + length].decode(), pos + length
+        except UnicodeDecodeError:
+            return None, pos
+
+    def value_of(key, start):
+        head = bytes([0x60 + len(key)]) + key.encode()
+        pos = data.find(head, start)
+        return text_at(pos + len(head))[0] if pos >= 0 else None
+
+    # The widget's own name comes after its license; the names before that are its authors.
+    start = max(0, data.find(b"\x67License"))
+    dutch = value_of("Name[nl]", start) if CATALOG is TRANSLATIONS.get("nl") else None
+    return dutch or value_of("Name", start)
+
+
 def panel_widget_name(plugin):
     if plugin in PANEL_NAMES:
         return tr(PANEL_NAMES[plugin])
@@ -2532,16 +2912,41 @@ class Plasma:
         except ValueError:
             return 0
 
-    def fade_desktop(self, visible, duration, serial):
-        """Ask the fade helpers to fade the desktop icons in or out."""
-        self.run("var type = %s, text = %s, duration = %d;" % (
+    def fade_desktop(self, visible, duration, serial, widgets=False):
+        """Ask the helpers on the desktop to fade the icons in or out, and with them the
+        widgets on the desktop if those are to go too."""
+        self.run("var type = %s, text = %s, duration = %d, widgets = %s;" % (
             json.dumps(FADE_ID), json.dumps(("in " if visible else "out ") + str(serial)),
-            duration) + """
+            duration, json.dumps(widgets)) + """
             desktops().forEach(function (d) { d.widgets().forEach(function (w) {
                 if (w.type != type) return;
                 w.currentConfigGroup = ["General"];
                 w.writeConfig("duration", duration);
+                w.writeConfig("widgets", widgets);
                 w.writeConfig("fade", text);
+                w.reloadConfig();
+            }); });""")
+
+    def desktop_widgets(self):
+        """The widgets on the desktops, without our own helper: [{id, type}]."""
+        out = self.run("var own = %s;" % json.dumps(FADE_ID) + """
+            var r = [];
+            desktops().forEach(function (d) { d.widgets().forEach(function (w) {
+                if (w.type != own) r.push({id: w.id, type: w.type});
+            }); });
+            print(JSON.stringify(r));""")
+        try:
+            return json.loads(out)
+        except ValueError:
+            return []
+
+    def set_helper_config(self, config):
+        """Write settings to the helpers on the desktops."""
+        self.run("var type = %s, c = %s;" % (json.dumps(FADE_ID), json.dumps(config)) + """
+            desktops().forEach(function (d) { d.widgets().forEach(function (w) {
+                if (w.type != type) return;
+                w.currentConfigGroup = ["General"];
+                for (var k in c) w.writeConfig(k, c[k]);
                 w.reloadConfig();
             }); });""")
 
@@ -2813,8 +3218,9 @@ class KWin:
 
     def load(self, corner, pointer=False, panel=False):
         script = KWIN_JS % {"app": APP, "prefix": CATCHER_PREFIX, "name": DBUS_NAME}
+        script += KWIN_RULES_JS % {"name": DBUS_NAME}
         if pointer:
-            script += KWIN_POINTER_JS % {"app": APP, "name": DBUS_NAME,
+            script += KWIN_POINTER_JS % {"name": DBUS_NAME,
                                          "panel": "true" if panel else "false"}
         edge = dict((key, js) for key, _, js in CORNERS).get(corner)
         if edge:
@@ -2851,7 +3257,73 @@ class Catcher(QWidget):
         QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 1))
 
     def mousePressEvent(self, event):
-        self.on_click(event.button())
+        self.on_click(event.button(), False)
+
+    def mouseDoubleClickEvent(self, event):
+        self.on_click(event.button(), True)
+
+
+class PeekKey(QObject):
+    """A global shortcut that tells both when it is pressed and when it is let go."""
+
+    def __init__(self, on_change):
+        super().__init__()
+        self.on_change = on_change
+        self.bus = QDBusConnection.sessionBus()
+        self.accel = QDBusInterface("org.kde.kglobalaccel", "/kglobalaccel",
+                                    "org.kde.KGlobalAccel", self.bus)
+        self.registered = False
+        self.held = False
+
+    @staticmethod
+    def action():
+        """The action's name the way the shortcut service wants it: as a list of texts."""
+        name = QDBusArgument()
+        name.add(PEEK_ACTION, QMetaType.Type.QStringList.value)
+        return name
+
+    def set(self, text):
+        keys = QKeySequence(text or "")
+        if not keys.count() and not self.registered:
+            return
+        self.accel.call("doRegister", self.action())
+        codes = QDBusArgument()
+        codes.beginArray(QMetaType.Type.Int.value)
+        for i in range(keys.count()):
+            codes.add(keys[i].toCombined(), QMetaType.Type.Int.value)
+        codes.endArray()
+        # 2 | 4: the action is there now, and this key counts rather than an older one.
+        flags = QDBusArgument()
+        flags.add(6, QMetaType.Type.UInt.value)
+        self.accel.call("setShortcut", self.action(), codes, flags)
+        if not self.registered:
+            path = "/component/" + re.sub(r"[^A-Za-z0-9]", "_", APP)
+            for name, slot in (("globalShortcutPressed", self.pressed),
+                               ("globalShortcutReleased", self.released)):
+                self.bus.connect("org.kde.kglobalaccel", path,
+                                 "org.kde.kglobalaccel.Component", name, slot)
+            self.registered = True
+        if not keys.count():
+            self.accel.call("unRegister", self.action())
+
+    def release(self):
+        """Tidy stops: the key is free again until the next start."""
+        if self.registered:
+            self.accel.call("setInactive", self.action())
+
+    @pyqtSlot(str, str, "qlonglong")
+    def pressed(self, _component, action, _time):
+        if action == PEEK_ACTION[1]:
+            # Pressed while it already counts as held: the letting go was missed, so this
+            # press ends it. That way the key can never leave everything stuck in view.
+            self.on_change(not self.held)
+            self.held = not self.held
+
+    @pyqtSlot(str, str, "qlonglong")
+    def released(self, _component, action, _time):
+        if action == PEEK_ACTION[1]:
+            self.held = False
+            self.on_change(False)
 
 
 @pyqtClassInfo("D-Bus Interface", DBUS_NAME)
@@ -2875,13 +3347,33 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     def DesktopActive(self, active):
         self.autohide.on_desktop_active(active)
 
-    @pyqtSlot(bool)
-    def PointerOnDesktop(self, on):
-        self.autohide.on_pointer_on_desktop(on)
+    @pyqtSlot()
+    def DesktopMotion(self):
+        self.autohide.on_desktop_motion()
 
     @pyqtSlot(bool)
     def PopupOpen(self, open_):
         self.autohide.popup_open = open_
+
+    @pyqtSlot(str, bool)
+    def ActiveWindow(self, name, fullscreen):
+        self.autohide.on_active_window(name, fullscreen)
+
+    @pyqtSlot(int, str)
+    def VirtualDesktop(self, number, names):
+        self.autohide.on_virtual_desktop(number, names.split("\n") if names else [])
+
+    @pyqtSlot()
+    def DesktopDoubleClick(self):
+        self.autohide.on_desktop_double_click()
+
+    @pyqtSlot()
+    def Welcome(self):
+        QTimer.singleShot(0, self.autohide.welcome)
+
+    @pyqtSlot()
+    def Peek(self):
+        self.autohide.peek(not self.autohide.peeking)
 
     @pyqtSlot()
     def Toggle(self):
@@ -2956,6 +3448,27 @@ def tray_minimal(config, apps):
         else:
             hidden.append(item)
     return extra, shown, hidden
+
+
+def tray_rules(settings):
+    """Rules for application icons by name: [{"match": text, "mode": shown/hidden/auto}]."""
+    try:
+        found = json.loads(settings.value("tray_rules", "") or "[]")
+    except ValueError:
+        return []
+    if not isinstance(found, list):
+        return []
+    return [r for r in found if isinstance(r, dict) and r.get("match")
+            and r.get("mode") in (TRAY_AUTO, TRAY_SHOWN, TRAY_HIDDEN)]
+
+
+def tray_rule_mode(rules, item_id, title):
+    """What the first rule that fits this icon says, or None."""
+    names = f"{item_id} {title or ''}".lower()
+    for rule in rules:
+        if rule["match"].lower() in names:
+            return rule["mode"]
+    return None
 
 
 def remember_tray(settings, config):
@@ -3058,11 +3571,67 @@ class TrayTab(QWidget):
                              self.undo, "edit-undo"))
         layout.addLayout(row)
 
+        self.titles = apps
         self.hide_new = QCheckBox(tr("New icons go under the ^ arrow by themselves"))
         self.hide_new.setChecked(self.settings.value("tray_hide_new", False, bool))
         self.hide_new.setToolTip(tr("An application that shows a tray icon for the first time "
                                     "gets it hidden. Works while Tidy is running."))
-        layout.addWidget(self.hide_new)
+        row = QHBoxLayout()
+        row.addWidget(self.hide_new)
+        row.addStretch()
+        row.addWidget(button("Add a rule for a name",
+                             "A rule decides by name how an application's icon appears: when "
+                             "the rule is made, and every time such an icon shows up for the "
+                             "first time. A rule goes before the choice on the left.",
+                             lambda: self.add_rule("", TRAY_HIDDEN, by_hand=True), "list-add"))
+        layout.addLayout(row)
+        self.rule_rows = []
+        self.rules_layout = QVBoxLayout()
+        layout.addLayout(self.rules_layout)
+        for rule in tray_rules(self.settings):
+            self.add_rule(rule["match"], rule["mode"])
+
+    def add_rule(self, match, mode, by_hand=False):
+        row = QWidget()
+        row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addWidget(QLabel(tr("Name contains:")))
+        text = QLineEdit(match)
+        text.setPlaceholderText(tr("for example: discord"))
+        row_layout.addWidget(text, 1)
+        combo = QComboBox()
+        for key, label, _tip in TRAY_MODES:
+            if key != TRAY_DISABLED:
+                combo.addItem(tr(label), key)
+        combo.setCurrentIndex(max(0, combo.findData(mode)))
+        row_layout.addWidget(combo)
+        remove = QPushButton(QIcon.fromTheme("list-remove"), "")
+        remove.setToolTip(tr("Remove this rule"))
+        row_layout.addWidget(remove)
+        entry = (row, text, combo)
+        remove.clicked.connect(lambda: self.remove_rule(entry))
+        self.rule_rows.append(entry)
+        self.rules_layout.addWidget(row)
+        if by_hand:
+            self.rules_edited()
+            text.setFocus()
+
+    def remove_rule(self, entry):
+        self.rule_rows.remove(entry)
+        entry[0].setParent(None)
+        entry[0].deleteLater()
+        self.rules_edited()
+
+    def rules_edited(self):
+        window = self.window()
+        if hasattr(window, "watch_changes"):
+            window.watch_changes(self)
+            window.mark_changed()
+
+    def rules(self):
+        return [{"match": text.text().strip(), "mode": combo.currentData()}
+                for _row, text, combo in self.rule_rows if text.text().strip()]
 
     @staticmethod
     def label(item_id, apps):
@@ -3136,6 +3705,15 @@ class TrayTab(QWidget):
         if self.config is None:
             return
         self.settings.setValue("tray_hide_new", self.hide_new.isChecked())
+        rules = self.rules()
+        if rules != tray_rules(self.settings):
+            # New or changed rules: use them at once on the icons that are there.
+            self.settings.setValue("tray_rules", json.dumps(rules))
+            for item_id, combo in self.combos.items():
+                mode = None if item_id in self.plasmoids else tray_rule_mode(
+                    rules, item_id, self.label(item_id, self.titles))
+                if mode:
+                    combo.setCurrentIndex(combo.findData(mode))
         modes = {i: c.currentData() for i, c in self.combos.items()}
         if modes == {i: self.mode_of(i) for i in self.combos}:
             return  # nothing changed
@@ -3210,6 +3788,40 @@ class DrawerPage(QWidget):
                                         "back, the open programs stand together and the pinned "
                                         "ones slide out next to them."))
         form.addRow(tr("Open programs:"), self.active_place)
+
+        # Per program: in the drawer, or kept in the panel.
+        self.programs = {}
+        try:
+            listed = json.loads(config["taskList"] or "[]")
+        except ValueError:
+            listed = []
+        self.programs_box = QGroupBox(tr("Programs that go in the drawer"))
+        self.programs_box.setToolTip(tr("A program without a tick stays in the panel, also "
+                                        "while the drawer is closed."))
+        box_layout = QVBoxLayout(self.programs_box)
+        if listed:
+            inner = QWidget()
+            grid = QGridLayout(inner)
+            grid.setContentsMargins(0, 0, 0, 0)
+            for index, program in enumerate(p for p in listed if isinstance(p, dict)
+                                            and p.get("id")):
+                check = QCheckBox(str(program.get("name") or program["id"]))
+                check.setIcon(app_icon(program["id"]))
+                check.setChecked(program["id"] not in config["taskKeep"])
+                self.programs[program["id"]] = check
+                grid.addWidget(check, index // 2, index % 2)
+            area = QScrollArea(widgetResizable=True)
+            area.setFrameShape(QFrame.Shape.NoFrame)
+            area.setWidget(inner)
+            area.setMaximumHeight(min(inner.sizeHint().height() + 8, 150))
+            box_layout.addWidget(area)
+        else:
+            note = QLabel(tr("The programs of the task manager appear here a moment after the "
+                             "drawer has one in it. Open this window again to see them."))
+            note.setWordWrap(True)
+            note.setEnabled(False)
+            box_layout.addWidget(note)
+        form.addRow(self.programs_box)
         parts.addTab(page, tr("Contents"))
 
         # --- opening and closing ---
@@ -3371,6 +3983,7 @@ class DrawerPage(QWidget):
                     for check, plugin in self.targets.values())
         self.task_mode.setEnabled(tasks)
         self.active_place.setEnabled(tasks)
+        self.programs_box.setEnabled(tasks)
         self.hover_delay.setEnabled(self.open_on.currentData() == OPEN_HOVER)
         self.close_delay.setEnabled(bool(self.auto_close.currentData()))
         custom = self.icon.currentData() == "custom"
@@ -3389,6 +4002,9 @@ class DrawerPage(QWidget):
                 "targets": [str(i) for i, (check, _) in self.targets.items()
                             if check.isChecked()],
                 "taskMode": self.task_mode.currentData(),
+                "taskKeep": [i for i in self.drawer["config"]["taskKeep"]
+                             if i not in self.programs]
+                            + [i for i, check in self.programs.items() if not check.isChecked()],
                 "activePlace": self.active_place.currentData(),
                 "openOn": self.open_on.currentData(),
                 "hoverDelay": self.hover_delay.value(),
@@ -3617,6 +4233,309 @@ class FocusTab(QWidget):
             QTimer.singleShot(0, lambda: autohide.set_focus(True))
 
 
+class RuleRow(QWidget):
+    """One rule: when something is the case, use a profile or focus mode."""
+
+    def __init__(self, tab, rule):
+        super().__init__()
+        self.tab = tab
+        autohide = tab.autohide
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.mark = QLabel()
+        self.mark.setFixedWidth(self.fontMetrics().horizontalAdvance("✓") + 4)
+        layout.addWidget(self.mark)
+
+        self.when = QComboBox()
+        for key, label in RULE_WHEN:
+            self.when.addItem(tr(label), key)
+        self.when.setCurrentIndex(max(0, self.when.findData(rule.get("when"))))
+        layout.addWidget(self.when)
+
+        arg = str(rule.get("arg", ""))
+        self.stack = QStackedWidget()
+        self.stack.addWidget(QWidget())  # nothing to choose
+        # times
+        page = QWidget()
+        row = QHBoxLayout(page)
+        row.setContentsMargins(0, 0, 0, 0)
+        start, _, end = (arg if rule.get("when") == "time" else "09:00-17:00").partition("-")
+        self.start = QTimeEdit(QTime.fromString(start, "HH:mm"))
+        self.end = QTimeEdit(QTime.fromString(end, "HH:mm"))
+        for edit in (self.start, self.end):
+            edit.setDisplayFormat("HH:mm")
+        row.addWidget(self.start)
+        row.addWidget(QLabel(tr("and")))
+        row.addWidget(self.end)
+        row.addStretch()
+        self.stack.addWidget(page)
+        # program
+        self.program = QComboBox(editable=True)
+        self.program.addItems(sorted(autohide.seen_classes, key=str.lower))
+        self.program.setEditText(arg if rule.get("when") == "app" else "")
+        self.program.lineEdit().setPlaceholderText(tr("Program name"))
+        self.program.setToolTip(tr("The list holds the programs that were in front since Tidy "
+                                   "started. You can also type the name."))
+        self.stack.addWidget(self.program)
+        # virtual desktop
+        self.vdesktop = QComboBox()
+        names = autohide.vdesktop_names or [""]
+        count = max(len(names), int(arg) if rule.get("when") == "vdesktop" and arg.isdigit() else 0)
+        for number in range(1, count + 1):
+            name = names[number - 1] if number <= len(names) else ""
+            self.vdesktop.addItem(name or tr("Desktop {n}").format(n=number), str(number))
+        if rule.get("when") == "vdesktop":
+            self.vdesktop.setCurrentIndex(max(0, self.vdesktop.findData(arg)))
+        self.stack.addWidget(self.vdesktop)
+        # activity
+        self.activity = QComboBox()
+        for key, name in tab.activity_names.items():
+            self.activity.addItem(name, key)
+        if rule.get("when") == "activity":
+            if self.activity.findData(arg) < 0 and arg:
+                self.activity.addItem(arg, arg)
+            self.activity.setCurrentIndex(max(0, self.activity.findData(arg)))
+        self.stack.addWidget(self.activity)
+        self.stack.setFixedHeight(self.when.sizeHint().height())
+        layout.addWidget(self.stack, 1)
+        self.pages = {"time": 1, "app": 2, "vdesktop": 3, "activity": 4}
+        self.when.currentIndexChanged.connect(self.update_page)
+        self.update_page()
+
+        layout.addWidget(QLabel("→"))
+        self.then = QComboBox()
+        self.wanted = rule.get("then", RULE_FOCUS) + ":" + rule.get("name", "")
+        layout.addWidget(self.then)
+
+        for icon, tip, action in (("go-up", "Higher: goes before the rules below it",
+                                   lambda: tab.move(self, -1)),
+                                  ("go-down", "Lower", lambda: tab.move(self, 1)),
+                                  ("list-remove", "Remove this rule", lambda: tab.remove(self))):
+            button = QPushButton(QIcon.fromTheme(icon), "")
+            button.setToolTip(tr(tip))
+            button.clicked.connect(action)
+            layout.addWidget(button)
+
+    def update_page(self):
+        self.stack.setCurrentIndex(self.pages.get(self.when.currentData(), 0))
+
+    def fill_profiles(self, names):
+        """The choices on the right: focus mode, or one of the profiles."""
+        if self.then.count():
+            self.wanted = self.then.currentData()
+        self.then.blockSignals(True)
+        self.then.clear()
+        self.then.addItem(tr("Focus mode"), RULE_FOCUS + ":")
+        kind, _, wanted = self.wanted.partition(":")
+        for name in sorted(set(names) | ({wanted} if kind == RULE_PROFILE and wanted else set())):
+            self.then.addItem(tr("Profile: {name}").format(name=name), RULE_PROFILE + ":" + name)
+        self.then.setCurrentIndex(max(0, self.then.findData(self.wanted)))
+        self.then.blockSignals(False)
+
+    def values(self):
+        when = self.when.currentData()
+        arg = {"time": self.start.time().toString("HH:mm") + "-" + self.end.time().toString("HH:mm"),
+               "app": self.program.currentText().strip(),
+               "vdesktop": self.vdesktop.currentData() or "",
+               "activity": self.activity.currentData() or ""}.get(when, "")
+        kind, _, name = self.then.currentData().partition(":")
+        return {"when": when, "arg": arg, "then": kind, "name": name}
+
+
+class RulesTab(QWidget):
+    """Tab for the rules: a profile or focus mode by itself, depending on the situation."""
+
+    def __init__(self, autohide):
+        super().__init__()
+        self.autohide = autohide
+        self.rows = []
+        self.activity_names = autohide.activities()[0]
+        layout = QVBoxLayout(self)
+        intro = QLabel(tr("A rule uses one of your profiles, or switches focus mode on, for as "
+                          "long as something is the case. For the profile the highest rule that "
+                          "applies decides. You make profiles on the General tab."))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.list = QVBoxLayout()
+        layout.addLayout(self.list)
+        self.none = QLabel(tr("No rules yet."))
+        self.none.setEnabled(False)
+        layout.addWidget(self.none)
+
+        row = QHBoxLayout()
+        add = QPushButton(QIcon.fromTheme("list-add"), tr("Add a rule"))
+        add.clicked.connect(lambda: self.add({"when": "battery", "then": RULE_FOCUS}, True))
+        row.addWidget(add)
+        row.addStretch()
+        layout.addLayout(row)
+
+        form = QFormLayout()
+        self.otherwise = QComboBox()
+        self.otherwise.setToolTip(tr("The profile for when no rule with a profile applies."))
+        form.addRow(tr("Otherwise:"), self.otherwise)
+        layout.addLayout(form)
+
+        hint = QLabel(tr("A ✓ marks the rules that apply right now. A profile is put to use at "
+                         "the moment the choice changes; what you change by hand afterwards "
+                         "stays until the next change, so save it in the profile to keep it. "
+                         "Rules work while Tidy is running and switched on."))
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        layout.addWidget(hint)
+        layout.addStretch()
+
+        for rule in autohide.rules():
+            self.add(rule)
+        self.fill_profiles()
+        self.clock = QTimer(self, interval=1500)
+        self.clock.timeout.connect(self.update_marks)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_marks()
+        self.clock.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.clock.stop()
+
+    def update_marks(self):
+        for row in self.rows:
+            applies = self.autohide.rule_matches(row.values())
+            row.mark.setText("✓" if applies else "")
+            row.mark.setToolTip(tr("Applies right now") if applies else "")
+
+    def fill_profiles(self):
+        names = sorted(self.autohide.profiles())
+        for row in self.rows:
+            row.fill_profiles(names)
+        wanted = (self.otherwise.currentData() if self.otherwise.count()
+                  else self.autohide.settings.value("rules_else", ""))
+        self.otherwise.blockSignals(True)
+        self.otherwise.clear()
+        self.otherwise.addItem(tr("Leave everything as it is"), "")
+        for name in names:
+            self.otherwise.addItem(tr("Profile: {name}").format(name=name), name)
+        self.otherwise.setCurrentIndex(max(0, self.otherwise.findData(wanted)))
+        self.otherwise.blockSignals(False)
+
+    def edited(self):
+        self.none.setVisible(not self.rows)
+        window = self.window()
+        if hasattr(window, "watch_changes"):
+            window.watch_changes(self)
+            window.mark_changed()
+
+    def add(self, rule, by_hand=False):
+        row = RuleRow(self, rule)
+        row.fill_profiles(sorted(self.autohide.profiles()))
+        self.rows.append(row)
+        self.list.addWidget(row)
+        self.none.setVisible(False)
+        if by_hand:
+            self.edited()
+            self.update_marks()
+
+    def remove(self, row):
+        self.rows.remove(row)
+        row.setParent(None)
+        row.deleteLater()
+        self.edited()
+
+    def move(self, row, step):
+        index = self.rows.index(row)
+        other = index + step
+        if not 0 <= other < len(self.rows):
+            return
+        self.rows.insert(other, self.rows.pop(index))
+        self.list.removeWidget(row)
+        self.list.insertWidget(other, row)
+        self.edited()
+
+    def save(self):
+        settings = self.autohide.settings
+        settings.setValue("rules", json.dumps([row.values() for row in self.rows]))
+        settings.setValue("rules_else", self.otherwise.currentData() or "")
+
+
+class Welcome(QDialog):
+    """Shown the first time Tidy starts: the few choices that matter most."""
+
+    def __init__(self, autohide):
+        super().__init__()
+        self.autohide = autohide
+        settings = autohide.settings
+        self.setWindowTitle(tr("Welcome to {app}").format(app=APP_NAME))
+        self.setWindowIcon(QIcon.fromTheme("view-visible"))
+        layout = QVBoxLayout(self)
+
+        head = QHBoxLayout()
+        icon = QLabel()
+        icon.setPixmap(QIcon.fromTheme("view-visible").pixmap(48, 48))
+        head.addWidget(icon)
+        title = QLabel(tr("Welcome to {app}").format(app=APP_NAME))
+        font = title.font()
+        font.setPointSizeF(font.pointSizeF() * 1.5)
+        font.setBold(True)
+        title.setFont(font)
+        head.addWidget(title, 1)
+        layout.addLayout(head)
+
+        intro = QLabel(tr("{app} keeps your desktop clean. It hides the desktop icons when you "
+                          "don't need them and brings them back when you do. Three choices to "
+                          "start with; everything can be changed later.").format(app=APP_NAME))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form = QFormLayout()
+        self.timeout = QSpinBox(suffix=" s", minimum=3, maximum=3600)
+        self.timeout.setValue(settings.value("timeout", 10, int))
+        form.addRow(tr("Hide the icons after:"), self.timeout)
+        self.mode = QComboBox()
+        self.mode.addItem(tr("On any mouse movement or key press"), MODE_ACTIVITY)
+        self.mode.addItem(tr("Only on a click on the desktop"), MODE_CLICK)
+        self.mode.setCurrentIndex(max(0, self.mode.findData(settings.value("mode", MODE_ACTIVITY))))
+        form.addRow(tr("Show again:"), self.mode)
+        self.autostart = QCheckBox(tr("Start at login"))
+        self.autostart.setChecked(True)
+        form.addRow(self.autostart)
+        layout.addLayout(form)
+
+        more = QLabel(tr("There is more in the settings: drawers that tuck panel icons away, a "
+                         "tidy system tray, focus mode, rules and profiles. {app} lives in the "
+                         "system tray: click its eye icon to open the settings.")
+                      .format(app=APP_NAME))
+        more.setWordWrap(True)
+        more.setEnabled(False)
+        layout.addWidget(more)
+
+        buttons = QDialogButtonBox()
+        start = buttons.addButton(tr("Start"), QDialogButtonBox.ButtonRole.AcceptRole)
+        start.setDefault(True)
+        settings_button = buttons.addButton(tr("More settings…"),
+                                            QDialogButtonBox.ButtonRole.ActionRole)
+        buttons.accepted.connect(self.accept)
+        settings_button.clicked.connect(self.open_settings)
+        layout.addWidget(buttons)
+
+    def save(self):
+        a = self.autohide
+        a.settings.setValue("timeout", self.timeout.value())
+        a.settings.setValue("mode", self.mode.currentData())
+        a.set_autostart(self.autostart.isChecked())
+        a.after_settings(a.hidden, a.hidden_setup())
+
+    def accept(self):
+        self.save()
+        super().accept()
+
+    def open_settings(self):
+        self.accept()
+        QTimer.singleShot(0, self.autohide.show_settings)
+
+
 def open_donate():
     if DONATE_URL:
         QDesktopServices.openUrl(QUrl(DONATE_URL))
@@ -3707,6 +4626,10 @@ class SettingsDialog(QDialog):
         self.focus_tab = FocusTab(autohide)
         tabs.addTab(self.focus_tab, QIcon.fromTheme("mode-focus", QIcon.fromTheme("view-hidden")),
                     tr("Focus mode"))
+        self.rules_tab = RulesTab(autohide)
+        tabs.addTab(self.rules_tab, QIcon.fromTheme("preferences-system-time",
+                                                    QIcon.fromTheme("view-calendar")),
+                    tr("Rules"))
         general_tab = QWidget()
         tabs.addTab(general_tab, QIcon.fromTheme("configure"), tr("General"))
         self.about_tab = AboutTab()
@@ -3754,6 +4677,13 @@ class SettingsDialog(QDialog):
             row.addWidget(box)
         form.addRow(tr("With mouse button:"), row)
 
+        self.clicks = QComboBox()
+        self.clicks.addItem(tr("One click"), CLICKS_SINGLE)
+        self.clicks.addItem(tr("A double-click"), CLICKS_DOUBLE)
+        self.clicks.setCurrentIndex(max(0, self.clicks.findData(
+            settings.value("clicks", CLICKS_SINGLE))))
+        form.addRow(tr("Number of clicks:"), self.clicks)
+
         self.rehide = QComboBox()
         self.rehide.addItem(tr("After that time without movement (moving postpones)"),
                             REHIDE_IDLE)
@@ -3794,9 +4724,43 @@ class SettingsDialog(QDialog):
         form.addRow(row)
         self.only_desktop.toggled.connect(self.update_enabled)
 
+        self.double_hides = QCheckBox(tr("A double-click on an empty spot of the desktop hides "
+                                         "the icons"))
+        self.double_hides.setChecked(settings.value("double_hides", False, bool))
+        self.double_hides.setToolTip(tr("Uses a small helper widget on the desktop. It is "
+                                        "invisible; Tidy puts it there and takes it away again."))
+        form.addRow(self.double_hides)
+
         self.panel = QCheckBox(tr("Also hide the panel (taskbar)"))
         self.panel.setChecked(settings.value("hide_panel", False, bool))
         form.addRow(self.panel)
+
+        self.hide_widgets = QCheckBox(tr("Also hide the widgets on the desktop"))
+        self.hide_widgets.setChecked(settings.value("hide_widgets", False, bool))
+        self.hide_widgets.setToolTip(tr("Clocks, notes and other widgets on the desktop go and "
+                                        "come with the icons. Uses the helper widget too."))
+        form.addRow(self.hide_widgets)
+
+        # Per widget, when there are any: with a tick it goes along, without it stays.
+        kept = [i for i in settings.value("widgets_keep", "").split(",") if i]
+        self.widget_boxes = {}
+        self.widgets_gone = kept  # choices for widgets that are not there now are kept
+        found = autohide.plasma.desktop_widgets()
+        if found:
+            inner = QWidget()
+            grid = QGridLayout(inner)
+            grid.setContentsMargins(24, 0, 0, 0)
+            names = [widget_name(w["type"]) for w in found]
+            for index, (widget, name) in enumerate(zip(found, names)):
+                if names.count(name) > 1:
+                    name += f" ({names[:index + 1].count(name)})"
+                box = QCheckBox(name)
+                box.setChecked(str(widget["id"]) not in kept)
+                box.setToolTip(tr("Without a tick this widget stays in view."))
+                self.widget_boxes[str(widget["id"])] = box
+                grid.addWidget(box, index // 3, index % 3)
+            form.addRow(inner)
+            self.hide_widgets.toggled.connect(self.update_enabled)
 
         self.fade_icons = QCheckBox(tr("Fade the icons in and out"))
         self.fade_icons.setChecked(settings.value("fade_icons", False, bool))
@@ -3839,6 +4803,14 @@ class SettingsDialog(QDialog):
         self.language.setCurrentIndex(
             max(0, self.language.findData(settings.value("language", "auto"))))
         form.addRow(tr("Language:"), self.language)
+
+        self.peek_key = QKeySequenceEdit(QKeySequence(settings.value("peek_key", "")))
+        self.peek_key.setClearButtonEnabled(True)
+        self.peek_key.setMaximumSequenceLength(1)
+        self.peek_key.setToolTip(tr("While you hold this key, the desktop icons and everything "
+                                    "in the drawers are shown; let go and they are away again. "
+                                    "Works in focus mode too."))
+        form.addRow(tr("Hold to peek:"), self.peek_key)
 
         hint = QLabel(tr("Shortcuts: System Settings → Keyboard → Shortcuts → Add New → "
                          "Application… → Tidy. There you can give a key to showing and hiding "
@@ -3936,6 +4908,10 @@ class SettingsDialog(QDialog):
                 continue
             if isinstance(widget, QComboBox):
                 signal = widget.currentIndexChanged
+                if widget.isEditable():
+                    widget.editTextChanged.connect(self.mark_changed)
+            elif isinstance(widget, QTimeEdit):
+                signal = widget.timeChanged
             elif isinstance(widget, QCheckBox):
                 signal = widget.toggled
             elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
@@ -3969,11 +4945,14 @@ class SettingsDialog(QDialog):
         click = self.mode.currentData() == MODE_CLICK
         for box in self.buttons.values():
             box.setEnabled(click)
+        self.clicks.setEnabled(click)
         self.rehide.setEnabled(click)
         # In click mode at least one button must be chosen.
         valid = not click or any(b.isChecked() for b in self.buttons.values())
         self.fade_duration.setEnabled(self.fade_icons.isChecked())
         self.panel_counts.setEnabled(self.only_desktop.isChecked())
+        for box in self.widget_boxes.values():
+            box.setEnabled(self.hide_widgets.isChecked())
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
         self.apply_button.setEnabled(valid and self.changed)
 
@@ -4029,11 +5008,13 @@ class SettingsDialog(QDialog):
             self.profile.addItem(name)
         self.profile.setCurrentText(name)
         self.update_profiles()
+        self.rules_tab.fill_profiles()
 
     def delete_profile(self):
         self.autohide.delete_profile(self.profile.currentText())
         self.profile.removeItem(self.profile.currentIndex())
         self.update_profiles()
+        self.rules_tab.fill_profiles()
 
     def export_settings(self):
         name, _ = QFileDialog.getSaveFileName(
@@ -4042,7 +5023,9 @@ class SettingsDialog(QDialog):
         if not name:
             return
         self.autohide.apply_settings(self)
-        data = dict(self.autohide.snapshot(), profiles=self.autohide.profiles())
+        data = dict(self.autohide.snapshot(), profiles=self.autohide.profiles(),
+                    rules=self.autohide.rules(),
+                    rules_else=self.autohide.settings.value("rules_else", ""))
         try:
             with open(name, "w") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -4098,13 +5081,21 @@ class Tidy(QObject):
         self.idle_since = None      # moment the current stillness began
         self.still_since = None     # the same, whether or not that stillness counts
         self.desktop_active = True  # is the desktop the active window?
-        self.pointer_on_desktop = False  # is the pointer above the desktop (or our own window)?
         self.popup_open = False     # is a menu or pop-up open somewhere?
         self.plasma_shell = QDBusInterface("org.kde.plasmashell", "/PlasmaShell",
                                            "org.kde.PlasmaShell", QDBusConnection.sessionBus())
         self.shown_at = time.monotonic()
         self.catchers = []
         self.dialog = None
+        self.peeking = False        # the peek key is held: everything is shown for a moment
+        self.peek_state = None
+        self.rule_focus = False     # focus mode was switched on by a rule
+        self.rule_kinds = set()
+        self.active_class = ""      # the program in front, and whether it fills the screen
+        self.active_fullscreen = False
+        self.seen_classes = set()
+        self.vdesktop = 0
+        self.vdesktop_names = []
         os.makedirs(EMPTY_DIR, exist_ok=True)
         install_drawer()
 
@@ -4155,9 +5146,10 @@ class Tidy(QObject):
         self.retranslate()
         self.tray.show()
 
-        self.tick = QTimer(self, interval=250)
-        self.tick.timeout.connect(self.on_tick)
-        self.tick.start()
+        # Fires once, at the moment the icons are due to hide: nothing runs in between.
+        self.hide_timer = QTimer(self, singleShot=True)
+        self.hide_timer.timeout.connect(self.on_tick)
+        self.schedule()
 
         if self.enabled_action.isChecked():
             self.start_idle()
@@ -4172,6 +5164,53 @@ class Tidy(QObject):
                     self.on_tray_item)
         QTimer.singleShot(6000, self.check_tray_items)  # note which icons are there now
 
+        # Rules: looked at again whenever something they depend on changes.
+        self.rules_timer = QTimer(self, interval=400, singleShot=True)
+        self.rules_timer.timeout.connect(self.evaluate_rules)
+        self.rules_clock = QTimer(self, singleShot=True)
+        self.rules_clock.timeout.connect(self.rules_changed)
+        system = QDBusConnection.systemBus()
+        system.connect("org.freedesktop.UPower", "/org/freedesktop/UPower",
+                       "org.freedesktop.DBus.Properties", "PropertiesChanged", self.rules_changed)
+        system.connect("org.freedesktop.login1", "/org/freedesktop/login1",
+                       "org.freedesktop.login1.Manager", "PrepareForSleep", self.rules_changed)
+        bus.connect("org.kde.ActivityManager", "/ActivityManager/Activities",
+                    "org.kde.ActivityManager.Activities", "CurrentActivityChanged",
+                    self.rules_changed)
+        app.screenAdded.connect(self.rules_changed)
+        app.screenRemoved.connect(self.rules_changed)
+        QTimer.singleShot(4000, self.rules_changed)
+
+        self.peek_key = PeekKey(self.peek)
+        self.peek_key.set(self.settings.value("peek_key", ""))
+
+    def timed(name):
+        """A value the moment of hiding depends on: changing it sets the timer afresh."""
+        def get(self):
+            return self.__dict__.get(name)
+
+        def set_(self, value):
+            self.__dict__[name] = value
+            self.schedule()
+        return property(get, set_)
+
+    hidden = timed("hidden")
+    idle_since = timed("idle_since")
+    shown_at = timed("shown_at")
+    del timed
+
+    def schedule(self):
+        """Set the timer for the moment the icons are due to hide, or stop it when there is
+        nothing to wait for: icons hidden, Tidy off, or you are busy at the desktop."""
+        timer = self.__dict__.get("hide_timer")
+        if timer is None:
+            return  # still starting up
+        waiting = self.fixed_rehide() or self.idle_since is not None
+        if self.hidden or self.peeking or not self.enabled_action.isChecked() or not waiting:
+            timer.stop()
+        else:
+            timer.start(int(self.remaining() * 1000) + 20)
+
     def mode(self):
         return self.settings.value("mode", MODE_ACTIVITY)
 
@@ -4179,16 +5218,13 @@ class Tidy(QObject):
         return self.mode() == MODE_CLICK and self.settings.value("rehide", REHIDE_IDLE) == REHIDE_FIXED
 
     def counts_activity(self):
-        """Does mouse/keyboard input count right now? Not while you work in another window,
-        unless the pointer is above the desktop itself."""
-        return (self.desktop_active or self.pointer_on_desktop
-                or not self.settings.value("only_desktop", True, bool))
+        """Does mouse/keyboard input count right now? Not while you work in another window;
+        then only moving the pointer over the desktop itself does, see on_desktop_motion."""
+        return self.desktop_active or not self.settings.value("only_desktop", True, bool)
 
     def load_kwin(self):
-        watch = self.settings.value("only_desktop", True, bool)
-        if not watch:
-            self.pointer_on_desktop = False
-        self.kwin.load(self.settings.value("corner", "none"), watch,
+        self.kwin.load(self.settings.value("corner", "none"),
+                       self.settings.value("only_desktop", True, bool),
                        self.settings.value("panel_counts", True, bool))
 
     def on_desktop_active(self, active):
@@ -4205,17 +5241,16 @@ class Tidy(QObject):
             # Away from the desktop: from now on the timer keeps counting.
             self.idle_since = time.monotonic()
 
-    def on_pointer_on_desktop(self, on):
-        counted = self.counts_activity()
-        self.pointer_on_desktop = on
-        if on and not counted:
-            # The pointer came onto the desktop: what you do counts again.
-            self.idle_since = self.still_since
-            if (self.still_since is None and self.hidden and self.mode() == MODE_ACTIVITY
-                    and not self.hold_icons):
-                self.show()
-        elif not on and counted and self.idle_since is None and not self.counts_activity():
+    def on_desktop_motion(self):
+        """Told by the KWin helper while another window is the active one: the pointer moves
+        over the desktop (or the panel). That postpones hiding; the time starts again from
+        this movement, whatever you do in the other window."""
+        if self.counts_activity():
+            return  # all input counts already
+        if not self.hidden:
             self.idle_since = time.monotonic()
+        elif self.mode() == MODE_ACTIVITY and not self.hold_icons:
+            self.show()
 
     def remaining(self):
         """Seconds until hiding (only meaningful while the icons are visible)."""
@@ -4235,12 +5270,16 @@ class Tidy(QObject):
         return self.popup_open or bool(self.plasma_shell.property("editMode"))
 
     def on_tick(self):
-        if self.enabled_action.isChecked() and not self.hidden and self.remaining() <= 0:
-            if self.busy():
-                # Postpone: the timer starts again once you're done.
-                self.shown_at = time.monotonic()
-                self.idle_since = time.monotonic()
-                return
+        if not self.enabled_action.isChecked() or self.hidden or self.peeking:
+            return
+        if self.remaining() > 0:
+            self.schedule()
+        elif self.busy():
+            # Postpone: the timer starts again once you're done. Look again in a moment.
+            self.shown_at = time.monotonic()
+            self.idle_since = time.monotonic()
+            self.hide_timer.start(1000)
+        else:
             self.hide()
 
     # --- hide / show -------------------------------------------------------
@@ -4313,12 +5352,18 @@ class Tidy(QObject):
     # --- fading the icons ---------------------------------------------------
 
     def fading(self):
-        return self.fade_helpers > 0 and self.settings.value("fade_icons", False, bool)
+        """Is there something for the helper on the desktop to do when the icons go or come:
+        fade them, or take the widgets along?"""
+        return self.fade_helpers > 0 and (self.settings.value("fade_icons", False, bool)
+                                          or self.settings.value("hide_widgets", False, bool))
 
     def fade(self, visible):
-        duration = self.settings.value("fade_duration", 300, int)
+        duration = 0
+        if self.settings.value("fade_icons", False, bool):
+            duration = self.settings.value("fade_duration", 300, int)
         self.fade_serial += 1
-        self.plasma.fade_desktop(visible, duration, self.fade_serial)
+        self.plasma.fade_desktop(visible, duration, self.fade_serial,
+                                 self.settings.value("hide_widgets", False, bool))
         return duration
 
     def after_fade(self, delay, action):
@@ -4334,11 +5379,18 @@ class Tidy(QObject):
             action()
 
     def update_fade_helpers(self):
-        """Put the fade helper on the desktops, or take it away, as the setting says."""
-        wanted = self.settings.value("fade_icons", False, bool)
+        """Put the helper on the desktops, or take it away, as the settings say. It fades
+        the icons, hides the widgets on the desktop and notices a double-click there."""
+        double = self.settings.value("double_hides", False, bool)
+        wanted = (double or self.settings.value("fade_icons", False, bool)
+                  or self.settings.value("hide_widgets", False, bool))
         self.fade_helpers = self.plasma.ensure_fade_helpers(wanted)
-        if wanted and not self.hidden:
-            self.fade(True)  # whatever a helper was last told: the icons are visible now
+        if wanted:
+            keep = [i for i in self.settings.value("widgets_keep", "").split(",") if i]
+            self.plasma.set_helper_config({"doubleClick": double, "service": DBUS_NAME,
+                                           "keep": keep})
+            # Whatever a helper was last told: this is how things are now.
+            self.fade(not self.hidden)
 
     def recover_after_crash(self):
         """Was the desktop still on the empty folder (crash, logout)? Put it back."""
@@ -4442,7 +5494,9 @@ class Tidy(QObject):
         if self.catchers:
             self.show_catchers()
 
-    def on_catcher_click(self, button):
+    def on_catcher_click(self, button, double):
+        if double != (self.settings.value("clicks", CLICKS_SINGLE) == CLICKS_DOUBLE):
+            return
         chosen = self.settings.value("buttons", "left,right,middle").split(",")
         if any(BUTTONS[k] == button for k in chosen if k in BUTTONS) and not self.hold_icons:
             self.show()
@@ -4537,17 +5591,22 @@ class Tidy(QObject):
             action.setText(tr(text).format(app=APP_NAME))
         self.profiles_menu.setTitle(tr("Profiles"))
         self.update_icon()
-        self.plasma.set_drawer_config(None, drawer_texts())
+        # Also at the start: no drawer is left held open by a peek that never ended.
+        self.plasma.set_drawer_config(None, dict(drawer_texts(), peek=False))
 
     def set_enabled(self, on):
         self.settings.setValue("enabled", on)
         self.update_icon()
+        self.schedule()
+        self.rules_changed()
         if on:
             self.shown_at = time.monotonic()
             self.start_idle()
             # Drawers paused by "Restore everything" resume.
             self.plasma.set_drawer_config(None, {"paused": False})
         else:
+            self.rule_focus = False
+            self.peek(False)
             self.set_focus(False)
             self.stop_idle()
             self.show()
@@ -4615,6 +5674,11 @@ class Tidy(QObject):
         if box.clickedButton() is restore:
             self.restore_everything(tray=bool(tray and tray.isChecked()))
 
+    def welcome(self):
+        self.settings.setValue("welcomed", True)
+        self.welcome_dialog = Welcome(self)
+        self.welcome_dialog.show()
+
     def on_tray_click(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.show_settings()
@@ -4625,7 +5689,7 @@ class Tidy(QObject):
         else:
             self.show_settings(about=True)
 
-    def show_settings(self, about=False):
+    def show_settings(self, about=False, tab=None):
         if self.dialog:
             if about:
                 self.dialog.tabs.setCurrentWidget(self.dialog.about_tab)
@@ -4639,16 +5703,21 @@ class Tidy(QObject):
         self.dialog.finished.connect(self.on_dialog_closed)
         if about:
             self.dialog.tabs.setCurrentWidget(self.dialog.about_tab)
+        elif tab is not None:
+            self.dialog.tabs.setCurrentIndex(tab)
         self.dialog.show()
 
     def on_dialog_closed(self):
         self.dialog.deleteLater()
         self.dialog = None
+        self.rules_changed()
 
     def hidden_setup(self):
         """The settings that decide what exactly is hidden while the icons are hidden."""
         return (self.settings.value("hide_panel", False, bool),
-                self.settings.value("skip_screens", ""))
+                self.settings.value("skip_screens", ""),
+                self.settings.value("hide_widgets", False, bool),
+                self.settings.value("widgets_keep", ""))
 
     def after_settings(self, was_hidden, setup):
         """New settings are in use from now. Icons that were hidden stay hidden."""
@@ -4666,6 +5735,7 @@ class Tidy(QObject):
             self.idle_since = None if self.counts_activity() else time.monotonic()
 
     def apply_settings(self, dlg):
+        self.rule_focus = False
         self.set_focus(False)  # the settings below would get mixed up with what it holds
         was_hidden, setup = self.hidden, self.hidden_setup()
         dlg.focus_tab.save()
@@ -4683,7 +5753,18 @@ class Tidy(QObject):
         self.settings.setValue("skip_screens", dlg.skipped_screens())
         self.settings.setValue("fade_icons", dlg.fade_icons.isChecked())
         self.settings.setValue("fade_duration", dlg.fade_duration.value())
+        self.settings.setValue("clicks", dlg.clicks.currentData())
+        self.settings.setValue("double_hides", dlg.double_hides.isChecked())
+        self.settings.setValue("hide_widgets", dlg.hide_widgets.isChecked())
+        self.settings.setValue("widgets_keep", ",".join(
+            [i for i in dlg.widgets_gone if i not in dlg.widget_boxes]
+            + [i for i, box in dlg.widget_boxes.items() if not box.isChecked()]))
         self.update_fade_helpers()
+        peek = dlg.peek_key.keySequence().toString(QKeySequence.SequenceFormat.PortableText)
+        if peek != self.settings.value("peek_key", ""):
+            self.settings.setValue("peek_key", peek)
+            self.peek_key.set(peek)
+        dlg.rules_tab.save()
         self.set_autostart(dlg.autostart.isChecked())
         if dlg.language.currentData() != self.settings.value("language", "auto"):
             self.settings.setValue("language", dlg.language.currentData())
@@ -4698,9 +5779,151 @@ class Tidy(QObject):
             self.load_kwin()
         self.after_settings(was_hidden, setup)
         dlg.applied()
+        self.rules_changed()
 
     def skipped_screens(self):
         return {name for name in self.settings.value("skip_screens", "").split(",") if name}
+
+    # --- peek: everything shown while a key is held -----------------------------------
+
+    def peek(self, on):
+        if on == self.peeking:
+            return
+        self.peeking = on
+        self.plasma.set_drawer_config(None, {"peek": on})
+        if on:
+            self.peek_state = {"hidden": bool(self.hidden)}
+            if self.hidden:
+                self.show()
+        else:
+            state, self.peek_state = self.peek_state or {}, None
+            if state.get("hidden"):
+                self.hide()
+            else:
+                self.shown_at = time.monotonic()
+        self.schedule()
+
+    # --- double-click on the desktop ----------------------------------------------------
+
+    def on_desktop_double_click(self):
+        """Reported by the helper on the desktop: a double-click on an empty spot."""
+        if (self.settings.value("double_hides", False, bool) and not self.hidden
+                and self.enabled_action.isChecked() and not self.peeking
+                and time.monotonic() - self.shown_at > 0.6):
+            self.hide()
+
+    # --- rules ----------------------------------------------------------------------
+
+    def rules(self):
+        try:
+            found = json.loads(self.settings.value("rules", "") or "[]")
+        except ValueError:
+            return []
+        if not isinstance(found, list):
+            return []
+        return [r for r in found if isinstance(r, dict) and r.get("when")]
+
+    def on_battery(self):
+        props = QDBusInterface("org.freedesktop.UPower", "/org/freedesktop/UPower",
+                               "org.freedesktop.DBus.Properties", QDBusConnection.systemBus())
+        args = props.call("Get", "org.freedesktop.UPower", "OnBattery").arguments()
+        return bool(args and args[0] is True)
+
+    def activities(self):
+        """The activities as {id: name}, and the id of the current one."""
+        manager = QDBusInterface("org.kde.ActivityManager", "/ActivityManager/Activities",
+                                 "org.kde.ActivityManager.Activities",
+                                 QDBusConnection.sessionBus())
+        manager.setTimeout(1000)
+        def ask(*call):
+            reply = manager.call(*call)
+            args = reply.arguments()
+            ok = reply.type() == QDBusMessage.MessageType.ReplyMessage
+            return args[0] if ok and args else None
+        names = {i: ask("ActivityName", i) or i for i in ask("ListActivities") or []}
+        return names, ask("CurrentActivity") or ""
+
+    def rule_matches(self, rule):
+        when, arg = rule.get("when"), str(rule.get("arg", ""))
+        if when == "battery":
+            return self.on_battery()
+        if when == "mains":
+            return not self.on_battery()
+        if when == "external":
+            return len(self.app.screens()) > 1
+        if when == "time":
+            start, _, end = arg.partition("-")
+            now = time.strftime("%H:%M")
+            if start <= end:
+                return start <= now < end
+            return now >= start or now < end  # over midnight
+        if when == "app":
+            return bool(arg) and arg.lower() == self.active_class.lower()
+        if when == "fullscreen":
+            return self.active_fullscreen
+        if when == "vdesktop":
+            return arg == str(self.vdesktop)
+        if when == "activity":
+            return bool(arg) and arg == self.activities()[1]
+        return False
+
+    @pyqtSlot()
+    def rules_changed(self):
+        self.rules_timer.start()
+
+    def on_active_window(self, name, fullscreen):
+        self.active_class, self.active_fullscreen = name, fullscreen
+        if name and name != APP:
+            self.seen_classes.add(name)
+        if self.rule_kinds & {"app", "fullscreen"}:
+            self.rules_changed()
+
+    def on_virtual_desktop(self, number, names):
+        self.vdesktop, self.vdesktop_names = number, names
+        if "vdesktop" in self.rule_kinds:
+            self.rules_changed()
+
+    def evaluate_rules(self):
+        """Use the profile of the first rule that applies, and focus mode when a rule that
+        applies asks for it. A profile is only applied when the choice changes, so what you
+        set by hand in between stays."""
+        rules = self.rules()
+        self.rule_kinds = {r["when"] for r in rules}
+        # The next moment a time in a rule comes by.
+        now = time.localtime()
+        waits = []
+        for rule in rules:
+            if rule["when"] != "time":
+                continue
+            for moment in str(rule.get("arg", "")).split("-"):
+                hours, _, minutes = moment.partition(":")
+                if hours.isdigit() and minutes.isdigit():
+                    wait = (int(hours) * 60 + int(minutes) - now.tm_hour * 60 - now.tm_min) % 1440
+                    waits.append(wait or 1440)
+        if waits:
+            self.rules_clock.start((min(waits) * 60 - now.tm_sec + 1) * 1000)
+        else:
+            self.rules_clock.stop()
+        if not self.enabled_action.isChecked():
+            return
+        if self.dialog and self.dialog.changed:
+            return  # you are changing settings: looked at again once they are applied
+        matching = [r for r in rules if self.rule_matches(r)]
+        wanted = next((r.get("name", "") for r in matching if r.get("then") == RULE_PROFILE), "")
+        if not wanted and rules:
+            wanted = self.settings.value("rules_else", "")
+        if wanted != self.settings.value("rules_profile", ""):
+            self.settings.setValue("rules_profile", wanted)
+            profiles = self.profiles()
+            if wanted in profiles:
+                self.apply_snapshot(profiles[wanted])
+        focus = any(r.get("then") == RULE_FOCUS for r in matching)
+        if focus and not self.rule_focus:
+            self.rule_focus = True
+            self.set_focus(True)
+        elif not focus and self.rule_focus:
+            self.rule_focus = False
+            self.set_focus(False)
 
     # --- new icons in the system tray ---------------------------------------------
 
@@ -4712,17 +5935,28 @@ class Tidy(QObject):
         """Hide the icon of an application that shows one for the first time, if that is
         switched on. Which icons have been seen is always kept, so that switching it on
         later doesn't hide the ones you already had."""
-        apps = set(tray_app_items())
+        titles = tray_app_items()
+        apps = set(titles)
         raw = self.settings.value("tray_seen", None)
         seen = set(json.loads(raw)) if raw else None
-        if seen is not None and self.settings.value("tray_hide_new", False, bool):
+        rules = tray_rules(self.settings)
+        default = TRAY_HIDDEN if self.settings.value("tray_hide_new", False, bool) else None
+        if seen is not None and (rules or default):
             config = self.plasma.tray_config()
-            new = [i for i in sorted(apps - seen) if i != APP and config
-                   and i not in config["shown"] and i not in config["hidden"]]
-            if new:
+            shown, hidden = [], []
+            for item in sorted(apps - seen):
+                if item == APP or not config or item in config["shown"] + config["hidden"]:
+                    continue
+                # A rule for its name goes first; without one, the general choice.
+                mode = tray_rule_mode(rules, item, TrayTab.label(item, titles)) or default
+                if mode == TRAY_HIDDEN:
+                    hidden.append(item)
+                elif mode == TRAY_SHOWN:
+                    shown.append(item)
+            if shown or hidden:
                 remember_tray(self.settings, config)
-                self.plasma.set_tray_config(config["extra"], config["shown"],
-                                            config["hidden"] + new)
+                self.plasma.set_tray_config(config["extra"], config["shown"] + shown,
+                                            config["hidden"] + hidden)
         if apps or seen is None:
             self.settings.setValue("tray_seen", json.dumps(sorted(apps | (seen or set()))))
 
@@ -4743,6 +5977,7 @@ class Tidy(QObject):
     def apply_snapshot(self, data):
         """Apply settings from a profile or an import. Drawers are matched by the place they
         have in the panel's bookkeeping (their id); a drawer that isn't there is skipped."""
+        self.rule_focus = False
         self.set_focus(False)
         was_hidden, setup = self.hidden, self.hidden_setup()
         for key, default in PROFILE_SETTINGS.items():
@@ -4770,11 +6005,14 @@ class Tidy(QObject):
                 self.plasma.set_drawer_shortcut(saved["id"], saved["shortcut"])
         self.load_kwin()
         self.update_fade_helpers()
+        self.peek_key.set(self.settings.value("peek_key", ""))
         self.after_settings(was_hidden, setup)
+        self.rules_changed()
         if self.dialog:
-            # The window shows the old values: open it afresh.
+            # The window shows the old values: open it afresh, on the same tab.
+            tab = self.dialog.tabs.currentIndex()
             self.dialog.reject()
-            QTimer.singleShot(0, self.show_settings)
+            QTimer.singleShot(0, lambda: self.show_settings(tab=tab))
 
     def profiles(self):
         try:
@@ -4810,6 +6048,10 @@ class Tidy(QObject):
         if isinstance(data.get("profiles"), dict):
             found.update(data["profiles"])
             self.settings.setValue("profiles", json.dumps(found))
+        if isinstance(data.get("rules"), list):
+            self.settings.setValue("rules", json.dumps(data["rules"]))
+            self.settings.setValue("rules_else", str(data.get("rules_else", "")))
+            self.settings.setValue("rules_profile", "")
         self.apply_snapshot(data)
 
     def reset_defaults(self):
@@ -4834,10 +6076,12 @@ class Tidy(QObject):
     def quit(self):
         if self.dialog:
             self.dialog.reject()
+        self.peek(False)
         self.set_focus(False)
         self.stop_idle()
         self.show()
         self.kwin.unload()
+        self.peek_key.release()
         self.app.quit()
 
 
@@ -4851,9 +6095,10 @@ def migrate_old_config():
 
 
 COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--settings": "Settings",
+            "--peek": "Peek", "--welcome": "Welcome",
             "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
             "--drawer-toggle": "DrawerToggle", "--restore": "Restore", "--focus": "Focus"}
-USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | "
+USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
          "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]")
 
 
@@ -4870,6 +6115,7 @@ def main():
             return 2
 
     migrate_old_config()
+    fresh = not QSettings(APP, APP).allKeys()  # the very first start
     app = QApplication(sys.argv)
     app.setApplicationName(APP)
     app.setDesktopFileName(APP)
@@ -4894,13 +6140,19 @@ def main():
     autohide.load_kwin()
     if command and command != "Toggle":
         QTimer.singleShot(0, getattr(adaptor, command))
+    if fresh and not command:
+        QTimer.singleShot(800, autohide.welcome)
 
     # Restore cleanly on logout/shutdown (SIGTERM) or Ctrl+C.
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: autohide.quit())
-    tick = QTimer()  # lets Python handle signals while Qt runs
-    tick.start(500)
-    tick.timeout.connect(lambda: None)
+    # Python only handles a signal when its own code runs: let the signal wake Qt up.
+    reader, writer = socket.socketpair()
+    reader.setblocking(False)
+    writer.setblocking(False)
+    signal.set_wakeup_fd(writer.fileno())
+    notifier = QSocketNotifier(reader.fileno(), QSocketNotifier.Type.Read)
+    notifier.activated.connect(lambda *_: reader.recv(64))
     return app.exec()
 
 

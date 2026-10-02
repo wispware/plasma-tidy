@@ -9,6 +9,10 @@ Tidy keeps your KDE Plasma desktop, panel and system tray clean.
 - **Focus mode:** one shortcut hides the icons, closes the drawers and trims the system tray,
   and keeps it that way until you switch it off.
 - **System tray:** choose per icon whether it's shown, hidden under `^`, automatic or disabled.
+- **Rules and profiles:** keep sets of settings as profiles, and let Tidy switch between them
+  by itself: on battery, with an external screen, at certain hours, per program, virtual
+  desktop or activity.
+- **Peek:** hold a key to see everything for a moment; let go and it is tidy again.
 
 It lives in the system tray as a small eye icon and stays out of the way: it never steals
 focus, and it waits while you have a menu open or are editing your desktop.
@@ -48,6 +52,10 @@ Tidy shows an eye in the system tray: open when your icons are visible, crossed 
 are hidden, grey when Tidy is switched off. Click it to open the settings; right-click for
 the menu.
 
+The first time Tidy starts, a welcome window asks the three things that matter most: after how
+long the icons hide, what brings them back, and whether Tidy starts at login. Everything else
+is in the settings.
+
 In the settings window, *Apply* puts your changes to work and keeps the window open, so you
 can try them out; *OK* does the same and closes it. *Apply* becomes available as soon as you
 change something.
@@ -59,11 +67,14 @@ change something.
 | Hide after | Seconds without activity before the icons disappear | 10 s |
 | Show again | On any mouse movement or key press, or only on a click on the desktop | movement or key |
 | With mouse button | Which buttons count as a click on the desktop (left, middle, right) | all three |
+| Number of clicks | With a click on the desktop: one click, or a double-click | one click |
 | Hide again | After that time without movement, or after a fixed time even while you move | without movement |
 | Screen corner shows | Moving the mouse into this corner shows the icons | none |
-| Activity in other windows doesn't count | The icons hide behind the window you're working in; moving the mouse over the desktop itself always counts | on |
+| Activity in other windows doesn't count | The icons hide behind the window you're working in: what you type or do there does not postpone hiding. Moving the mouse over the desktop itself always does | on |
 | Moving over the panel does count | With the setting above: moving the mouse over the panel keeps the icons too, like moving over the desktop | on |
+| A double-click on an empty spot of the desktop hides the icons | Hides them at once, without waiting for the timer; uses the helper widget on the desktop | off |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
+| Also hide the widgets on the desktop | Clocks, notes and other widgets on the desktop go and come with the icons. With widgets on the desktop, a list below it lets you choose per widget: without a tick it stays in view. Uses the helper widget on the desktop | off, all widgets |
 | Fade the icons in and out | The icons fade away and back instead of switching at once, in the time you set; uses an invisible helper widget on the desktop | off, 300 ms |
 | Hide the icons on | With more than one screen: the screens whose icons are hidden; the others keep theirs | every screen |
 
@@ -95,6 +106,7 @@ The settings of a drawer come in three parts.
 | In this drawer | Which of the panel's widgets the drawer hides | the task manager |
 | Task manager | Hide all programs, open ones too; or only the pinned programs that are not open | all programs |
 | Open programs | Where open programs stand in the task manager: on their pinned spot, all in front, or all at the back | pinned spot |
+| Programs that go in the drawer | Per program of the task manager: in the drawer, or kept in the panel also while the drawer is closed | all of them |
 
 *Opening and closing*
 
@@ -144,6 +156,11 @@ With *only the pinned programs*, open programs stay in the panel and only the ic
 programs that are not running slide away. Start one of them some other way and its icon
 appears.
 
+The list of programs to choose from holds what the task manager showed last: your pinned
+programs and the ones that were open. A program you untick stays in the panel, whether it is
+pinned or open. The list is filled a moment after the drawer got a task manager, so open the
+settings again if it is still empty.
+
 ### System tray
 
 The *System tray* tab lists every icon in your system tray. For each one, choose:
@@ -171,12 +188,18 @@ With *New icons go under the ^ arrow by themselves*, an application that shows a
 the first time gets it hidden. Icons you already had are left as they are. It works while Tidy
 is running.
 
+*Add a rule for a name* decides per application: an icon whose name contains the text you type
+is always shown, hidden or automatic. A rule is used on the icons that are there when you
+make it, and afterwards each time such an icon shows up for the first time; it goes before the
+choice above. The first rule that fits counts.
+
 ### General
 
 | Setting | What it does | Default |
 | --- | --- | --- |
 | Start at login | Adds or removes the autostart entry | off |
 | Language | System language, English or Nederlands; takes effect at once | system language |
+| Hold to peek | A key that shows the desktop icons and everything in the drawers for as long as you hold it; also in focus mode | none |
 
 **Profiles** keep all settings together: the desktop, the drawers, the system tray and focus
 mode. *Save current as…* stores what is in the window under a name; *Apply* switches to a
@@ -188,6 +211,29 @@ instance on another computer. *Defaults…* puts every setting back to how Tidy 
 drawers stay, with what is in them, and the system tray is left alone.
 
 *Restore everything* is on this tab too.
+
+### Rules
+
+A rule uses one of your profiles, or switches focus mode on, for as long as something is the
+case:
+
+| When | Applies |
+| --- | --- |
+| On battery / On mains power | While the computer runs on its battery, or on the charger |
+| An external screen is connected | While more than one screen is in use |
+| Between these times | Between the two times you set, also across midnight |
+| This program is in front | While a window of that program is the active one |
+| A program fills the whole screen | While the active window is in full screen |
+| On this virtual desktop / In this activity | While you are on it |
+
+For the profile, the highest rule that applies decides; move a rule up or down with its
+arrows. *Otherwise* names the profile for when no rule with a profile applies. Focus mode is
+on while any rule that asks for it applies, and goes off again when none does.
+
+A profile is put to use at the moment the choice changes. What you change by hand afterwards
+stays until the next change, so save it in the profile if you want to keep it. A ✓ in front
+of a rule shows that it applies right now. Rules work while Tidy is running and switched on,
+and they are part of an export.
 
 ### Focus mode
 
@@ -205,7 +251,7 @@ everything back as it was.
 | Auto-hide the panel | The panel slides away until you move to the screen edge | off |
 
 Opening the settings and pressing OK, switching Tidy off, and *Restore everything* end focus
-mode. After a crash or a logout in focus mode, Tidy puts everything back the next time it
+mode; a rule that still applies switches it on again. After a crash or a logout in focus mode, Tidy puts everything back the next time it
 starts.
 
 ### Restore everything
@@ -224,7 +270,8 @@ settings are kept.
 
 Tidy has six actions you can bind to a key in System Settings → Keyboard → Shortcuts →
 Add New → Application → Tidy: show the icons, hide the icons, switch Tidy on or off, focus
-mode on or off, open or close the panel drawers, and restore everything.
+mode on or off, open or close the panel drawers, and restore everything. The key to hold for
+a peek is set in Tidy itself, on the *General* tab.
 
 The same actions are available from the command line. Only one copy of Tidy runs at a time; a
 second call passes its command to the running one.
@@ -236,6 +283,7 @@ plasma-tidy --hide      hide the icons now
 plasma-tidy --toggle    switch Tidy on or off
 plasma-tidy --settings  open the settings
 plasma-tidy --focus     switch focus mode on or off
+plasma-tidy --peek      show everything; run it again to tidy up again
 plasma-tidy --drawer-open    open the panel drawers
 plasma-tidy --drawer-close   close the panel drawers
 plasma-tidy --drawer-toggle  close them if one is open, otherwise open them
@@ -248,10 +296,11 @@ plasma-tidy --version   print the version
 - **Hiding** points the desktop's Folder View at an empty folder. The original folder is
   saved first and put back when the icons are shown, when you quit Tidy, when you log out,
   and (after a crash) the next time Tidy starts.
-- **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol.
+- **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol. Tidy does
+  not poll: it sleeps until something happens, or until the moment the icons are due to hide.
 - **Whose activity counts** comes from the same KWin script: it tells Tidy whether the desktop
-  is the active window and whether the pointer is above the desktop. It never sees what you
-  type or click.
+  is the active window, and when the pointer moves over the desktop while another window is
+  the active one. It never sees what you type or click.
 - **Click to show** puts an invisible window on each screen, just above the desktop and below
   everything else. A small KWin script, loaded while Tidy runs, keeps it there, keeps it out
   of the task switcher, and handles the screen corner.
@@ -262,24 +311,31 @@ plasma-tidy --version   print the version
   when you ask for it: with the arrow *just after* the task manager it switches off *Fill
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
   drawer keeps working when Tidy is not running; Tidy is only needed to change its settings.
-- **Fading the desktop icons** needs something inside Plasma as well: a helper widget that
-  Tidy puts on each desktop. It is invisible and only changes how see-through the layer of
-  icons is. Hiding itself works as described above; without the helper the icons simply switch
-  at once.
+- **Fading the icons, hiding desktop widgets and the double-click** need something inside
+  Plasma as well: a helper widget that Tidy puts on each desktop when one of these is switched
+  on, and takes away again. It is invisible. It changes how see-through the layer of icons
+  and the desktop's widgets are, and tells Tidy when an empty spot of the desktop is
+  double-clicked. Hiding itself works as described above.
+- **Rules** look at the power supply (UPower), the screens, the clock, the active window and
+  virtual desktop (the KWin script) and the activity (KDE's activity manager). Tidy is told
+  when one of these changes; it does not keep checking.
+- **The peek key** is a global shortcut registered with KDE, which reports both the press
+  and the release.
 
 Tidy needs no root access and changes nothing outside your own Plasma configuration.
 
 ## Limitations
 
 - Plasma 6 on Wayland only.
-- On the desktop only icons are hidden. Widgets you placed there stay visible.
+- A program for a rule is chosen from the programs that were in front since Tidy started, or
+  typed by its window class.
 - Hiding reloads the desktop's Folder View, so Tidy postpones it while a menu is open or the
   desktop is in edit mode.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
-- The drawer and the fade depend on how Plasma builds its panel, task manager and desktop,
-  which is not a public interface. They are tested with Plasma 6.7. If a Plasma update changes
-  these, the drawer stops hiding things or the icons stop fading; nothing is lost, your
-  widgets simply stay visible.
+- The drawer and the helper on the desktop depend on how Plasma builds its panel, task
+  manager and desktop, which is not a public interface. They are tested with Plasma 6.7. If a
+  Plasma update changes these, the drawer stops hiding things, the icons stop fading or the
+  double-click stops working; nothing is lost, your widgets simply stay visible.
 - A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
   and in once.
 - Closing by itself follows the pointer inside the panel. A window preview or a menu that
@@ -299,7 +355,8 @@ or run `plasma-tidy --restore`.
 
 ## Uninstall
 
-Remove your drawers in the *Panel* tab, switch off *Fade the icons in and out*, and quit Tidy
+Remove your drawers in the *Panel* tab, switch off the three options that use the helper
+widget (fading, hiding desktop widgets, the double-click), clear the peek key, and quit Tidy
 from the tray menu, so your panel and desktop are as they were. Then:
 
 ```sh
