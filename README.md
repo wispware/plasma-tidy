@@ -116,6 +116,7 @@ The settings of a drawer come in three parts.
 | Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
 | Shortcut | A key for this drawer alone | none |
 | Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
+| Open with a click on an empty spot in the panel | A left click where the panel is empty opens the drawer. If a drawer that closes on such a click is open, the click only closes; it opens when none is | off |
 | Open when the desktop is shown | Opens when you go to the desktop; needs Tidy running | off |
 | Close by itself | Never, when the pointer leaves the drawer (the arrow and the items it shows), or when it leaves the panel | never |
 | Closes after | How long after the pointer left | 2 s |
@@ -199,7 +200,8 @@ choice above. The first rule that fits counts.
 | --- | --- | --- |
 | Start at login | Adds or removes the autostart entry | off |
 | Language | System language, English or Nederlands; takes effect at once | system language |
-| Hold to peek | A key that shows the desktop icons and everything in the drawers for as long as you hold it; also in focus mode | none |
+| Hold to peek | A key that shows the desktop icons and everything in the drawers for as long as you hold it; also in focus mode. Choose a combination with Ctrl, Alt or Meta: a key on its own would stop working in every program, and Tidy warns you about that | none |
+| A peek also shows the panel, on top of your windows | A panel that hides by itself or sits behind a window comes into view during a peek; your windows keep their size. A program in full screen stays on top of the panel | on |
 
 **Profiles** keep all settings together: the desktop, the drawers, the system tray and focus
 mode. *Save current as…* stores what is in the window under a name; *Apply* switches to a

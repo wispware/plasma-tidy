@@ -120,6 +120,7 @@ DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [],
                    "taskMode": TASKS_ALL, "taskKeep": [], "taskList": "", "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
+                   "openOnPanelClick": False,
                    "closeAfterUse": False, "closeOnMaximized": False, "openOnDesktop": False,
                    "icon": "arrow", "iconCustom": "",
                    "openOnAttention": True, "reverseArrow": False,
@@ -175,6 +176,7 @@ DRAWER_PAGE_TEXTS = [
     "Works while Tidy is running.", "Close by itself:", "Never",
     "When the pointer leaves the drawer", "When the pointer leaves the panel", "Closes after:",
     "Close with a click on an empty spot in the panel",
+    "Open with a click on an empty spot in the panel",
     "Close after a click on something in the drawer",
     "Close when a window that fills the screen comes to the front", "Appearance", "Icon:",
     "Open programs:", "On their pinned spot", "All in front", "All at the back", "Animation:",
@@ -197,7 +199,7 @@ PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,mi
                     "fade_duration": 300, "drawer_follow": False,
                     "focus_icons": True, "focus_drawers": True, "focus_tray": True,
                     "focus_panel": False, "tray_hide_new": False, "tray_rules": "",
-                    "peek_key": ""}
+                    "peek_key": "", "peek_panel": True}
 # What a drawer is doing right now; not part of a profile.
 DRAWER_STATE = ("closed", "paused", "taskList")
 
@@ -407,6 +409,7 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="closeDelay" type="Int"><default>2000</default></entry>
     <entry name="closeScope" type="String"><default>drawer</default></entry>
     <entry name="closeOnPanelClick" type="Bool"><default>false</default></entry>
+    <entry name="openOnPanelClick" type="Bool"><default>false</default></entry>
     <entry name="closeAfterUse" type="Bool"><default>false</default></entry>
     <entry name="closeOnMaximized" type="Bool"><default>false</default></entry>
     <entry name="openOnDesktop" type="Bool"><default>false</default></entry>
@@ -1270,6 +1273,17 @@ PlasmoidItem {
         function onDebugChanged() {
             // For testing: opens the widget's own settings.
             if (root.cfg.debug === "configure") Plasmoid.internalAction("configure").trigger();
+            // For testing: as if the panel were clicked at this place, "tap:<pixels>".
+            if (String(root.cfg.debug).indexOf("tap:") === 0) {
+                var at = parseFloat(String(root.cfg.debug).split(":")[1]);
+                var before = root.cfg.closed;
+                var others = root.anyClosesOnClick();
+                root.panelTapped(at);
+                Qt.callLater(() => console.warn("TIDYTAP " + JSON.stringify({id: Plasmoid.id,
+                    at: at, empty: root.isEmptySpot(at), opens: root.cfg.openOnPanelClick,
+                    closes: root.cfg.closeOnPanelClick, anyCloses: others,
+                    before: before, closed: root.cfg.closed})));
+            }
         }
         // A reload from outside brought back an older version: ours wins.
         function onSavedLaunchersChanged() {
@@ -1458,10 +1472,33 @@ PlasmoidItem {
         }
     }
     property var panelTap: null
+    // Every drawer in the panel hears the same click. Together they do one thing: if a
+    // drawer that closes on such a click is open, the click closes; only when none is, it
+    // opens the drawers that are set to open that way. Each drawer decides from how things
+    // are at the moment of the click and acts a moment later, so that one drawer closing
+    // does not make the next one think nothing was open.
+    function closesOnClick(conf) {
+        return !conf.closed && !conf.paused && conf.closeOnPanelClick;
+    }
+    function anyClosesOnClick() {
+        if (closesOnClick(cfg)) return true;
+        for (var i = 0; i < siblings.length; i++) {
+            if (siblings[i].plugin !== Plasmoid.pluginName) continue;
+            try {
+                if (closesOnClick(siblings[i].item.applet.plasmoid.configuration)) return true;
+            } catch (e) {}
+        }
+        return false;
+    }
     function panelTapped(pos) {
-        if (cfg.closed || cfg.paused) return;
+        if (cfg.paused) return;
+        if (cfg.closed) {
+            if (cfg.openOnPanelClick && isEmptySpot(pos) && !anyClosesOnClick())
+                Qt.callLater(() => { root.cfg.closed = false; });
+            return;
+        }
         if (cfg.closeOnPanelClick && isEmptySpot(pos))
-            cfg.closed = true;
+            Qt.callLater(() => { root.cfg.closed = true; });
         else if (cfg.closeAfterUse && inDrawerItem(pos))
             useTimer.restart();
     }
@@ -1979,6 +2016,7 @@ KCM.SimpleKCM {
     property string cfg_closeScope
     property int cfg_closeDelay
     property bool cfg_closeOnPanelClick
+    property bool cfg_openOnPanelClick
     property bool cfg_closeAfterUse
     property bool cfg_closeOnMaximized
     property bool cfg_openOnDesktop
@@ -2085,6 +2123,11 @@ KCM.SimpleKCM {
             text: page.t("Open when a program asks for attention")
             checked: page.cfg_openOnAttention
             onToggled: page.cfg_openOnAttention = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Open with a click on an empty spot in the panel")
+            checked: page.cfg_openOnPanelClick
+            onToggled: page.cfg_openOnPanelClick = checked
         }
         QQC2.CheckBox {
             text: page.t("Open when the desktop is shown")
@@ -2640,6 +2683,26 @@ TRANSLATIONS = {
             "Zolang je deze toets ingedrukt houdt, zijn de bureaubladpictogrammen en alles in de la's te zien; laat los en ze zijn weer weg. Werkt ook in de focusmodus.",
         "Hold to peek:":
             "Ingedrukt houden om te gluren:",
+        "This key has no Ctrl, Alt or Meta with it. While Tidy runs it would no longer work in "
+        "any program, not for typing or moving either. Better choose a combination, such as "
+        "Meta+Z.":
+            "Deze toets heeft geen Ctrl, Alt of Meta erbij. Zolang Tidy draait werkt hij dan in "
+            "geen enkel programma meer, ook niet om te typen of te bewegen. Kies liever een "
+            "combinatie, zoals Meta+Z.",
+        "A peek also shows the panel, on top of your windows":
+            "Gluren laat ook het paneel zien, boven je vensters",
+        "A panel that hides by itself or sits behind a window comes into view while you hold "
+        "the key. Your windows keep their size. A program in full screen stays on top of the "
+        "panel.":
+            "Een paneel dat zichzelf verbergt of achter een venster zit komt in beeld zolang je "
+            "de toets vasthoudt. Je vensters houden hun grootte. Een programma op volledig "
+            "scherm blijft boven het paneel.",
+        "Open with a click on an empty spot in the panel":
+            "Openen met een klik op een lege plek in het paneel",
+        "A left click where the panel is empty opens this drawer. If a drawer that closes on "
+        "such a click is open, the click only closes; it opens when none is.":
+            "Een linkerklik waar het paneel leeg is opent deze la. Staat er een la open die op "
+            "zo'n klik sluit, dan sluit de klik alleen; openen gebeurt als er geen open staat.",
         "and":
             "en",
         "Applies right now":
@@ -3273,7 +3336,6 @@ class PeekKey(QObject):
         self.accel = QDBusInterface("org.kde.kglobalaccel", "/kglobalaccel",
                                     "org.kde.KGlobalAccel", self.bus)
         self.registered = False
-        self.held = False
 
     @staticmethod
     def action():
@@ -3314,15 +3376,13 @@ class PeekKey(QObject):
     @pyqtSlot(str, str, "qlonglong")
     def pressed(self, _component, action, _time):
         if action == PEEK_ACTION[1]:
-            # Pressed while it already counts as held: the letting go was missed, so this
-            # press ends it. That way the key can never leave everything stuck in view.
-            self.on_change(not self.held)
-            self.held = not self.held
+            # Pressed while a peek is still on: the letting go was missed, so this press
+            # ends it. That way the key can never leave everything stuck in view.
+            self.on_change(None)
 
     @pyqtSlot(str, str, "qlonglong")
     def released(self, _component, action, _time):
         if action == PEEK_ACTION[1]:
-            self.held = False
             self.on_change(False)
 
 
@@ -3373,7 +3433,7 @@ class DBusAdaptor(QDBusAbstractAdaptor):
 
     @pyqtSlot()
     def Peek(self):
-        self.autohide.peek(not self.autohide.peeking)
+        self.autohide.peek(None)
 
     @pyqtSlot()
     def Toggle(self):
@@ -3851,6 +3911,13 @@ class DrawerPage(QWidget):
         self.attention.setChecked(config["openOnAttention"])
         form.addRow(self.attention)
 
+        self.panel_open = QCheckBox(tr("Open with a click on an empty spot in the panel"))
+        self.panel_open.setChecked(config["openOnPanelClick"])
+        self.panel_open.setToolTip(tr("A left click where the panel is empty opens this drawer. "
+                                      "If a drawer that closes on such a click is open, the "
+                                      "click only closes; it opens when none is."))
+        form.addRow(self.panel_open)
+
         self.on_desktop = QCheckBox(tr("Open when the desktop is shown"))
         self.on_desktop.setChecked(config["openOnDesktop"])
         self.on_desktop.setToolTip(tr("Works while Tidy is running."))
@@ -4014,6 +4081,7 @@ class DrawerPage(QWidget):
                 "closeScope": self.auto_close.currentData() or self.drawer["config"]["closeScope"],
                 "closeDelay": round(self.close_delay.value() * 1000),
                 "closeOnPanelClick": self.panel_click.isChecked(),
+                "openOnPanelClick": self.panel_open.isChecked(),
                 "closeAfterUse": self.after_use.isChecked(),
                 "closeOnMaximized": self.on_maximized.isChecked(),
                 "icon": self.icon.currentData(),
@@ -4231,6 +4299,25 @@ class FocusTab(QWidget):
             autohide = self.autohide
             self.window().accept()
             QTimer.singleShot(0, lambda: autohide.set_focus(True))
+
+
+def bare_key(sequence):
+    """Is this a key that programs need themselves: one without Ctrl, Alt or Meta, and not a
+    function key or a special key such as Pause or a media key?"""
+    if not sequence.count():
+        return False
+    combo = sequence[0]
+    held = combo.keyboardModifiers() & (Qt.KeyboardModifier.ControlModifier
+                                        | Qt.KeyboardModifier.AltModifier
+                                        | Qt.KeyboardModifier.MetaModifier)
+    if held != Qt.KeyboardModifier.NoModifier:
+        return False
+    key = combo.key().value
+    spare = [k.value for k in (Qt.Key.Key_Pause, Qt.Key.Key_ScrollLock, Qt.Key.Key_SysReq,
+                               Qt.Key.Key_Menu, Qt.Key.Key_Help, Qt.Key.Key_Print)]
+    special = (Qt.Key.Key_F1.value <= key <= Qt.Key.Key_F35.value or key in spare
+               or key >= Qt.Key.Key_Back.value)
+    return not special
 
 
 class RuleRow(QWidget):
@@ -4811,6 +4898,22 @@ class SettingsDialog(QDialog):
                                     "in the drawers are shown; let go and they are away again. "
                                     "Works in focus mode too."))
         form.addRow(tr("Hold to peek:"), self.peek_key)
+        self.peek_warning = QLabel(tr("This key has no Ctrl, Alt or Meta with it. While Tidy "
+                                      "runs it would no longer work in any program, not for "
+                                      "typing or moving either. Better choose a combination, "
+                                      "such as Meta+Z."))
+        self.peek_warning.setWordWrap(True)
+        self.peek_warning.setStyleSheet("color: #da4453;")
+        self.general_form = form
+        form.addRow("", self.peek_warning)
+        self.peek_key.keySequenceChanged.connect(self.update_enabled)
+        self.peek_panel = QCheckBox(tr("A peek also shows the panel, on top of your windows"))
+        self.peek_panel.setChecked(settings.value("peek_panel", True, bool))
+        self.peek_panel.setToolTip(tr("A panel that hides by itself or sits behind a window "
+                                      "comes into view while you hold the key. Your windows "
+                                      "keep their size. A program in full screen stays on top "
+                                      "of the panel."))
+        form.addRow(self.peek_panel)
 
         hint = QLabel(tr("Shortcuts: System Settings → Keyboard → Shortcuts → Add New → "
                          "Application… → Tidy. There you can give a key to showing and hiding "
@@ -4951,6 +5054,7 @@ class SettingsDialog(QDialog):
         valid = not click or any(b.isChecked() for b in self.buttons.values())
         self.fade_duration.setEnabled(self.fade_icons.isChecked())
         self.panel_counts.setEnabled(self.only_desktop.isChecked())
+        self.general_form.setRowVisible(self.peek_warning, bare_key(self.peek_key.keySequence()))
         for box in self.widget_boxes.values():
             box.setEnabled(self.hide_widgets.isChecked())
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
@@ -5099,6 +5203,7 @@ class Tidy(QObject):
         os.makedirs(EMPTY_DIR, exist_ok=True)
         install_drawer()
 
+        self.restore_peek_panels()  # crashed while peeking: the panel back to how it was
         self.recover_after_crash()
         self.restore_focus_state()  # crashed or logged out in focus mode: put things back
         self.showing_desktop = self.kwin.showing_desktop()
@@ -5285,6 +5390,8 @@ class Tidy(QObject):
     # --- hide / show -------------------------------------------------------
 
     def hide(self):
+        if self.peeking:
+            self.peek(False)  # first the panel back to how it was: hiding notes how it is set
         if self.hidden:
             return
         urls = {k: v for k, v in self.plasma.desktop_urls().items() if v != EMPTY_URL}
@@ -5414,6 +5521,7 @@ class Tidy(QObject):
         off; then everything goes back to how it was."""
         if on == self.focus:
             return
+        self.peek(False)
         if on:
             setting = lambda key, default: self.settings.value("focus_" + key, default, bool)
             state = {}
@@ -5735,6 +5843,7 @@ class Tidy(QObject):
             self.idle_since = None if self.counts_activity() else time.monotonic()
 
     def apply_settings(self, dlg):
+        self.peek(False)
         self.rule_focus = False
         self.set_focus(False)  # the settings below would get mixed up with what it holds
         was_hidden, setup = self.hidden, self.hidden_setup()
@@ -5760,6 +5869,7 @@ class Tidy(QObject):
             [i for i in dlg.widgets_gone if i not in dlg.widget_boxes]
             + [i for i, box in dlg.widget_boxes.items() if not box.isChecked()]))
         self.update_fade_helpers()
+        self.settings.setValue("peek_panel", dlg.peek_panel.isChecked())
         peek = dlg.peek_key.keySequence().toString(QKeySequence.SequenceFormat.PortableText)
         if peek != self.settings.value("peek_key", ""):
             self.settings.setValue("peek_key", peek)
@@ -5787,6 +5897,9 @@ class Tidy(QObject):
     # --- peek: everything shown while a key is held -----------------------------------
 
     def peek(self, on):
+        """Show everything for a moment (True) or end that (False); None switches."""
+        if on is None:
+            on = not self.peeking
         if on == self.peeking:
             return
         self.peeking = on
@@ -5795,13 +5908,39 @@ class Tidy(QObject):
             self.peek_state = {"hidden": bool(self.hidden)}
             if self.hidden:
                 self.show()
+            if self.settings.value("peek_panel", True, bool):
+                # A panel that hides, or sits behind a window: in view, on top of the windows.
+                # They keep their size; a window in full screen stays on top of the panel.
+                tucked = {k: v for k, v in self.plasma.panel_modes().items()
+                          if v in ("autohide", "dodgewindows")}
+                if tucked:
+                    # Saved first: a crash while peeking must not leave the panel like this.
+                    self.settings.setValue("peek_panels", json.dumps(tucked))
+                    self.settings.sync()
+                    self.plasma.set_panel_modes({k: "windowsgobelow" for k in tucked})
         else:
             state, self.peek_state = self.peek_state or {}, None
+            self.restore_peek_panels()  # before hiding, which notes how the panels are set
             if state.get("hidden"):
                 self.hide()
             else:
+                # The icons were in view already: the time until they hide starts afresh.
                 self.shown_at = time.monotonic()
+                if not self.counts_activity():
+                    self.idle_since = time.monotonic()
         self.schedule()
+
+    def restore_peek_panels(self):
+        """Put the panels back as they were before a peek; also after a crash while peeking."""
+        raw = self.settings.value("peek_panels", "")
+        if not raw:
+            return
+        try:
+            self.plasma.set_panel_modes({int(k): v for k, v in json.loads(raw).items()})
+        except (ValueError, AttributeError):
+            pass
+        self.settings.remove("peek_panels")
+        self.settings.sync()
 
     # --- double-click on the desktop ----------------------------------------------------
 
@@ -5977,6 +6116,7 @@ class Tidy(QObject):
     def apply_snapshot(self, data):
         """Apply settings from a profile or an import. Drawers are matched by the place they
         have in the panel's bookkeeping (their id); a drawer that isn't there is skipped."""
+        self.peek(False)
         self.rule_focus = False
         self.set_focus(False)
         was_hidden, setup = self.hidden, self.hidden_setup()
