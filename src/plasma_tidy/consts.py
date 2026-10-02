@@ -11,6 +11,7 @@ APP_NAME = "Tidy"
 OLD_APP = "autohide-desktop-icons"  # previous name, for carrying over its settings
 VERSION = "0.2.0"
 AUTHOR = "Ivar"
+BRAND = "Wispware"
 DESCRIPTION = "Keeps your KDE Plasma desktop, panel and system tray clean."
 # To be filled in at the first release; while empty, the About tab shows a placeholder.
 LICENSE = "GPL-3.0-or-later"

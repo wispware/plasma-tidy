@@ -430,5 +430,9 @@ Bug reports and ideas are welcome in the
 
 Made by Ivar. Free and open source under the GNU GPL v3 or later (see `LICENSE`).
 
+The name Wispware and its logo (`src/plasma_tidy/data/wispware.svg`) are not part of that
+licence: they say who made Tidy. A changed version you pass on must not carry them as if it
+were Wispware's.
+
 If Tidy is useful to you, you can support development at
 [ko-fi.com/wispware](https://ko-fi.com/wispware).

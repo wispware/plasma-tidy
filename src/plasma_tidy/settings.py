@@ -5,21 +5,23 @@
 import json
 import os
 
-from PyQt6.QtCore import QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices, QFont, QIcon, QKeySequence
+from PyQt6.QtCore import QByteArray, Qt, QTimer, QUrl
+from PyQt6.QtGui import (QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPalette,
+                         QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                              QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
                              QHBoxLayout, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit,
                              QMessageBox, QProgressBar, QPushButton, QSpinBox, QTabWidget,
                              QTimeEdit, QVBoxLayout, QWidget)
 
-from .consts import (APP, APP_NAME, AUTHOR, AUTOSTART, BUGS_URL, CLICKS_DOUBLE, CLICKS_SINGLE,
-                     CORNERS, DESCRIPTION, DONATE_URL, LICENSE, MODE_ACTIVITY, MODE_CLICK,
-                     REHIDE_FIXED, REHIDE_IDLE, VERSION, WEBSITE_URL)
+from .consts import (APP, APP_NAME, AUTHOR, AUTOSTART, BRAND, BUGS_URL, CLICKS_DOUBLE,
+                     CLICKS_SINGLE, CORNERS, DESCRIPTION, DONATE_URL, LICENSE, MODE_ACTIVITY,
+                     MODE_CLICK, REHIDE_FIXED, REHIDE_IDLE, VERSION, WEBSITE_URL)
 from .drawer_ui import DrawerTab
 from .i18n import LANGUAGES, tr
 from .peek import bare_key
 from .plasma import widget_name
+from .resources import WISPWARE_LOGO
 from .rules_ui import RulesTab
 from .tray import TrayTab
 
@@ -92,6 +94,29 @@ def open_donate():
         QDesktopServices.openUrl(QUrl(DONATE_URL))
 
 
+def brand_logo(widget, height):
+    """The Wispware logo as a picture, in the text colour of the theme and sharp on the
+    screen it is shown on; None if it cannot be drawn (Qt's SVG part is missing)."""
+    try:
+        from PyQt6.QtSvg import QSvgRenderer
+    except ImportError:
+        return None
+    colour = widget.palette().color(QPalette.ColorRole.WindowText).name()
+    renderer = QSvgRenderer(QByteArray(WISPWARE_LOGO.replace("#111111", colour).encode()))
+    if not renderer.isValid():
+        return None
+    size = renderer.defaultSize()
+    ratio = widget.devicePixelRatioF()
+    width = round(height * size.width() / size.height())
+    picture = QPixmap(round(width * ratio), round(height * ratio))
+    picture.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(picture)
+    renderer.render(painter)
+    painter.end()
+    picture.setDevicePixelRatio(ratio)
+    return picture
+
+
 class AboutTab(QWidget):
     """About Tidy: version, author, license, links and the donate button."""
 
@@ -121,8 +146,23 @@ class AboutTab(QWidget):
         def link(url, text):
             return f"<a href='{url}'>{text}</a>" if url else f"{text} <i>({later})</i>"
 
-        info = QLabel(tr("Made by {author}").format(author=AUTHOR) + "<br>"
-                      + tr("License: {license}").format(license=LICENSE or f"<i>{later}</i>")
+        # Who made it, with the maker's mark next to it.
+        maker = QHBoxLayout()
+        maker.setSpacing(8)
+        maker.addWidget(QLabel(tr("Made by {author}").format(author=AUTHOR) + "  ·"))
+        logo = brand_logo(self, 18)
+        if logo:
+            mark = QLabel()
+            mark.setPixmap(logo)
+            mark.setToolTip(BRAND)
+            mark.setAccessibleName(BRAND)
+            maker.addWidget(mark)
+        else:
+            maker.addWidget(QLabel(BRAND))
+        maker.addStretch()
+        layout.addLayout(maker)
+
+        info = QLabel(tr("License: {license}").format(license=LICENSE or f"<i>{later}</i>")
                       + "<br><br>"
                       + link(WEBSITE_URL, tr("Website and source code")) + "<br>"
                       + link(BUGS_URL, tr("Report a problem or share an idea")))
