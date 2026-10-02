@@ -177,6 +177,7 @@ PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left pane
 # Tidy's own settings that belong to a profile or an export, with their defaults.
 PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,middle",
                     "rehide": "idle", "corner": "none", "only_desktop": True,
+                    "panel_counts": True,
                     "hide_panel": False, "skip_screens": "", "fade_icons": False,
                     "fade_duration": 300, "drawer_follow": False,
                     "focus_icons": True, "focus_drawers": True, "focus_tray": True,
@@ -305,7 +306,8 @@ reportPopups();
 """
 
 KWIN_POINTER_JS = """
-// Is the pointer above the desktop itself (or a window of ours)? Looked at a few times
+// Is the pointer above the desktop itself (or a window of ours, or a panel if that is set
+// to count)? Looked at a few times
 // a second at most while the pointer moves, and reported only when the answer changes.
 var pointerOnDesktop = null;
 var pointerChecked = 0;
@@ -316,7 +318,8 @@ pointerLater.interval = 250;
 function checkPointer() {
     pointerChecked = Date.now();
     var top = workspace.windowAt(workspace.cursorPos, 1)[0];
-    var on = !top || top.desktopWindow || top.resourceClass == "%(app)s";
+    var on = !top || top.desktopWindow || top.resourceClass == "%(app)s" ||
+        (%(panel)s && top.dock);
     if (on === pointerOnDesktop) return;
     pointerOnDesktop = on;
     callDBus("%(name)s", "/", "%(name)s", "PointerOnDesktop", on);
@@ -2258,6 +2261,13 @@ TRANSLATIONS = {
             "en verdwijnen de pictogrammen achter je venster. De muis bewegen "
             "boven het bureaublad zelf telt altijd mee.\n"
             "Uit: elke muisbeweging of toets, waar dan ook, telt.",
+        "Moving over the panel does count": "Bewegen boven het paneel telt wel mee",
+        "On: moving the mouse over the panel (taskbar) keeps the icons, "
+        "like moving over the desktop.\n"
+        "Off: only the desktop itself counts.":
+            "Aan: de muis bewegen boven het paneel (de taakbalk) houdt de pictogrammen "
+            "in beeld, net als bewegen boven het bureaublad.\n"
+            "Uit: alleen het bureaublad zelf telt.",
         "Also hide the panel (taskbar)": "Paneel (taakbalk) ook verbergen",
         "Start at login": "Starten bij inloggen",
         "Language:": "Taal:",
@@ -2801,10 +2811,11 @@ class KWin:
                                         "org.kde.kwin.Scripting", bus)
         self.kwin = QDBusInterface("org.kde.KWin", "/KWin", "org.kde.KWin", bus)
 
-    def load(self, corner, pointer=False):
+    def load(self, corner, pointer=False, panel=False):
         script = KWIN_JS % {"app": APP, "prefix": CATCHER_PREFIX, "name": DBUS_NAME}
         if pointer:
-            script += KWIN_POINTER_JS % {"app": APP, "name": DBUS_NAME}
+            script += KWIN_POINTER_JS % {"app": APP, "name": DBUS_NAME,
+                                         "panel": "true" if panel else "false"}
         edge = dict((key, js) for key, _, js in CORNERS).get(corner)
         if edge:
             script += KWIN_EDGE_JS % {"edge": edge, "name": DBUS_NAME}
@@ -3772,6 +3783,17 @@ class SettingsDialog(QDialog):
                                         "counts."))
         form.addRow(self.only_desktop)
 
+        self.panel_counts = QCheckBox(tr("Moving over the panel does count"))
+        self.panel_counts.setChecked(settings.value("panel_counts", True, bool))
+        self.panel_counts.setToolTip(tr("On: moving the mouse over the panel (taskbar) keeps "
+                                        "the icons, like moving over the desktop.\n"
+                                        "Off: only the desktop itself counts."))
+        row = QHBoxLayout()
+        row.addSpacing(24)
+        row.addWidget(self.panel_counts)
+        form.addRow(row)
+        self.only_desktop.toggled.connect(self.update_enabled)
+
         self.panel = QCheckBox(tr("Also hide the panel (taskbar)"))
         self.panel.setChecked(settings.value("hide_panel", False, bool))
         form.addRow(self.panel)
@@ -3951,6 +3973,7 @@ class SettingsDialog(QDialog):
         # In click mode at least one button must be chosen.
         valid = not click or any(b.isChecked() for b in self.buttons.values())
         self.fade_duration.setEnabled(self.fade_icons.isChecked())
+        self.panel_counts.setEnabled(self.only_desktop.isChecked())
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
         self.apply_button.setEnabled(valid and self.changed)
 
@@ -4165,7 +4188,8 @@ class Tidy(QObject):
         watch = self.settings.value("only_desktop", True, bool)
         if not watch:
             self.pointer_on_desktop = False
-        self.kwin.load(self.settings.value("corner", "none"), watch)
+        self.kwin.load(self.settings.value("corner", "none"), watch,
+                       self.settings.value("panel_counts", True, bool))
 
     def on_desktop_active(self, active):
         was = self.desktop_active
@@ -4646,7 +4670,8 @@ class Tidy(QObject):
         was_hidden, setup = self.hidden, self.hidden_setup()
         dlg.focus_tab.save()
         old_kwin = (self.settings.value("corner", "none"),
-                    self.settings.value("only_desktop", True, bool))
+                    self.settings.value("only_desktop", True, bool),
+                    self.settings.value("panel_counts", True, bool))
         self.settings.setValue("timeout", dlg.timeout.value())
         self.settings.setValue("mode", dlg.mode.currentData())
         self.settings.setValue("buttons", dlg.chosen_buttons())
@@ -4654,6 +4679,7 @@ class Tidy(QObject):
         self.settings.setValue("corner", dlg.corner.currentData())
         self.settings.setValue("hide_panel", dlg.panel.isChecked())
         self.settings.setValue("only_desktop", dlg.only_desktop.isChecked())
+        self.settings.setValue("panel_counts", dlg.panel_counts.isChecked())
         self.settings.setValue("skip_screens", dlg.skipped_screens())
         self.settings.setValue("fade_icons", dlg.fade_icons.isChecked())
         self.settings.setValue("fade_duration", dlg.fade_duration.value())
@@ -4667,7 +4693,8 @@ class Tidy(QObject):
         self.backup_launchers()  # before a drawer may start holding them
         dlg.drawer_tab.apply()
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
-        if (dlg.corner.currentData(), dlg.only_desktop.isChecked()) != old_kwin:
+        if (dlg.corner.currentData(), dlg.only_desktop.isChecked(),
+                dlg.panel_counts.isChecked()) != old_kwin:
             self.load_kwin()
         self.after_settings(was_hidden, setup)
         dlg.applied()

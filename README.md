@@ -62,6 +62,7 @@ change something.
 | Hide again | After that time without movement, or after a fixed time even while you move | without movement |
 | Screen corner shows | Moving the mouse into this corner shows the icons | none |
 | Activity in other windows doesn't count | The icons hide behind the window you're working in; moving the mouse over the desktop itself always counts | on |
+| Moving over the panel does count | With the setting above: moving the mouse over the panel keeps the icons too, like moving over the desktop | on |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
 | Fade the icons in and out | The icons fade away and back instead of switching at once, in the time you set; uses an invisible helper widget on the desktop | off, 300 ms |
 | Hide the icons on | With more than one screen: the screens whose icons are hidden; the others keep theirs | every screen |
