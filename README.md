@@ -142,11 +142,20 @@ The settings of a drawer come in three parts.
 | Pop-up has a background, like the panel | On: the pop-up looks like a piece of your panel. Off: only the icons, on whatever is behind them | on |
 | Pop-up floats above the panel, like Plasma's own pop-ups | On: the same distance from the panel as the start menu and the system tray's own pop-up, so they line up. Off: it stands on the panel's edge. Only a floating panel shows the difference | on |
 | The system tray's own arrow (^) | With the system tray in a pop-up only its icons go there. Its own arrow, for the icons it keeps hidden, shows in the panel while the pop-up is open, always, or never | while the pop-up is open |
+| The arrow shows a balloon when you point at it | Off: no text balloon at the drawer's arrow | on |
 | Animation | Slide: the icons of a task manager slide out from under the arrow at their normal size, like a drawer. Grow: they grow from small to their normal size. One by one: they come and go one after the other. Fade: they fade together and the rest closes up | slide |
 | Speed | How long the movement takes; one by one, how long each icon takes | 250 ms |
 
 Below the drawers, *All drawers: close and open together with the desktop icons* makes every
 drawer follow Tidy's hiding and showing of the desktop icons (off by default).
+
+Under that, *Balloons and previews* holds two of Plasma's own settings, shown as they are now:
+
+| Setting | What it does |
+|---|---|
+| Plasma shows a balloon with text when you point at something | Plasma's switch for every text balloon in the panel, the system tray and on the desktop. Off: none of them appear. The pop-up of a program in the panel is the setting below, and can stay |
+| Pop-up of a program in the panel | *With a preview of the window*, *Title and text only* (both are the task manager's own setting), *Only the preview of the window* (no title or text, and the close button stays above the preview if you tick *With only the preview: keep the close button, above it*; a program that is not open has no pop-up) or *None*. Only the preview, no pop-up at all, and a pop-up while Plasma's balloons are off, are done by a drawer, so they work for a task manager that is in a drawer |
+| This pop-up floats above the panel, like Plasma's own pop-ups | On: the program's pop-up keeps the same distance from the panel as the start menu and the system tray's own pop-up. Off: against the panel, as Plasma puts it. Only a floating panel shows the difference; for a task manager that is in a drawer |
 
 A drawer also has a settings page of its own: right-click the arrow and choose *Configure Tidy
 Drawer*. It has the same settings except the place of the arrow, and it works when Tidy is
@@ -283,7 +292,8 @@ starts.
 *Restore everything* (in the tray menu and on the *General* tab) puts your desktop
 back as if Tidy were not there. It shows the desktop icons, the panel and everything in the
 drawers, and puts back the Plasma settings Tidy changed: the desktop folder, the panel's
-visibility, and a task manager's pinned list and *Fill free space on panel*. If you tick the
+visibility, a task manager's pinned list and *Fill free space on panel*, and the balloons and
+pop-ups of *Balloons and previews*. If you tick the
 box, the system tray goes back to how it was before Tidy first changed it.
 
 Tidy is then switched off and the drawers are paused: their arrows stay in the panel, dimmed,

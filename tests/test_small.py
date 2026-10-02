@@ -3,6 +3,7 @@
 """The small things: tray rules, the warning for a bare key, reading a drawer's settings."""
 
 import unittest
+from unittest import mock
 
 from tests import SRC  # noqa: F401
 
@@ -10,6 +11,7 @@ from PyQt6.QtGui import QKeySequence
 
 from plasma_tidy.consts import TRAY_HIDDEN, TRAY_SHOWN
 from plasma_tidy.peek import bare_key
+from plasma_tidy.plasma import plasma_balloons, set_plasma_balloons
 from plasma_tidy.tray import tray_minimal, tray_rule_mode
 from plasma_tidy.widgets import drawer_value
 
@@ -58,6 +60,35 @@ class DrawerSettings(unittest.TestCase):
         self.assertEqual(drawer_value("hoverDelay", ""), 200)
         self.assertEqual(drawer_value("targets", None), [])
         self.assertEqual(drawer_value("hoverDelay", "nonsense"), 200)
+
+
+class Balloons(unittest.TestCase):
+    """Plasma's own switch for its text balloons: no delay above zero means off."""
+
+    def read(self, text):
+        with mock.patch("plasma_tidy.plasma.subprocess.run") as run:
+            run.return_value.stdout = text
+            return plasma_balloons()
+
+    def test_nothing_set_is_on(self):
+        self.assertTrue(self.read("\n"))
+
+    def test_a_delay_is_on_and_none_or_below_zero_is_off(self):
+        self.assertTrue(self.read("700\n"))
+        self.assertTrue(self.read("0,3\n"))
+        self.assertFalse(self.read("0\n"))
+        self.assertFalse(self.read("-1\n"))
+
+    def test_nonsense_is_on(self):
+        self.assertTrue(self.read("soon\n"))
+
+    def test_on_removes_the_setting_and_off_writes_it(self):
+        with mock.patch("plasma_tidy.plasma.subprocess.run") as run:
+            set_plasma_balloons(True)
+            self.assertEqual(run.call_args[0][0][-1], "--delete")
+            set_plasma_balloons(False)
+            self.assertEqual(run.call_args[0][0][-2:], ["--", "-1"])
+            self.assertIn("--notify", run.call_args[0][0])  # or Plasma only sees it after a restart
 
 
 if __name__ == "__main__":

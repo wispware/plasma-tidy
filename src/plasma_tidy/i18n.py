@@ -529,6 +529,46 @@ TRANSLATIONS = {
             "gluren. {app} staat in het systeemvak: klik op het oog-pictogram om de "
             "instellingen te openen.",
         "Welcome window…": "Welkomstscherm…",
+        "Balloons and previews": "Ballonnen en voorbeelden",
+        "Plasma shows a balloon with text when you point at something":
+            "Plasma toont een ballon met tekst als je iets aanwijst",
+        "Plasma's own setting, for every balloon in the panel, the system tray and on the "
+        "desktop. Off: none of them appear. The pop-up of a program in the panel is chosen "
+        "below, and can stay.":
+            "Plasma's eigen instelling, voor elke ballon in het paneel, het systeemvak en op "
+            "het bureaublad. Uit: er verschijnt er geen enkele. De pop-up van een programma "
+            "in het paneel kies je hieronder, en die kan blijven.",
+        "Pop-up of a program in the panel:": "Pop-up van een programma in het paneel:",
+        "With a preview of the window": "Met een voorbeeld van het venster",
+        "Title and text only": "Alleen titel en tekst",
+        "What comes up when you point at a program in the panel. With or without the preview "
+        "is the task manager's own setting. Only the preview, none at all, and a pop-up while "
+        "Plasma's balloons are off, are done by a drawer: they work for a task manager that is "
+        "in a drawer. Only the preview leaves out the title and the text; a program that is "
+        "not open then has no pop-up.":
+            "Wat er verschijnt als je een programma in het paneel aanwijst. Met of zonder "
+            "voorbeeld is de eigen instelling van het takenbeheer. Alleen het voorbeeld, "
+            "helemaal geen pop-up, en een pop-up terwijl Plasma's ballonnen uit staan, regelt "
+            "een la: dat werkt voor een takenbeheer dat in een la zit. Alleen het voorbeeld "
+            "laat de titel en de tekst weg; een programma dat niet open is heeft dan geen "
+            "pop-up.",
+        "With only the preview: keep the close button, above it":
+            "Bij alleen het voorbeeld: de sluitknop houden, erboven",
+        "The pop-up's close button sits next to the title and the text. On: it stays where it "
+        "is, above the preview. Off: it goes with them.":
+            "De sluitknop van de pop-up staat naast de titel en de tekst. Aan: hij blijft "
+            "waar hij staat, boven het voorbeeld. Uit: hij verdwijnt mee.",
+        "This pop-up floats above the panel, like Plasma's own pop-ups":
+            "Deze pop-up zweeft boven het paneel, net als Plasma's eigen pop-ups",
+        "On: the same distance from the panel as the start menu and the system tray's own "
+        "pop-up. Off: against the panel, as Plasma puts it. Only a floating panel shows the "
+        "difference. Works for a task manager that is in a drawer.":
+            "Aan: dezelfde afstand tot het paneel als het startmenu en de eigen pop-up van "
+            "het systeemvak. Uit: tegen het paneel aan, zoals Plasma hem zet. Alleen bij een "
+            "zwevend paneel zie je verschil. Werkt voor een takenbeheer dat in een la zit.",
+        "Only the preview of the window": "Alleen het voorbeeld van het venster",
+        "The arrow shows a balloon when you point at it":
+            "Het pijltje toont een ballon als je het aanwijst",
         "Shows its contents:": "Toont zijn inhoud:",
         "In the panel": "In het paneel",
         "In a pop-up above the arrow": "In een pop-up boven het pijltje",

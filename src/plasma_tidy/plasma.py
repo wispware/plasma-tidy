@@ -5,6 +5,7 @@
 import json
 import os
 import re
+import subprocess
 
 from PyQt6.QtCore import QLibraryInfo
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
@@ -98,6 +99,28 @@ def panels_below_windows():
     except OSError:
         pass
     return found
+
+
+def plasma_balloons():
+    """Are Plasma's text balloons (tooltips) on? Its own setting: plasmarc, PlasmaToolTips,
+    Delay, in milliseconds; nothing above zero means off."""
+    try:
+        out = subprocess.run(["kreadconfig6", "--file", "plasmarc", "--group", "PlasmaToolTips",
+                              "--key", "Delay"], capture_output=True, text=True, timeout=5).stdout
+        return not out.strip() or float(out.strip().replace(",", ".")) > 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return True
+
+
+def set_plasma_balloons(on):
+    """Switch Plasma's text balloons on (its own default) or off. Plasma only notices at
+    once when it is told of the change, hence --notify."""
+    command = ["kwriteconfig6", "--file", "plasmarc", "--group", "PlasmaToolTips", "--key", "Delay",
+               "--notify"]
+    try:
+        subprocess.run(command + (["--delete"] if on else ["--", "-1"]), timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def panel_widget_name(plugin):
@@ -371,6 +394,31 @@ class Plasma:
         self.run("var id = %d, type = %s;" % (drawer_id, json.dumps(DRAWER_ID)) + """
             panels().forEach(function (p) { p.widgets().forEach(function (w) {
                 if (w.type == type && w.id == id) w.remove();
+            }); });""")
+
+    def task_previews(self):
+        """Does a task manager show a preview of the window in its pop-up? {widget id: bool}"""
+        out = self.run("var types = %s;" % json.dumps(TASK_PLUGINS) + """
+            var r = {};
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (types.indexOf(w.type) < 0) return;
+                w.currentConfigGroup = ["General"];
+                r[w.id] = String(w.readConfig("showToolTips")) != "false";
+            }); });
+            print(JSON.stringify(r));""")
+        try:
+            return {int(k): bool(v) for k, v in json.loads(out).items()}
+        except ValueError:
+            return {}
+
+    def set_task_previews(self, previews):
+        """Switch the preview in the task managers' pop-ups: {widget id: bool}."""
+        self.run("var want = %s;" % json.dumps({str(k): v for k, v in previews.items()}) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (!(w.id in want)) return;
+                w.currentConfigGroup = ["General"];
+                w.writeConfig("showToolTips", want[w.id]);
+                w.reloadConfig();
             }); });""")
 
     def task_launchers(self):

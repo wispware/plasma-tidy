@@ -17,12 +17,13 @@ from .catcher import Catcher
 from .consts import (APP, APP_NAME, AUTOSTART, BUTTONS, CLICKS_DOUBLE, CLICKS_SINGLE, DATA_DIR,
                      DONATE_URL, DRAWER_DEFAULTS, DRAWER_STATE, EMPTY_DIR, EMPTY_URL, IDLE_LINK,
                      IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PLACE_BEFORE, PROFILE_SETTINGS,
+                     TASK_POPUPS_PREVIEW,
                      REHIDE_FIXED, REHIDE_IDLE, RULE_FOCUS, RULE_PROFILE, TRAY_HIDDEN, TRAY_SHOWN,
                      VERSION)
 from .i18n import set_language, tr
 from .kwin import KWin
 from .peek import PeekKey
-from .plasma import Plasma
+from .plasma import Plasma, plasma_balloons, set_plasma_balloons
 from .settings import SettingsDialog, open_donate
 from .tray import TrayTab, remember_tray, tray_app_items, tray_minimal, tray_rule_mode, tray_rules
 from .welcome import Welcome
@@ -382,6 +383,47 @@ class Tidy(QObject):
         if self.hidden and not self.hold_icons:
             self.show()
 
+    def apply_tips(self):
+        """Bring Plasma's text balloons and the pop-ups of the programs in the panel in line
+        with the settings. These are Plasma's own settings, so how they were is remembered
+        the first time, for "Restore everything"."""
+        balloons = self.settings.value("balloons", True, bool)
+        popup = self.settings.value("task_popup", "preview")
+        now_balloons, now_previews = plasma_balloons(), self.plasma.task_previews()
+        previews = {k: popup in TASK_POPUPS_PREVIEW for k, v in now_previews.items()
+                    if v != (popup in TASK_POPUPS_PREVIEW)}
+        if (balloons != now_balloons or previews) and not self.settings.value("tips_original", ""):
+            self.settings.setValue("tips_original", json.dumps(
+                {"balloons": now_balloons, "previews": now_previews}))
+        if balloons != now_balloons:
+            set_plasma_balloons(balloons)
+        if previews:
+            self.plasma.set_task_previews(previews)
+        # No pop-up at all is something the task manager cannot do itself, and with Plasma's
+        # balloons off it shows none: a drawer that has the task manager in it takes the
+        # pop-up away, or shows it, instead. The drawers' own balloons follow Plasma's too.
+        want = {"taskTips": popup != "none", "balloons": balloons, "taskBare": popup == "only",
+                "taskClose": self.settings.value("task_close", True, bool),
+                "taskGap": self.settings.value("task_gap", False, bool)}
+        if any(d["config"][k] != v for d in self.plasma.drawers() for k, v in want.items()):
+            self.plasma.set_drawer_config(None, want)
+
+    def restore_tips(self):
+        """Put Plasma's balloons and pop-ups back as they were before Tidy changed them."""
+        try:
+            saved = json.loads(self.settings.value("tips_original", "") or "{}")
+        except ValueError:
+            saved = {}
+        if saved:
+            set_plasma_balloons(bool(saved.get("balloons", True)))
+            self.plasma.set_task_previews({int(k): bool(v)
+                                           for k, v in saved.get("previews", {}).items()})
+            self.settings.setValue("balloons", bool(saved.get("balloons", True)))
+            self.settings.remove("tips_original")
+        self.settings.setValue("task_popup", "preview" if all(
+            self.plasma.task_previews().values()) else "text")
+        self.plasma.set_drawer_config(None, {"taskTips": True, "balloons": True, "taskBare": False, "taskGap": False})
+
     def update_fit_panels(self):
         """Tell each drawer whether its panel is as long as its contents; it then fades
         instead of sliding. Looked at when Tidy or Plasma starts and when settings change."""
@@ -675,6 +717,7 @@ class Tidy(QObject):
         self.recover_after_crash()
         self.backup_launchers()
         self.plasma.set_drawer_config(None, {"paused": True})
+        self.restore_tips()
         # Once the drawers have handed everything back.
         QTimer.singleShot(2000, self.recover_launchers)
         original = self.settings.value("tray_original", "")
@@ -805,6 +848,11 @@ class Tidy(QObject):
         self.backup_launchers()  # before a drawer may start holding them
         dlg.drawer_tab.apply()
         self.update_fit_panels()
+        self.settings.setValue("balloons", dlg.drawer_tab.balloons.isChecked())
+        self.settings.setValue("task_popup", dlg.drawer_tab.task_popup.currentData())
+        self.settings.setValue("task_close", dlg.drawer_tab.task_close.isChecked())
+        self.settings.setValue("task_gap", dlg.drawer_tab.task_gap.isChecked())
+        self.apply_tips()
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
         if self.kwin_setup() != old_kwin:
             self.load_kwin()
@@ -1069,6 +1117,8 @@ class Tidy(QObject):
                 self.plasma.set_drawer_shortcut(saved["id"], saved["shortcut"])
         self.load_kwin()
         self.update_helpers()
+        if any(k in data.get("settings", {}) for k in ("balloons", "task_popup", "task_close", "task_gap")):
+            self.apply_tips()
         self.peek_key.set(self.settings.value("peek_key", ""))
         self.after_settings(was_hidden, setup)
         self.rules_changed()

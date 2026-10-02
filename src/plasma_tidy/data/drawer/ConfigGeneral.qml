@@ -37,6 +37,7 @@ KCM.SimpleKCM {
     property bool cfg_popupBackground
     property bool cfg_popupGap
     property string cfg_trayArrow
+    property bool cfg_arrowTip
     property int cfg_animationDuration
     property string cfg_activePlace
     property bool cfg_reverseArrow
@@ -249,6 +250,11 @@ KCM.SimpleKCM {
                       ["never", "Never"]]
             value: page.cfg_trayArrow
             onChosen: value => page.cfg_trayArrow = value
+        }
+        QQC2.CheckBox {
+            text: page.t("The arrow shows a balloon when you point at it")
+            checked: page.cfg_arrowTip
+            onToggled: page.cfg_arrowTip = checked
         }
         Choice {
             Kirigami.FormData.label: page.t("Animation:")

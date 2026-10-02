@@ -54,7 +54,8 @@ DISPLAY_POPUP = "popup"
 DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [],
                    "taskMode": TASKS_ALL, "taskKeep": [], "taskList": "", "openOn": OPEN_CLICK,
                    "display": DISPLAY_PANEL, "popupStyle": "row", "popupBackground": True,
-                   "popupGap": True, "trayArrow": "open",
+                   "popupGap": True, "trayArrow": "open", "arrowTip": True, "taskTips": True, "balloons": True,
+                   "taskBare": False, "taskClose": True, "taskGap": False,
                    "fitPanel": False,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
@@ -99,6 +100,10 @@ PANEL_NAMES = {
 }
 ANIMATIONS = [("slide", "Slide"), ("grow", "Grow"), ("cascade", "One by one"), ("fade", "Fade")]
 DISPLAYS = [(DISPLAY_PANEL, "In the panel"), (DISPLAY_POPUP, "In a pop-up above the arrow")]
+TASK_POPUPS = [("preview", "With a preview of the window"),
+               ("only", "Only the preview of the window"), ("text", "Title and text only"),
+               ("none", "None")]
+TASK_POPUPS_PREVIEW = ("preview", "only")  # the ones the task manager shows a preview for
 TRAY_ARROWS = [("open", "In the panel while the pop-up is open"),
                ("always", "Always in the panel"), ("never", "Never")]
 POPUP_STYLES = [("row", "A row of icons"), ("column", "A column of icons"),
@@ -122,6 +127,7 @@ DRAWER_PAGE_TEXTS = [
     "A row of icons", "A column of icons", "A grid with names", "A list with names",
     "Pop-up has a background, like the panel",
     "Pop-up floats above the panel, like Plasma's own pop-ups",
+    "The arrow shows a balloon when you point at it",
     "The system tray's own arrow (^):", "In the panel while the pop-up is open",
     "Always in the panel", "Never",
     "Close after a click on something in the drawer",
@@ -144,9 +150,12 @@ PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,mi
                     "fade_duration": 300, "drawer_follow": False,
                     "focus_icons": True, "focus_drawers": True, "focus_tray": True,
                     "focus_panel": False, "tray_hide_new": False, "tray_rules": "",
-                    "peek_key": "", "peek_panel": True}
+                    "peek_key": "", "peek_panel": True, "balloons": True,
+                    "task_popup": "preview", "task_close": True,
+                    "task_gap": False}
 # What a drawer is doing right now; not part of a profile.
-DRAWER_STATE = ("closed", "paused", "taskList", "fitPanel")
+DRAWER_STATE = ("closed", "paused", "taskList", "fitPanel", "taskTips", "balloons", "taskBare",
+                "taskClose", "taskGap")
 # Rules: when something is the case, use a profile or switch focus mode on.
 RULE_WHEN = [("battery", "On battery"), ("mains", "On mains power"),
              ("external", "An external screen is connected"),

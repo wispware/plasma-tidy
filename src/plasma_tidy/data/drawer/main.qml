@@ -155,6 +155,9 @@ PlasmoidItem {
                     + (g && g.parent ? "/in " + String(g.parent).split("(")[0] + " implicit " + Math.round(g.parent.implicitWidth) + " size " + Math.round(g.parent.width)
                         + " kids=" + Array.from(g.parent.children).map(c => String(c).split("_")[0] + ":" + Math.round(c.width) + "x" + Math.round(c.height) + "/i" + Math.round(c.implicitWidth) + (c.visible ? "" : "/hidden")).join(",") : "")
                     + (g ? "/grid count" + g.count + " rows" + g.rowsOrColumns + " cell" + Math.round(g.cellWidth) + "x" + Math.round(g.cellHeight) + " size" + Math.round(g.width) + "x" + Math.round(g.height) : "")); } } return r; })(),
+            taskTips: cfg.taskTips + "/" + taskHiders.filter(h => { try { return h.item.active === true; } catch (e) { return false; } }).length
+                + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
+                + (tipWindow ? tipWindow.margin : "?"),
             display: cfg.display, shelf: popupMode ? (popup.visible ? "open" : "closed") + "/" + popupItems.length
                 + "/" + Math.round(popup.width) + "x" + Math.round(popup.height) : "",
             animation: animation, fitPanel: cfg.fitPanel,
@@ -410,6 +413,131 @@ PlasmoidItem {
     // each has its model entry (IsLauncher: pinned and not running).
 
     property var taskHiders: []          // [{item, hider}]
+    readonly property int tipDelay: 700  // Plasma's own wait before a balloon shows
+    property double tipLeft: 0           // when the pointer last left an icon with its pop-up up
+
+    // Only the preview in a program's pop-up, without the title and the text above it. The
+    // task manager has no setting for that, so the drawer reaches into its pop-up: the part
+    // with the texts gets no height. Only where there is a preview; a program that is not
+    // open then gets no pop-up at all (see "quiet" below).
+    property Item tipDelegate: null   // the task manager's pop-up, known once one has shown
+    property Item tipList: null       // in the pop-up of a group: what its windows sit in
+    property int tipsTrimmed: 0
+    function tipFrom(task) {
+        try { tipDelegate = task.mainItem; } catch (e) { tipDelegate = null; }
+        trimTips();
+    }
+    function trimTips() {
+        tipsTrimmed = 0;
+        try {
+            if (tipDelegate && tipDelegate.item) trimWalk(tipDelegate.item, 0);
+        } catch (e) {}
+    }
+    function trimWalk(item, depth) {
+        if (!item || depth > 6) return;
+        var kids = item.children;
+        if (item.submodelIndex !== undefined && item.isReadyForPainting !== undefined) {
+            // One window in the pop-up: first its texts, then its preview.
+            if (kids.length < 2) return;
+            // (Whether the preview is "visible" says nothing while the pop-up is not up yet.)
+            var bare = cfg.taskBare && !cfg.paused && !leaving && tipDelegate.isWin === true;
+            // The part with the texts gets no height. With the close button kept it stays as
+            // high as that button, which keeps its own place above the preview; the texts
+            // next to it are made see-through.
+            var head = kids[0], keep = bare && cfg.taskClose, high = 0;
+            if (keep) {
+                var button = findClose(head, 0);
+                if (button) high = Math.max(button.height, button.implicitHeight);
+            }
+            head.Layout.maximumHeight = bare ? high : Number.POSITIVE_INFINITY;
+            head.clip = bare;
+            var row = head.children.length ? head.children[0].children : [];
+            for (var k = 0; k < row.length; k++) {
+                // (Not what holds the close button, and not the button itself.)
+                if (row[k].target === undefined && !findClose(row[k], 0)) row[k].opacity = keep ? 0 : 1;
+            }
+            if (bare) tipsTrimmed++;
+            return;
+        }
+        if (item.contentItem !== undefined && item.count !== undefined && item.contentItem)
+            tipList = item.contentItem;
+        for (var i = 0; i < kids.length; i++) trimWalk(kids[i], depth + 1);
+    }
+    // The pop-up of a program at the same distance from the panel as Plasma's other pop-ups
+    // (the start menu, the system tray's). Plasma puts every balloon against the panel; its
+    // pop-up window takes a distance, which is set while a program's pop-up is up and taken
+    // away again after it, since all balloons share that one window.
+    property var tipWindow: null
+    property Item tipOwner: null
+    function tipGap() {
+        if (!panelBar) findBar();
+        try {
+            var top = root;
+            while (top.parent) top = top.parent;
+            var at = panelBar.mapToItem(top, 0, 0), gap = at.y;
+            if (Plasmoid.location === PlasmaCore.Types.TopEdge) gap = top.height - at.y - panelBar.height;
+            else if (Plasmoid.location === PlasmaCore.Types.LeftEdge) gap = top.width - at.x - panelBar.width;
+            else if (Plasmoid.location === PlasmaCore.Types.RightEdge) gap = at.x;
+            // Plasma's own pop-ups sit a pixel inside the window's edge.
+            return Math.max(0, Math.round(gap) - 1);
+        } catch (e) {
+            return 0;
+        }
+    }
+    // Is a program's pop-up up right now? (It stays a moment after the pointer leaves it.)
+    function tipUp() {
+        try { return tipWindow !== null && tipWindow.visible === true && tipOwner !== null; } catch (e) { return false; }
+    }
+    function tipFloat(on) {
+        try {
+            if (!tipWindow && tipDelegate) {
+                var w = tipDelegate.Window.window;
+                if (w && w.margin !== undefined && w.popupDirection !== undefined) tipWindow = w;
+            }
+            if (tipWindow) tipWindow.margin = on ? tipGap() : 0;
+        } catch (e) {}
+    }
+    // The distance stays for as long as the program's pop-up is up, also with the pointer in
+    // the pop-up itself or back on the panel. It goes when the pop-up goes, or when the
+    // window is handed something else to show: another widget's balloon.
+    Connections {
+        target: root.tipWindow
+        ignoreUnknownSignals: true
+        function onMainItemChanged() {
+            try {
+                var shown = root.tipWindow.mainItem;
+                if (!shown || !root.tipOwner || shown === root.tipOwner.mainItem) return;
+            } catch (e) {}
+            root.tipOwner = null;
+            root.tipFloat(false);
+        }
+    }
+    // The task manager's own close button, somewhere in this part of its pop-up.
+    function findClose(item, depth) {
+        if (!item || depth > 4) return null;
+        try { if (item.icon !== undefined && item.icon.name === "window-close") return item; } catch (e) {}
+        var kids = item.children;
+        for (var i = 0; i < kids.length; i++) {
+            var found = findClose(kids[i], depth + 1);
+            if (found) return found;
+        }
+        return null;
+    }
+    Connections {
+        target: root.tipDelegate
+        ignoreUnknownSignals: true
+        function onLoaded() { root.trimTips(); }
+        function onIsWinChanged() { root.trimTips(); }
+    }
+    Connections {
+        target: root.tipList
+        function onChildrenChanged() { Qt.callLater(root.trimTips); }
+    }
+    Connections {
+        target: root.cfg
+        function onTaskBareChanged() { root.trimTips(); }
+        function onTaskCloseChanged() { root.trimTips(); }
+    }
     property int tasksMovingCount: 0
     readonly property bool tasksMoving: tasksMovingCount > 0 || settle.running
     Timer { id: settle; interval: 60 }   // bridges the gap between two icons of a cascade
@@ -803,7 +931,11 @@ PlasmoidItem {
                         // Left: start it, or go to its window. Middle: a new window.
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                         onClicked: mouse => root.useTask(modelData, mouse.button)
+                        // Its name in a balloon, unless Plasma's balloons or the programs'
+                        // pop-ups are switched off.
                         QQC2.ToolTip.visible: containsMouse && !shelf.named && name !== ""
+                                              && root.cfg.balloons && root.cfg.taskTips
+                                              && !root.cfg.taskBare
                         QQC2.ToolTip.text: name
                         QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
 
@@ -1072,6 +1204,61 @@ PlasmoidItem {
                 apply();
                 ready = true;
             }
+            // No pop-up when you point at a program, if that is switched off in Tidy: the
+            // task manager's own switch for it only takes the preview away.
+            readonly property bool isWindow: {
+                try { return th.task.model.IsWindow === true; } catch (e) { return true; }
+            }
+            property Binding quiet: Binding {
+                target: th.task; property: "active"; value: false
+                when: th.ready && (!root.cfg.taskTips || (root.cfg.taskBare && !th.isWindow))
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            property Connections showing: Connections {
+                target: th.ready ? th.task : null
+                function onAboutToShow() {
+                    root.tipFrom(th.task);
+                    root.tipOwner = th.task;
+                    root.tipFloat(root.cfg.taskGap && !root.cfg.paused);
+                }
+                function onToolTipVisibleChanged(visible) {
+                    root.trimTips();
+                    if (root.tipOwner !== th.task) return;
+                    if (!visible) root.tipLeft = Date.now();
+                    // (The first time the pop-up's window is only known once it is up.)
+                    root.tipFloat(visible && root.cfg.taskGap && !root.cfg.paused);
+                }
+            }
+            // The other way round: Plasma's balloons are all off, but the pop-up of a program
+            // is wanted. Plasma then no longer shows it when you point at the icon, so the
+            // drawer asks for it. Plasma still keeps track of the pointer, fills the pop-up
+            // and takes it away again by itself.
+            property bool tipShown: false
+            property Timer tipTimer: Timer {
+                onTriggered: {
+                    try {
+                        if (!th.task.containsMouse) return;
+                        th.task.showToolTip();
+                        th.tipShown = true;
+                    } catch (e) {}
+                }
+            }
+            property Connections pointing: Connections {
+                target: (th.ready && !root.cfg.balloons && root.cfg.taskTips) ? th.task : null
+                function onContainsMouseChanged() {
+                    if (th.task.containsMouse) {
+                        // From one icon to the next the pop-up follows at once, as Plasma does,
+                        // and coming back from the pop-up to its icon it simply stays.
+                        th.tipTimer.interval = (root.tipUp() || Date.now() - root.tipLeft < 400)
+                            ? 1 : root.tipDelay;
+                        th.tipTimer.restart();
+                    } else {
+                        th.tipTimer.stop();
+                        if (th.tipShown) root.tipLeft = Date.now();
+                        th.tipShown = false;
+                    }
+                }
+            }
             // Must let go of the icon before it goes: the bindings only restore while they exist.
             function release() {
                 ready = false;
@@ -1331,6 +1518,21 @@ PlasmoidItem {
             // For testing: as if the panel were clicked at this place, "tap:<pixels>".
             // As if a program in the pop-up were clicked: "use:<number>".
             var act = String(root.cfg.debug).split(":");
+            // As if a program were pointed at with Plasma's balloons off: "tip:<number>".
+            // "tipapp:<name>": the same for the open program with that name.
+            if (act[0] === "tipapp")
+                root.taskHiders.forEach(h => {
+                    try {
+                        if (h.item.model.AppName !== act[1] || h.item.model.IsWindow !== true) return;
+                        h.item.updateMainItemBindings();
+                        h.item.showToolTip();
+                    } catch (e) {}
+                });
+            if (act[0] === "tip" && root.taskHiders[Number(act[1])]) {
+                var tipItem = root.taskHiders[Number(act[1])].item;
+                tipItem.updateMainItemBindings();
+                tipItem.showToolTip();
+            }
             if (act[0] === "use" && root.popupItems[Number(act[1])])
                 root.useTask(root.popupItems[Number(act[1])], Qt.LeftButton);
             if (String(root.cfg.debug).indexOf("tap:") === 0) {
@@ -1752,6 +1954,7 @@ PlasmoidItem {
         // The arrow sits at the start of the widget; when the widget fills the panel, the
         // rest of it is empty panel space.
         PlasmaCore.ToolTipArea {
+            active: root.cfg.arrowTip
             width: root.vertical ? parent.width : root.thickness
             height: root.vertical ? root.thickness : parent.height
             // Standing after the icons, the arrow slides along with them.
