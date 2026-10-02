@@ -291,8 +291,8 @@ everything back as it was.
 | Set the system tray to Minimal | Network, volume and battery visible, the rest under `^` | on |
 | Auto-hide the panel | The panel slides away until you move to the screen edge | off |
 
-Opening the settings and pressing OK, switching Tidy off, and *Restore everything* end focus
-mode; a rule that still applies switches it on again. After a crash or a logout in focus mode, Tidy puts everything back the next time it
+Changing a setting in the settings window (OK or Apply), switching Tidy off, and *Restore
+everything* end focus mode; a rule that still applies switches it on again. After a crash or a logout in focus mode, Tidy puts everything back the next time it
 starts.
 
 ### Restore everything
