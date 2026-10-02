@@ -463,7 +463,8 @@ PlasmoidItem {
     // Only the preview in a program's pop-up, without the title and the text above it. The
     // task manager has no setting for that, so the drawer reaches into its pop-up: the part
     // with the texts gets no height. Only where there is a preview; a program that is not
-    // open then gets no pop-up at all (see "quiet" below).
+    // open keeps its balloon with its name (as long as Plasma's balloons are on, see "quiet"
+    // below).
     property Item tipDelegate: null   // the task manager's pop-up, known once one has shown
     property Item tipList: null       // in the pop-up of a group: what its windows sit in
     property int tipsTrimmed: 0
@@ -1354,8 +1355,10 @@ PlasmoidItem {
             }
             property Binding quiet: Binding {
                 target: th.task; property: "active"; value: false
+                // A program that is not open has no window to show: its pop-up is a text
+                // balloon like any other, and goes when Plasma's balloons are off.
                 when: th.ready && !root.cfg.paused && !root.leaving
-                      && (!root.cfg.taskTips || (root.cfg.taskBare && !th.isWindow))
+                      && (!root.cfg.taskTips || (!root.cfg.balloons && !th.isWindow))
                 restoreMode: Binding.RestoreBindingOrValue
             }
             property Connections showing: Connections {

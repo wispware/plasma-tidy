@@ -57,6 +57,12 @@ Tidy shows an eye in the system tray: open when your icons are visible, crossed 
 are hidden, grey when Tidy is switched off. Click it to open the settings; right-click for
 the menu.
 
+Switching Tidy off (*Enabled* in the menu) or choosing *Quit* leaves your desktop as it is
+without Tidy: the icons are shown, the drawers are paused with everything in them in view,
+and Plasma's balloons and pop-ups are back as they were. Your settings are kept; switching
+Tidy on, or starting it again, takes up where it left off. Logging out is not quitting: the
+drawers are left as they are, so nothing jumps when Tidy starts with your next session.
+
 The first time Tidy starts, a welcome window asks the things that matter most: after how
 long the icons hide, what brings them back, and whether Tidy starts at login. It also offers
 to add a drawer for the programs in your panel and to tidy the system tray; both are off
@@ -161,7 +167,7 @@ shown as they are now; the rest is done by a drawer:
 | Setting | What it does |
 |---|---|
 | Plasma shows a balloon with text when you point at something | Plasma's switch for every text balloon in the panel, the system tray and on the desktop. Off: none of them appear. The pop-up of a program in the panel is the setting below, and can stay |
-| Pop-up of a program in the panel | *With a preview of the window*, *Title and text only* (both are the task manager's own setting), *Only the preview of the window* (no title or text, and the close button stays above the preview if you tick *With only the preview: keep the close button, above it*; a program that is not open has no pop-up) or *None*. Only the preview, no pop-up at all, and a pop-up while Plasma's balloons are off, are done by a drawer, so they work for a task manager that is in a drawer |
+| Pop-up of a program in the panel | *With a preview of the window*, *Title and text only* (both are the task manager's own setting), *Only the preview of the window* (no title or text, and the close button stays above the preview if you tick *With only the preview: keep the close button, above it*) or *None*. Only the preview, no pop-up at all, and a pop-up while Plasma's balloons are off, are done by a drawer, so they work for a task manager that is in a drawer. A program that is not open has no window to preview: it shows its name, as long as Plasma's balloons are on |
 | Balloons float above the panel, like Plasma's own pop-ups | On: the balloons of what is in the panel keep the same distance from it as the start menu and the system tray's own pop-up. Off: against the panel, as Plasma puts them. Only a floating panel shows the difference; works in a panel that has a drawer |
 | This pop-up floats above the panel, like Plasma's own pop-ups | The same for the pop-up of a program |
 
@@ -364,8 +370,9 @@ plasma-tidy --version   print the version
   a task manager it does that per icon. It changes one setting of a task manager, and only
   when you ask for it: with the arrow *just after* the task manager it switches off *Fill
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
-  drawer keeps working when Tidy is not running; Tidy is only needed to change its settings,
-  for a peek, for opening when the desktop is shown, and to stay open under any menu.
+  drawer does its work by itself, also should Tidy stop unexpectedly; Tidy is only needed to
+  change its settings, for a peek, for opening when the desktop is shown, and to stay open
+  under any menu. Quitting Tidy or switching it off pauses the drawers.
 - **Balloons and previews**: Plasma's text balloons are switched with Plasma's own setting
   (`plasmarc`), and the preview in a program's pop-up with the task manager's own. Plasma has
   no setting for the rest, so a drawer that holds the task manager does it, in the same way

@@ -101,7 +101,7 @@ class Tidy(QObject):
         self.profiles_menu = menu.addMenu("")
         self.profiles_menu.aboutToShow.connect(self.fill_profiles_menu)
         menu.addSeparator()
-        quit_action = menu.addAction("", self.quit)
+        quit_action = menu.addAction("", lambda: self.quit(by_hand=True))
         # English texts; retranslate() fills them in, and again when the language changes.
         self.menu_texts = [(self.enabled_action, "Enabled"), (self.focus_action, "Focus mode"),
                            (settings_action, "Settings…"),
@@ -150,6 +150,9 @@ class Tidy(QObject):
 
         self.peek_key = PeekKey(self.peek)
         self.peek_key.set(self.settings.value("peek_key", ""))
+        # Quit by hand the last time: back to work.
+        if self.enabled_action.isChecked() and self.suspended():
+            self.resume()
 
     def timed(name):
         """A value the moment of hiding depends on: changing it sets the timer afresh."""
@@ -403,6 +406,8 @@ class Tidy(QObject):
         """Bring Plasma's text balloons and the pop-ups of the programs in the panel in line
         with the settings. These are Plasma's own settings, so how they were is remembered
         the first time, for "Restore everything"."""
+        if self.suspended():
+            return  # Tidy is off: Plasma stays as it is without Tidy, until resume()
         balloons = self.settings.value("balloons", True, bool)
         popup = self.settings.value("task_popup", "preview")
         now_balloons, now_previews = plasma_balloons(), self.plasma.task_previews()
@@ -688,14 +693,37 @@ class Tidy(QObject):
         if on:
             self.idle_since = None
             self.shown_at = time.monotonic()
-            # Drawers paused by "Restore everything" resume.
-            self.plasma.set_drawer_config(None, {"paused": False})
+            self.resume()
         else:
             self.rule_focus = False
             self.peek(False)
             self.set_focus(False)
             self.stop_idle()
             self.show()
+            self.suspend()
+
+    def suspended(self):
+        return self.settings.value("suspended", False, bool)
+
+    def suspend(self):
+        """Tidy switched off, or quit by hand: Plasma is as it is without Tidy. The drawers
+        are paused (everything in them in view, their arrows dimmed) and Plasma's balloons
+        and pop-ups go back to how they were. Tidy's own settings stay, for resume()."""
+        self.settings.setValue("suspended", True)
+        self.settings.sync()
+        self.plasma.set_drawer_config(None, {"paused": True})
+        saved = stored(self.settings, "tips_original")
+        if saved:
+            if bool(saved.get("balloons", True)) != plasma_balloons():
+                set_plasma_balloons(bool(saved.get("balloons", True)))
+            self.plasma.set_task_previews({int(k): bool(v)
+                                           for k, v in saved.get("previews", {}).items()})
+
+    def resume(self):
+        """Tidy is on again: the drawers work again, and the balloons are as set in Tidy."""
+        self.settings.remove("suspended")
+        self.plasma.set_drawer_config(None, {"paused": False})
+        self.apply_tips()
 
     def backup_launchers(self):
         """Keep a copy of every task manager's pinned programs, as a last resort for "Restore
@@ -725,6 +753,7 @@ class Tidy(QObject):
         self.show()                            # also when Tidy already was off
         self.recover_after_crash()
         self.backup_launchers()
+        self.settings.setValue("suspended", True)  # also when Tidy already was off
         self.plasma.set_drawer_config(None, {"paused": True})
         self.restore_tips()
         # Once the drawers have handed everything back.
@@ -1218,7 +1247,10 @@ class Tidy(QObject):
         elif os.path.exists(AUTOSTART):
             os.remove(AUTOSTART)
 
-    def quit(self):
+    def quit(self, by_hand=False):
+        """Stop. Quit from the menu leaves Plasma as it is without Tidy: drawers paused,
+        balloons back. At logout (or when Tidy is restarted) the drawers are left working,
+        so that nothing jumps when Tidy starts with the next session."""
         if self.dialog:
             self.dialog.reject()
         self.quitting = True
@@ -1226,6 +1258,8 @@ class Tidy(QObject):
         self.set_focus(False)
         self.stop_idle()
         self.show()
+        if by_hand and not self.suspended():
+            self.suspend()
         self.kwin.unload()
         self.peek_key.release()
         self.app.quit()

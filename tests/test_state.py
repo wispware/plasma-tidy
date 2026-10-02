@@ -241,6 +241,48 @@ class Balloons(unittest.TestCase):
                          (True, True, False))
 
 
+class OffAndQuit(unittest.TestCase):
+    """Tidy switched off, or quit by hand: Plasma as it is without Tidy. On again: as set."""
+
+    def setUp(self):
+        self.on = True
+        for patch in (mock.patch.object(core, "plasma_balloons", lambda: self.on),
+                      mock.patch.object(core, "set_plasma_balloons",
+                                        lambda on: setattr(self, "on", on))):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.tidy = StateTidy(balloons=False, task_popup="text")
+        self.tidy.update_icon = self.tidy.rules_changed = self.tidy.stop_idle = lambda: None
+        self.tidy.app = self.tidy.kwin = self.tidy.peek_key = mock.Mock()
+        self.tidy.apply_tips()
+        self.plasma = self.tidy.plasma
+
+    def as_set(self):
+        return (self.on, self.plasma.previews, self.plasma.drawer_config.get("paused", False))
+
+    def test_as_set_in_tidy(self):
+        self.assertEqual(self.as_set(), (False, {5: False}, False))
+
+    def test_switched_off_and_on(self):
+        self.tidy.set_enabled(False)
+        self.assertEqual(self.as_set(), (True, {5: True}, True))
+        self.assertFalse(self.tidy.settings.value("balloons"))   # Tidy's own choice stays
+        self.tidy.apply_tips()                                    # the settings window, while off
+        self.assertEqual(self.as_set(), (True, {5: True}, True))
+        self.tidy.set_enabled(True)
+        self.assertEqual(self.as_set(), (False, {5: False}, False))
+
+    def test_quit_by_hand_leaves_plasma_as_without_tidy(self):
+        self.tidy.quit(by_hand=True)
+        self.assertEqual(self.as_set(), (True, {5: True}, True))
+        self.assertTrue(self.tidy.suspended())
+
+    def test_stopped_at_logout_leaves_the_drawers_working(self):
+        self.tidy.quit()
+        self.assertEqual(self.as_set(), (False, {5: False}, False))
+        self.assertFalse(self.tidy.suspended())
+
+
 class Profiles(unittest.TestCase):
     """Switching to a profile writes what differs, and nothing else."""
 

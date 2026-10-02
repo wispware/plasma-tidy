@@ -491,7 +491,10 @@ class DrawerTab(QWidget):
         box = QGroupBox(tr("Balloons and previews"))
         form = QFormLayout(box)
         self.balloons = QCheckBox(tr("Plasma shows a balloon with text when you point at something"))
-        self.balloons.setChecked(plasma_balloons())
+        # With Tidy switched off Plasma is as it is without Tidy: then what Tidy will set.
+        off = autohide.settings.value("suspended", False, bool)
+        self.balloons.setChecked(autohide.settings.value("balloons", True, bool) if off
+                                 else plasma_balloons())
         self.balloons.setToolTip(tr(
             "Plasma's own setting, for every balloon in the panel, the system tray and on the "
             "desktop. Off: none of them appear. The pop-up of a program in the panel is "
@@ -510,7 +513,7 @@ class DrawerTab(QWidget):
             self.task_popup.addItem(tr(label), key)
         previews = self.plasma.task_previews()
         shown = autohide.settings.value("task_popup", "preview")
-        if shown != "none":
+        if shown != "none" and not off:
             if not all(previews.values()):
                 shown = "text"
             elif shown != "only":
@@ -521,7 +524,8 @@ class DrawerTab(QWidget):
             "preview is the task manager's own setting. Only the preview, none at all, and a "
             "pop-up while Plasma's balloons are off, are done by a drawer: they work for a "
             "task manager that is in a drawer. Only the preview leaves out the title and the "
-            "text; a program that is not open then has no pop-up."))
+            "text. A program that is not open shows its name, as long as Plasma's balloons "
+            "are on."))
         form.addRow(tr("Pop-up of a program in the panel:"), self.task_popup)
         self.task_close = QCheckBox(tr("With only the preview: keep the close button, above it"))
         self.task_close.setChecked(autohide.settings.value("task_close", True, bool))

@@ -560,14 +560,14 @@ TRANSLATIONS = {
         "What comes up when you point at a program in the panel. With or without the preview "
         "is the task manager's own setting. Only the preview, none at all, and a pop-up while "
         "Plasma's balloons are off, are done by a drawer: they work for a task manager that is "
-        "in a drawer. Only the preview leaves out the title and the text; a program that is "
-        "not open then has no pop-up.":
+        "in a drawer. Only the preview leaves out the title and the text. A program that is "
+        "not open shows its name, as long as Plasma's balloons are on.":
             "Wat er verschijnt als je een programma in het paneel aanwijst. Met of zonder "
             "voorbeeld is de eigen instelling van het takenbeheer. Alleen het voorbeeld, "
             "helemaal geen pop-up, en een pop-up terwijl Plasma's ballonnen uit staan, regelt "
             "een la: dat werkt voor een takenbeheer dat in een la zit. Alleen het voorbeeld "
-            "laat de titel en de tekst weg; een programma dat niet open is heeft dan geen "
-            "pop-up.",
+            "laat de titel en de tekst weg. Een programma dat niet open is toont zijn naam, "
+            "zolang Plasma's ballonnen aan staan.",
         "With only the preview: keep the close button, above it":
             "Bij alleen het voorbeeld: de sluitknop houden, erboven",
         "The pop-up's close button sits next to the title and the text. On: it stays where it "
