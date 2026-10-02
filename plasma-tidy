@@ -47,12 +47,14 @@ from PyQt6.QtCore import (QLocale, QObject, QProcess, QSettings, Qt, QTimer,
 from PyQt6.QtDBus import (QDBusAbstractAdaptor, QDBusConnection, QDBusInterface,
                           QDBusMessage, QDBusServiceWatcher)
 from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QPainter
+from PyQt6.QtGui import (QAction, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
+                         QPainter)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
-                             QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-                             QHBoxLayout, QLabel, QMenu, QMessageBox, QProgressBar,
-                             QPushButton, QScrollArea, QSpinBox, QStackedWidget,
-                             QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
+                             QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+                             QGroupBox, QHBoxLayout, QKeySequenceEdit, QLabel, QLineEdit,
+                             QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
+                             QSpinBox, QStackedWidget, QSystemTrayIcon, QTabWidget,
+                             QVBoxLayout, QWidget)
 
 APP = "plasma-tidy"
 APP_NAME = "Tidy"
@@ -98,6 +100,8 @@ PLACE_MANUAL = "manual"
 DRAWER_DEFAULTS = {"closed": False, "paused": False, "targets": [], "taskMode": TASKS_ALL, "openOn": OPEN_CLICK,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
+                   "closeAfterUse": False, "closeOnMaximized": False, "openOnDesktop": False,
+                   "icon": "arrow", "iconCustom": "",
                    "openOnAttention": True, "animate": True, "reverseArrow": False,
                    "indicator": MARK_OPEN,
                    "place": PLACE_BEFORE}
@@ -135,6 +139,26 @@ PANEL_NAMES = {
     "org.kde.plasma.keyboardlayout": "Keyboard layout",
     "org.kde.plasma.weather": "Weather",
 }
+ICON_STYLES = [("arrow", "Arrow"), ("double", "Double arrow"), ("triangle", "Triangle"),
+               ("dots", "Dots"), ("menu", "Menu lines"), ("handle", "Grip"),
+               ("custom", "My own icon"), ("none", "No icon")]
+# Texts of the drawer's own settings page (DRAWER_CONFIG_QML); it gets them translated.
+DRAWER_PAGE_TEXTS = [
+    "In this drawer", "Task manager:", "Hide all programs, open ones too",
+    "Hide only pinned programs that are not open", "Opening and closing", "Open with:",
+    "A click on the arrow", "Pointing at the arrow (a click works too)", "Pointing opens after:",
+    "Open when a program asks for attention", "Open when the desktop is shown",
+    "Works while Tidy is running.", "Close by itself:", "Never",
+    "When the pointer leaves the drawer", "When the pointer leaves the panel", "Closes after:",
+    "Close with a click on an empty spot in the panel",
+    "Close after a click on something in the drawer",
+    "Close when a window that fills the screen comes to the front", "Arrow", "Icon:",
+    "Double arrow", "Triangle", "Dots", "Menu lines", "Grip", "My own icon", "No icon",
+    "Icon name or image file", "Mark on the closed drawer:", "None",
+    "A dot when programs are open", "The number of open programs",
+    "A dot only when a program asks for attention", "Arrow points the other way",
+    "Sliding animation", "The place of the arrow is set in Tidy."]
+
 PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left panel",
                 "right": "Right panel"}
 
@@ -280,6 +304,12 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="closeDelay" type="Int"><default>2000</default></entry>
     <entry name="closeScope" type="String"><default>drawer</default></entry>
     <entry name="closeOnPanelClick" type="Bool"><default>false</default></entry>
+    <entry name="closeAfterUse" type="Bool"><default>false</default></entry>
+    <entry name="closeOnMaximized" type="Bool"><default>false</default></entry>
+    <entry name="openOnDesktop" type="Bool"><default>false</default></entry>
+    <entry name="icon" type="String"><default>arrow</default></entry>
+    <entry name="iconCustom" type="String"><default></default></entry>
+    <entry name="uiTexts" type="String"><default>{}</default></entry>
     <entry name="openOnAttention" type="Bool"><default>true</default></entry>
     <entry name="animate" type="Bool"><default>true</default></entry>
     <entry name="reverseArrow" type="Bool"><default>false</default></entry>
@@ -374,10 +404,16 @@ PlasmoidItem {
             var applet = null;
             try { applet = k.applet.plasmoid; } catch (e) {}
             if (!applet) continue;
-            list.push({item: k, id: String(applet.id), plugin: applet.pluginName, pos: k.index});
+            list.push({item: k, id: String(applet.id), plugin: applet.pluginName, pos: k.index,
+                       tray: trayStateOf(k.applet, applet.pluginName)});
         }
         // Only replace the list when it really changed: replacing it rebuilds the hiders.
-        var key = l => l.map(s => s.id + "@" + s.pos).join(",");
+        var key = l => l.map(s => s.id + "@" + s.pos + (s.tray ? "t" : "")).join(",");
+        // The system tray builds its inside a little later: look again a few times.
+        if (trayTries < 5 && list.some(s => s.plugin === "org.kde.plasma.systemtray" && !s.tray)) {
+            trayTries++;
+            trayRetry.restart();
+        }
         if (key(list) !== key(siblings) || list.some((s, i) => s.item !== siblings[i].item))
             siblings = list;
         syncPinned();
@@ -391,6 +427,7 @@ PlasmoidItem {
             hover: panelHover !== null,
             width: Math.round(root.width), stretching: stretching, savedFill: cfg.savedFill,
             arrow_icon: arrowIcon, windows: hiddenWindows, attention: hiddenAttention,
+            trays: siblings.filter(s => s.tray).length, popup_open: popupOpen,
             mark: markShown,
             inPanel: pointerInPanel, inDrawer: pointerInDrawer, arrow: arrowHovered,
             popup: popupOpen, saved: cfg.savedLaunchers, tap: panelTap !== null,
@@ -411,6 +448,24 @@ PlasmoidItem {
     Timer { interval: 500; repeat: true; running: root.cfg.debug === "on"; onTriggered: root.report() }
 
     Timer { id: rescan; interval: 300; onTriggered: root.scan() }
+    Timer { id: trayRetry; interval: 2500; onTriggered: root.scan() }
+    property int trayTries: 0
+    // The system tray shows a pop-up of its own; whether it is open is kept in an object
+    // inside it.
+    function trayStateOf(item, plugin) {
+        if (plugin !== "org.kde.plasma.systemtray" || !item) return null;
+        var level = [item];
+        for (var depth = 0; depth < 5 && level.length; depth++) {
+            var next = [];
+            for (var i = 0; i < level.length; i++) {
+                var c = level[i];
+                if (c && c.systemTrayState !== undefined && c.systemTrayState) return c.systemTrayState;
+                if (c && c.children) for (var j = 0; j < c.children.length; j++) next.push(c.children[j]);
+            }
+            level = next;
+        }
+        return null;
+    }
     onParentChanged: rescan.restart()
     Component.onCompleted: rescan.restart()
     Connections {
@@ -599,6 +654,10 @@ PlasmoidItem {
         function onTaskModeChanged() { root.syncPinned(); }
         function onPlaceChanged() { root.syncFill(); }
         function onPausedChanged() { root.syncPinned(); root.syncFill(); }
+        function onDebugChanged() {
+            // For testing: opens the widget's own settings.
+            if (root.cfg.debug === "configure") Plasmoid.internalAction("configure").trigger();
+        }
         // A reload from outside brought back an older version: ours wins.
         function onSavedLaunchersChanged() {
             if ("savedLaunchers" in root.savedMemory)
@@ -701,9 +760,55 @@ PlasmoidItem {
     readonly property bool markShown: wantClosed && counter.item !== null
         && (hiddenAttention || (cfg.indicator !== "attention" && hiddenWindows > 0))
 
+    // --- close when a window fills the screen ------------------------------------------
+
+    Loader {
+        active: root.cfg.closeOnMaximized
+        sourceComponent: Item {
+            id: watch
+            property string last: ""
+            function evaluate() {
+                var index = windows.activeTask, state = "other";
+                if (index.valid && (windows.data(index, TaskManager.AbstractTasksModel.IsMaximized)
+                                    || windows.data(index, TaskManager.AbstractTasksModel.IsFullScreen)))
+                    state = "big:" + String(windows.data(index, TaskManager.AbstractTasksModel.WinIdList));
+                if (state === last) return;
+                var first = last === "";
+                last = state;
+                // At the moment a window that fills the screen comes to the front, or the window
+                // in front starts filling it; after that the arrow works as usual.
+                if (!first && state !== "other" && !root.cfg.paused && !root.cfg.closed)
+                    root.cfg.closed = true;
+            }
+            TaskManager.VirtualDesktopInfo { id: watchDesktop }
+            TaskManager.ActivityInfo { id: watchActivity }
+            TaskManager.TasksModel {
+                id: windows
+                virtualDesktop: watchDesktop.currentDesktop
+                activity: watchActivity.currentActivity
+                filterByVirtualDesktop: true
+                filterByActivity: true
+                groupMode: TaskManager.TasksModel.GroupDisabled
+                onActiveTaskChanged: check.restart()
+                onDataChanged: check.restart()
+            }
+            Timer { id: check; interval: 150; onTriggered: watch.evaluate() }
+            Component.onCompleted: check.restart()
+        }
+    }
+
     // --- opening and closing ---------------------------------------------------
 
     function toggle() { cfg.closed = !cfg.closed; }
+    // The widget's own keyboard shortcut (set in Tidy, or in Plasma's settings of the widget).
+    activationTogglesExpanded: false
+    Connections {
+        target: Plasmoid
+        function onActivated() {
+            if (root.cfg.paused) root.cfg.paused = false;
+            else root.toggle();
+        }
+    }
 
     // Where is the pointer? Over the panel is watched on the panel's layout; over the
     // drawer itself means over the arrow or over one of its widgets.
@@ -734,8 +839,39 @@ PlasmoidItem {
     }
     property var panelTap: null
     function panelTapped(pos) {
-        if (cfg.closeOnPanelClick && !cfg.closed && !cfg.paused && isEmptySpot(pos))
+        if (cfg.closed || cfg.paused) return;
+        if (cfg.closeOnPanelClick && isEmptySpot(pos))
             cfg.closed = true;
+        else if (cfg.closeAfterUse && inDrawerItem(pos))
+            useTimer.restart();
+    }
+    // A click on something in the drawer: close once it has done its work. A pop-up that the
+    // click opened (system tray) is waited for.
+    function inDrawerItem(pos) {
+        var mirrored = !vertical && Qt.application.layoutDirection === Qt.RightToLeft;
+        return drawerItems.some(s => {
+            var k = s.item;
+            if (!k || !k.applet || !k.visible || k.opacity === 0) return false;
+            var start = vertical ? k.y : k.x, full = vertical ? k.height : k.width;
+            var extent = contentExtent(k);
+            var from = mirrored ? start + full - extent : start;
+            return pos >= from && pos <= from + extent;
+        });
+    }
+    property bool closeAfterPopup: false
+    Timer {
+        id: useTimer
+        interval: 400
+        onTriggered: {
+            if (root.popupOpen) root.closeAfterPopup = true;
+            else if (!root.cfg.paused) root.cfg.closed = true;
+        }
+    }
+    onPopupOpenChanged: {
+        if (!popupOpen && closeAfterPopup) {
+            closeAfterPopup = false;
+            if (!cfg.paused) cfg.closed = true;
+        }
     }
     function contentExtent(k) {
         var full = vertical ? k.height : k.width;
@@ -813,7 +949,8 @@ PlasmoidItem {
             && applet.compactRepresentationItem.visible;
     }
     // A pop-up of one of the widgets (menu, calendar, ...) counts as "still busy here".
-    readonly property bool popupOpen: siblings.some(s => hasPopupOpen(s.item.applet))
+    readonly property bool popupOpen: siblings.some(
+        s => hasPopupOpen(s.item.applet) || (s.tray !== null && s.tray.expanded))
 
     Timer {
         id: closeTimer
@@ -866,8 +1003,23 @@ PlasmoidItem {
         return at < (vertical ? container.parent.height : container.parent.width) / 2;
     }
     readonly property bool pointsForward: (cfg.closed === inFirstHalf) !== cfg.reverseArrow
-    readonly property string arrowIcon: vertical ? (pointsForward ? "arrow-down" : "arrow-up")
-                                                 : (pointsForward ? "arrow-right" : "arrow-left")
+    readonly property string arrowIcon: {
+        var f = pointsForward;
+        switch (cfg.icon) {
+        case "double":
+            return vertical ? (f ? "arrow-down-double" : "arrow-up-double")
+                            : (f ? "arrow-right-double" : "arrow-left-double");
+        case "triangle":
+            return vertical ? (f ? "pan-down-symbolic" : "pan-up-symbolic")
+                            : (f ? "pan-end-symbolic" : "pan-start-symbolic");
+        case "dots": return vertical ? "view-more-symbolic" : "view-more-horizontal-symbolic";
+        case "menu": return "application-menu";
+        case "handle": return "drag-handle-symbolic";
+        case "custom": return cfg.iconCustom;
+        case "none": return "";
+        }
+        return vertical ? (f ? "arrow-down" : "arrow-up") : (f ? "arrow-right" : "arrow-left");
+    }
 
     property bool arrowHovered: false
 
@@ -886,8 +1038,18 @@ PlasmoidItem {
                 height: width
                 id: arrow
                 source: root.arrowIcon
+                visible: root.cfg.icon !== "none"
                 active: root.arrowHovered
                 opacity: root.cfg.paused ? 0.4 : 1
+            }
+            // Without an icon the spot only shows itself under the pointer.
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: Math.round(Kirigami.Units.smallSpacing / 2)
+                visible: root.cfg.icon === "none" && root.arrowHovered
+                radius: Kirigami.Units.smallSpacing
+                color: Kirigami.Theme.textColor
+                opacity: 0.15
             }
             // The mark: a dot, or the number of open programs.
             Rectangle {
@@ -926,6 +1088,224 @@ PlasmoidItem {
                                hoverTimer.restart()
                 onExited: hoverTimer.stop()
             }
+        }
+    }
+}
+"""
+
+DRAWER_CONFIG_MODEL = """import QtQuick
+import org.kde.plasma.configuration
+
+ConfigModel {
+    ConfigCategory {
+        name: "Tidy"
+        icon: "arrow-right"
+        source: "ConfigGeneral.qml"
+    }
+}
+"""
+
+# The drawer's settings page in Plasma's own dialog (right-click the arrow, Configure).
+DRAWER_CONFIG_QML = r"""// SPDX-FileCopyrightText: 2026 Ivar
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The drawer's own settings page (right-click the arrow, Configure). It works without Tidy
+// running. Tidy's Panel tab has the same settings, plus the place of the arrow.
+// Generated by plasma-tidy; edit it there.
+
+import QtQuick
+import QtQuick.Controls as QQC2
+import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
+import org.kde.kcmutils as KCM
+import org.kde.plasma.plasmoid
+
+KCM.SimpleKCM {
+    id: page
+
+    // Only the settings that are edited here: Plasma writes every cfg_ property back, and
+    // the drawer's state (closed, what it holds for a task manager) must not be among them.
+    property var cfg_targets: []
+    property string cfg_taskMode
+    property string cfg_openOn
+    property int cfg_hoverDelay
+    property bool cfg_autoClose
+    property string cfg_closeScope
+    property int cfg_closeDelay
+    property bool cfg_closeOnPanelClick
+    property bool cfg_closeAfterUse
+    property bool cfg_closeOnMaximized
+    property bool cfg_openOnDesktop
+    property bool cfg_openOnAttention
+    property bool cfg_animate
+    property bool cfg_reverseArrow
+    property string cfg_indicator
+    property string cfg_icon
+    property string cfg_iconCustom
+
+    // Texts come from Tidy, in the language it is set to.
+    readonly property var texts: {
+        try { return JSON.parse(Plasmoid.configuration.uiTexts || "{}"); } catch (e) { return {}; }
+    }
+    function t(s) { return texts[s] || s; }
+
+    readonly property var skipped: ["org.kde.plasma.marginsseparator", "org.kde.plasma.panelspacer"]
+    readonly property var others: {
+        var list = [];
+        try {
+            var all = Plasmoid.containment.applets;
+            for (var i = 0; i < all.length; i++) {
+                var a = all[i];
+                if (a === Plasmoid || a.pluginName === Plasmoid.pluginName
+                        || skipped.indexOf(a.pluginName) >= 0) continue;
+                list.push({id: String(a.id), title: a.title, plugin: a.pluginName});
+            }
+        } catch (e) {}
+        return list;
+    }
+    function isTarget(id) { return Array.from(cfg_targets).indexOf(id) >= 0; }
+    function setTarget(id, on) {
+        var list = Array.from(cfg_targets).filter(x => x !== id);
+        if (on) list.push(id);
+        cfg_targets = list;
+    }
+    readonly property bool hasTasks: others.some(
+        o => isTarget(o.id) && (o.plugin === "org.kde.plasma.icontasks" || o.plugin === "org.kde.plasma.taskmanager"))
+
+    component Choice: QQC2.ComboBox {
+        property var choices: []        // [[value, text], ...]
+        property string value
+        signal chosen(string value)
+        model: choices.map(c => page.t(c[1]))
+        currentIndex: Math.max(0, choices.findIndex(c => c[0] === value))
+        onActivated: index => chosen(choices[index][0])
+    }
+
+    Kirigami.FormLayout {
+        // --- contents ---
+        Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("In this drawer") }
+        Repeater {
+            model: page.others
+            QQC2.CheckBox {
+                required property var modelData
+                text: modelData.title
+                checked: page.isTarget(modelData.id)
+                onToggled: page.setTarget(modelData.id, checked)
+            }
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("Task manager:")
+            enabled: page.hasTasks
+            choices: [["all", "Hide all programs, open ones too"],
+                      ["pinned", "Hide only pinned programs that are not open"]]
+            value: page.cfg_taskMode
+            onChosen: value => page.cfg_taskMode = value
+        }
+
+        // --- opening and closing ---
+        Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("Opening and closing") }
+        Choice {
+            Kirigami.FormData.label: page.t("Open with:")
+            choices: [["click", "A click on the arrow"], ["hover", "Pointing at the arrow (a click works too)"]]
+            value: page.cfg_openOn
+            onChosen: value => page.cfg_openOn = value
+        }
+        QQC2.SpinBox {
+            Kirigami.FormData.label: page.t("Pointing opens after:")
+            enabled: page.cfg_openOn === "hover"
+            from: 0; to: 3000; stepSize: 50
+            value: page.cfg_hoverDelay
+            textFromValue: value => value + " ms"
+            valueFromText: text => parseInt(text) || 0
+            onValueModified: page.cfg_hoverDelay = value
+        }
+        QQC2.CheckBox {
+            text: page.t("Open when a program asks for attention")
+            checked: page.cfg_openOnAttention
+            onToggled: page.cfg_openOnAttention = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Open when the desktop is shown")
+            checked: page.cfg_openOnDesktop
+            onToggled: page.cfg_openOnDesktop = checked
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.text: page.t("Works while Tidy is running.")
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("Close by itself:")
+            choices: [["", "Never"], ["drawer", "When the pointer leaves the drawer"],
+                      ["panel", "When the pointer leaves the panel"]]
+            value: page.cfg_autoClose ? page.cfg_closeScope : ""
+            onChosen: value => {
+                page.cfg_autoClose = value !== "";
+                if (value !== "") page.cfg_closeScope = value;
+            }
+        }
+        QQC2.SpinBox {
+            Kirigami.FormData.label: page.t("Closes after:")
+            enabled: page.cfg_autoClose
+            from: 0; to: 600; stepSize: 5     // tenths of a second
+            value: Math.round(page.cfg_closeDelay / 100)
+            textFromValue: value => (value / 10).toFixed(1) + " s"
+            valueFromText: text => Math.round((parseFloat(text.replace(",", ".")) || 0) * 10)
+            onValueModified: page.cfg_closeDelay = value * 100
+        }
+        QQC2.CheckBox {
+            text: page.t("Close with a click on an empty spot in the panel")
+            checked: page.cfg_closeOnPanelClick
+            onToggled: page.cfg_closeOnPanelClick = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Close after a click on something in the drawer")
+            checked: page.cfg_closeAfterUse
+            onToggled: page.cfg_closeAfterUse = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Close when a window that fills the screen comes to the front")
+            checked: page.cfg_closeOnMaximized
+            onToggled: page.cfg_closeOnMaximized = checked
+        }
+
+        // --- arrow ---
+        Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("Arrow") }
+        Choice {
+            Kirigami.FormData.label: page.t("Icon:")
+            choices: [["arrow", "Arrow"], ["double", "Double arrow"], ["triangle", "Triangle"],
+                      ["dots", "Dots"], ["menu", "Menu lines"], ["handle", "Grip"],
+                      ["custom", "My own icon"], ["none", "No icon"]]
+            value: page.cfg_icon
+            onChosen: value => page.cfg_icon = value
+        }
+        QQC2.TextField {
+            visible: page.cfg_icon === "custom"
+            Layout.fillWidth: true
+            placeholderText: page.t("Icon name or image file")
+            text: page.cfg_iconCustom
+            onEditingFinished: page.cfg_iconCustom = text
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("Mark on the closed drawer:")
+            choices: [["none", "None"], ["open", "A dot when programs are open"],
+                      ["count", "The number of open programs"],
+                      ["attention", "A dot only when a program asks for attention"]]
+            value: page.cfg_indicator
+            onChosen: value => page.cfg_indicator = value
+        }
+        QQC2.CheckBox {
+            text: page.t("Arrow points the other way")
+            checked: page.cfg_reverseArrow
+            onToggled: page.cfg_reverseArrow = checked
+        }
+        QQC2.CheckBox {
+            text: page.t("Sliding animation")
+            checked: page.cfg_animate
+            onToggled: page.cfg_animate = checked
+        }
+        QQC2.Label {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            opacity: 0.7
+            text: page.t("The place of the arrow is set in Tidy.")
         }
     }
 }
@@ -1047,6 +1427,35 @@ TRANSLATIONS = {
         "Open when a program asks for attention": "Openen als een programma om aandacht vraagt",
         "Sliding animation": "Schuifanimatie",
         "Arrow points the other way": "Pijltje wijst de andere kant op",
+        "Contents": "Inhoud",
+        "Opening and closing": "Openen en sluiten",
+        "Arrow": "Pijltje",
+        "Opening": "Openen",
+        "Closing": "Sluiten",
+        "Shortcut:": "Sneltoets:",
+        "A shortcut for this drawer alone. The shortcut for all drawers at once is set in "
+        "System Settings.":
+            "Een sneltoets voor alleen deze la. De sneltoets voor alle laden tegelijk stel je "
+            "in bij Systeeminstellingen.",
+        "Open when the desktop is shown": "Openen als het bureaublad wordt getoond",
+        "Works while Tidy is running.": "Werkt zolang Tidy draait.",
+        "Close after a click on something in the drawer": "Sluiten na een klik op iets in de la",
+        "Close when a window that fills the screen comes to the front":
+            "Sluiten als een schermvullend venster naar voren komt",
+        "Icon:": "Pictogram:",
+        "Double arrow": "Dubbel pijltje",
+        "Triangle": "Driehoekje",
+        "Dots": "Puntjes",
+        "Menu lines": "Menustreepjes",
+        "Grip": "Greep",
+        "My own icon": "Eigen pictogram",
+        "No icon": "Geen pictogram",
+        "Without an icon the spot stays clickable and lights up under the pointer.":
+            "Zonder pictogram blijft de plek aanklikbaar en licht hij op onder de muis.",
+        "Icon name or image file": "Pictogramnaam of afbeeldingsbestand",
+        "Choose…": "Kiezen…",
+        "Choose an image": "Kies een afbeelding",
+        "The place of the arrow is set in Tidy.": "De plaats van het pijltje stel je in Tidy in.",
         "Mark on the closed drawer:": "Teken op een gesloten la:",
         "A dot when programs are open": "Een stip als er programma's open zijn",
         "The number of open programs": "Het aantal open programma's",
@@ -1065,8 +1474,9 @@ TRANSLATIONS = {
         "then no longer fills the panel; the drawer does that instead.":
             "Na een taakbeheer staat het pijltje direct achter het laatste programma. "
             "Taakbeheer vult het paneel dan niet meer op; dat doet de la.",
-        "Close and open the drawers together with the desktop icons":
-            "Laden sluiten en openen samen met de bureaubladpictogrammen",
+        "All drawers": "Alle laden",
+        "Close and open together with the desktop icons":
+            "Sluiten en openen samen met de bureaubladpictogrammen",
         "The arrow sits next to the items it hides. To place it yourself, choose \"Where I "
         "put it myself\", right-click the panel, choose Enter Edit Mode and drag it.":
             "Het pijltje staat naast de onderdelen die het verbergt. Zelf plaatsen: kies "
@@ -1091,13 +1501,11 @@ TRANSLATIONS = {
         "Auto-hide the panel": "Paneel automatisch verbergen",
         "Switch focus mode off": "Focusmodus uitzetten",
         "Save and switch focus mode on": "Opslaan en focusmodus aanzetten",
-        "Focus mode is also in the tray menu, and you can give it a shortcut: System Settings → "
-        "Keyboard → Shortcuts → Add New → Application… → Tidy. A closed drawer still opens when "
-        "you click or point at its arrow.":
+        "Focus mode is also in the tray menu, and you can give it a shortcut (see the General "
+        "tab). A closed drawer still opens when you click or point at its arrow.":
             "De focusmodus staat ook in het systeemvakmenu, en je kunt er een sneltoets aan "
-            "geven: Systeeminstellingen → Toetsenbord → Sneltoetsen → Nieuwe toevoegen → "
-            "Toepassing… → Tidy. Een gesloten la gaat nog steeds open als je op het pijltje "
-            "klikt of het aanwijst.",
+            "geven (zie het tabblad Algemeen). Een gesloten la gaat nog steeds open als je op "
+            "het pijltje klikt of het aanwijst.",
         "Focus mode — everything stays away until you switch it off":
             "Focusmodus — alles blijft weg tot je hem uitzet",
         "{app} — focus mode": "{app} — focusmodus",
@@ -1174,10 +1582,32 @@ TRANSLATIONS = {
         "Start at login": "Starten bij inloggen",
         "Language:": "Taal:",
         "System language": "Systeemtaal",
-        "Set shortcuts in System Settings → Keyboard → Shortcuts → "
-        "Add New → Application… → Tidy.":
-            "Sneltoetsen instellen: Systeeminstellingen → Toetsenbord → Sneltoetsen → "
-            "Nieuwe toevoegen → Toepassing… → Tidy.",
+        "General": "Algemeen",
+        "Shortcuts: System Settings → Keyboard → Shortcuts → Add New → Application… → Tidy. "
+        "There you can give a key to showing and hiding the icons, switching Tidy on or off, "
+        "focus mode, opening or closing the drawers, and restoring everything.":
+            "Sneltoetsen: Systeeminstellingen → Toetsenbord → Sneltoetsen → Nieuwe toevoegen → "
+            "Toepassing… → Tidy. Daar geef je een toets aan het tonen en verbergen van de "
+            "pictogrammen, Tidy in- of uitschakelen, de focusmodus, de laden openen of sluiten, "
+            "en alles terugzetten.",
+        "Shows everything again, puts back the Plasma settings that Tidy changed, and switches "
+        "Tidy off.":
+            "Toont alles weer, zet de Plasma-instellingen terug die Tidy heeft aangepast, en "
+            "schakelt Tidy uit.",
+        "Search…": "Zoeken…",
+        "All automatic": "Alles automatisch",
+        "Plasma decides for every icon; what is switched off stays off.":
+            "Plasma bepaalt het per pictogram; wat uit staat blijft uit.",
+        "Plasma default": "Plasma-standaard",
+        "Everything switched on and automatic, as a fresh Plasma has it.":
+            "Alles ingeschakeld en automatisch, zoals een verse Plasma het heeft.",
+        "My preset": "Mijn voorkeur",
+        "Apply the arrangement you saved.": "Past de indeling toe die je hebt bewaard.",
+        "Save as my preset": "Bewaren als mijn voorkeur",
+        "Remember the choices as they are now.": "Onthoudt de keuzes zoals ze nu staan.",
+        "Undo": "Ongedaan maken",
+        "Back to how the list was when this window opened.":
+            "Terug naar hoe de lijst stond toen dit venster openging.",
         "♥ Support {app}": "♥ Steun {app}",
         "Donate or more information": "Doneren of meer informatie",
         "Disabled": "Uitgeschakeld",
@@ -1252,6 +1682,8 @@ def drawer_files():
                 "X-Plasma-API-Minimum-Version": "6.0"}
     return {"metadata.json": json.dumps(metadata, indent=4) + "\n",
             "contents/config/main.xml": DRAWER_CONFIG_XML.lstrip("\n"),
+            "contents/config/config.qml": DRAWER_CONFIG_MODEL,
+            "contents/ui/ConfigGeneral.qml": DRAWER_CONFIG_QML.lstrip("\n"),
             "contents/ui/main.qml": DRAWER_QML.lstrip("\n")}
 
 
@@ -1278,7 +1710,8 @@ def drawer_texts():
             "textOpen": tr("Show the hidden items"),
             "textClose": tr("Hide the items"),
             "textSettings": tr("{app} settings…").format(app=APP_NAME),
-            "textPaused": tr("Paused. Click to resume")}
+            "textPaused": tr("Paused. Click to resume"),
+            "uiTexts": json.dumps({text: tr(text) for text in DRAWER_PAGE_TEXTS})}
 
 
 def drawer_value(key, raw):
@@ -1417,7 +1850,7 @@ class Plasma:
                 w.currentConfigGroup = ["General"];
                 var c = {};
                 keys.forEach(function (k) { c[k] = w.readConfig(k); });
-                r.push({id: w.id, panel: p.id, config: c});
+                r.push({id: w.id, panel: p.id, config: c, shortcut: String(w.globalShortcut || "")});
             }); });
             print(JSON.stringify(r));""")
         try:
@@ -1486,6 +1919,26 @@ class Plasma:
                 var want = anchor.index + (after ? 1 : 0) - (me.index < anchor.index ? 1 : 0);
                 if (want != me.index) me.index = want;
             });""")
+
+    def set_drawer_shortcut(self, drawer_id, shortcut):
+        """The drawer's own keyboard shortcut, e.g. "Meta+D"; empty for none."""
+        self.run("var id = %d, s = %s;" % (drawer_id, json.dumps(shortcut)) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.id == id) w.globalShortcut = s;
+            }); });""")
+
+    def open_drawers_on_desktop(self):
+        """The desktop came to the front: open the drawers that are set to open then."""
+        self.run("var type = %s;" % json.dumps(DRAWER_ID) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type != type) return;
+                w.currentConfigGroup = ["General"];
+                if (String(w.readConfig("openOnDesktop")) != "true"
+                        || String(w.readConfig("closed")) != "true"
+                        || String(w.readConfig("paused")) == "true") return;
+                w.writeConfig("closed", false);
+                w.reloadConfig();
+            }); });""")
 
     def remove_drawer(self, drawer_id):
         # Open it first, so that everything it hides is back before it goes.
@@ -1736,9 +2189,16 @@ class TrayTab(QWidget):
             if i not in plasmoids]))
         self.plasmoids = set(plasmoids)
 
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(tr("Search…"))
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self.filter)
+        layout.addWidget(self.search)
+
         area = QScrollArea(widgetResizable=True)
         inner = QWidget()
         form = QFormLayout(inner)
+        self.form = form
         self.combos = {}
         for section, ids in ((tr("System items"), plasmoids), (tr("Applications"), app_ids)):
             header = QLabel(f"<b>{section}</b>")
@@ -1761,22 +2221,38 @@ class TrayTab(QWidget):
                              + 2 * area.frameWidth())
         layout.addWidget(area, 1)
 
+        def button(text, tip, action, icon=None):
+            widget = QPushButton(QIcon.fromTheme(icon), tr(text)) if icon else QPushButton(tr(text))
+            widget.setToolTip(tr(tip))
+            widget.clicked.connect(action)
+            return widget
+
+        # Every icon at once. Nothing changes in the tray until OK.
         row = QHBoxLayout()
-        minimal = QPushButton(QIcon.fromTheme("games-config-theme"), tr("Minimal"))
-        minimal.setToolTip(tr("Only network, volume and battery visible; notifications and "
-                              "devices when relevant; the rest under ^."))
-        minimal.clicked.connect(self.apply_minimal)
-        row.addWidget(minimal)
-        show_all = QPushButton(QIcon.fromTheme("view-visible"), tr("Show all"))
-        show_all.setToolTip(tr("Every icon always visible in the panel; what is switched off "
-                               "stays off."))
-        show_all.clicked.connect(lambda: self.apply_all(TRAY_SHOWN))
-        row.addWidget(show_all)
-        hide_all = QPushButton(QIcon.fromTheme("view-hidden"), tr("Hide all"))
-        hide_all.setToolTip(tr("Every icon under the ^ arrow; what is switched off stays off."))
-        hide_all.clicked.connect(lambda: self.apply_all(TRAY_HIDDEN))
-        row.addWidget(hide_all)
+        row.addWidget(button("Minimal", "Only network, volume and battery visible; "
+                             "notifications and devices when relevant; the rest under ^.",
+                             self.apply_minimal, "games-config-theme"))
+        row.addWidget(button("Show all", "Every icon always visible in the panel; what is "
+                             "switched off stays off.",
+                             lambda: self.apply_all(TRAY_SHOWN), "view-visible"))
+        row.addWidget(button("Hide all", "Every icon under the ^ arrow; what is switched off "
+                             "stays off.", lambda: self.apply_all(TRAY_HIDDEN), "view-hidden"))
+        row.addWidget(button("All automatic", "Plasma decides for every icon; what is switched "
+                             "off stays off.", lambda: self.apply_all(TRAY_AUTO)))
         row.addStretch()
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        row.addWidget(button("Plasma default", "Everything switched on and automatic, as a "
+                             "fresh Plasma has it.", self.apply_default))
+        self.preset = button("My preset", "Apply the arrangement you saved.", self.apply_preset)
+        self.preset.setEnabled(bool(self.settings.value("tray_preset", "")))
+        row.addWidget(self.preset)
+        row.addWidget(button("Save as my preset", "Remember the choices as they are now.",
+                             self.save_preset, "document-save"))
+        row.addStretch()
+        row.addWidget(button("Undo", "Back to how the list was when this window opened.",
+                             self.undo, "edit-undo"))
         layout.addLayout(row)
 
     @staticmethod
@@ -1814,6 +2290,39 @@ class TrayTab(QWidget):
             if combo.currentData() != TRAY_DISABLED:
                 combo.setCurrentIndex(combo.findData(mode))
 
+    def apply_default(self):
+        for combo in self.combos.values():
+            combo.setCurrentIndex(combo.findData(TRAY_AUTO))
+
+    def undo(self):
+        for item_id, combo in self.combos.items():
+            combo.setCurrentIndex(combo.findData(self.mode_of(item_id)))
+
+    def save_preset(self):
+        self.settings.setValue("tray_preset", json.dumps(
+            {item_id: combo.currentData() for item_id, combo in self.combos.items()}))
+        self.preset.setEnabled(True)
+
+    def apply_preset(self):
+        try:
+            preset = json.loads(self.settings.value("tray_preset", "") or "{}")
+        except ValueError:
+            return
+        for item_id, combo in self.combos.items():
+            index = combo.findData(preset.get(item_id))
+            if index >= 0:  # icons the preset doesn't know stay as they are
+                combo.setCurrentIndex(index)
+
+    def filter(self, text):
+        """Show only the rows whose name contains the search text."""
+        text = text.strip().lower()
+        for row in range(self.form.rowCount()):
+            label = self.form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+            field = self.form.itemAt(row, QFormLayout.ItemRole.FieldRole)
+            if label is None or field is None:
+                continue  # a section header
+            self.form.setRowVisible(row, text in label.widget().text().lower())
+
     def apply(self):
         if self.config is None:
             return
@@ -1830,15 +2339,21 @@ class TrayTab(QWidget):
 
 
 class DrawerPage(QWidget):
-    """The settings of one drawer."""
+    """The settings of one drawer, in three parts: what is in it, how it opens and closes,
+    and what its arrow looks like."""
 
     def __init__(self, drawer, widgets):
         super().__init__()
         self.drawer = drawer
         config = drawer["config"]
-        form = QFormLayout(self)
-        form.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        parts = QTabWidget()
+        outer.addWidget(parts)
 
+        # --- contents ---
+        page = QWidget()
+        form = QFormLayout(page)
         box = QGroupBox(tr("In this drawer"))
         box_layout = QVBoxLayout(box)
         self.targets = {}
@@ -1860,7 +2375,13 @@ class DrawerPage(QWidget):
                                      "stay in the panel and only the pinned icons of programs "
                                      "that are not running disappear."))
         form.addRow(tr("Task manager:"), self.task_mode)
+        parts.addTab(page, tr("Contents"))
 
+        # --- opening and closing ---
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        box = QGroupBox(tr("Opening"))
+        form = QFormLayout(box)
         self.open_on = QComboBox()
         self.open_on.addItem(tr("A click on the arrow"), OPEN_CLICK)
         self.open_on.addItem(tr("Pointing at the arrow (a click works too)"), OPEN_HOVER)
@@ -1872,6 +2393,25 @@ class DrawerPage(QWidget):
         self.hover_delay.setValue(config["hoverDelay"])
         form.addRow(tr("Pointing opens after:"), self.hover_delay)
 
+        self.shortcut = QKeySequenceEdit(QKeySequence(drawer.get("shortcut", "")))
+        self.shortcut.setClearButtonEnabled(True)
+        self.shortcut.setMaximumSequenceLength(1)
+        self.shortcut.setToolTip(tr("A shortcut for this drawer alone. The shortcut for all "
+                                    "drawers at once is set in System Settings."))
+        form.addRow(tr("Shortcut:"), self.shortcut)
+
+        self.attention = QCheckBox(tr("Open when a program asks for attention"))
+        self.attention.setChecked(config["openOnAttention"])
+        form.addRow(self.attention)
+
+        self.on_desktop = QCheckBox(tr("Open when the desktop is shown"))
+        self.on_desktop.setChecked(config["openOnDesktop"])
+        self.on_desktop.setToolTip(tr("Works while Tidy is running."))
+        form.addRow(self.on_desktop)
+        layout.addWidget(box)
+
+        box = QGroupBox(tr("Closing"))
+        form = QFormLayout(box)
         self.auto_close = QComboBox()
         self.auto_close.addItem(tr("Never"), "")
         self.auto_close.addItem(tr("When the pointer leaves the drawer"), SCOPE_DRAWER)
@@ -1892,13 +2432,38 @@ class DrawerPage(QWidget):
         self.panel_click.setChecked(config["closeOnPanelClick"])
         form.addRow(self.panel_click)
 
-        self.attention = QCheckBox(tr("Open when a program asks for attention"))
-        self.attention.setChecked(config["openOnAttention"])
-        form.addRow(self.attention)
+        self.after_use = QCheckBox(tr("Close after a click on something in the drawer"))
+        self.after_use.setChecked(config["closeAfterUse"])
+        form.addRow(self.after_use)
 
-        self.animate = QCheckBox(tr("Sliding animation"))
-        self.animate.setChecked(config["animate"])
-        form.addRow(self.animate)
+        self.on_maximized = QCheckBox(tr("Close when a window that fills the screen comes to "
+                                         "the front"))
+        self.on_maximized.setChecked(config["closeOnMaximized"])
+        form.addRow(self.on_maximized)
+        layout.addWidget(box)
+        layout.addStretch()
+        parts.addTab(page, tr("Opening and closing"))
+
+        # --- the arrow ---
+        page = QWidget()
+        form = QFormLayout(page)
+        self.icon = QComboBox()
+        for key, label in ICON_STYLES:
+            self.icon.addItem(tr(label), key)
+        self.icon.setCurrentIndex(max(0, self.icon.findData(config["icon"])))
+        self.icon.setToolTip(tr("Without an icon the spot stays clickable and lights up under "
+                                "the pointer."))
+        self.icon.currentIndexChanged.connect(self.update_enabled)
+        form.addRow(tr("Icon:"), self.icon)
+
+        self.icon_custom = QLineEdit(config["iconCustom"])
+        self.icon_custom.setPlaceholderText(tr("Icon name or image file"))
+        self.icon_choose = QPushButton(tr("Choose…"))
+        self.icon_choose.clicked.connect(self.choose_icon)
+        row = QHBoxLayout()
+        row.addWidget(self.icon_custom, 1)
+        row.addWidget(self.icon_choose)
+        form.addRow("", row)
 
         self.mark = QComboBox()
         self.mark.addItem(tr("None"), MARK_NONE)
@@ -1911,10 +2476,6 @@ class DrawerPage(QWidget):
                                 "program asks for attention."))
         form.addRow(tr("Mark on the closed drawer:"), self.mark)
 
-        self.reverse = QCheckBox(tr("Arrow points the other way"))
-        self.reverse.setChecked(config["reverseArrow"])
-        form.addRow(self.reverse)
-
         self.place = QComboBox()
         self.place.addItem(tr("Just before the items it hides"), PLACE_BEFORE)
         self.place.addItem(tr("Just after the items it hides"), PLACE_AFTER)
@@ -1925,6 +2486,22 @@ class DrawerPage(QWidget):
                                  "the drawer does that instead."))
         form.addRow(tr("Place of the arrow:"), self.place)
 
+        self.reverse = QCheckBox(tr("Arrow points the other way"))
+        self.reverse.setChecked(config["reverseArrow"])
+        form.addRow(self.reverse)
+
+        self.animate = QCheckBox(tr("Sliding animation"))
+        self.animate.setChecked(config["animate"])
+        form.addRow(self.animate)
+
+        hint = QLabel(tr("The arrow sits next to the items it hides. To place it yourself, "
+                         "choose \"Where I put it myself\", right-click the panel, choose "
+                         "Enter Edit Mode and drag it."))
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        form.addRow(hint)
+        parts.addTab(page, tr("Arrow"))
+
         self.update_enabled()
 
     def update_enabled(self):
@@ -1932,6 +2509,16 @@ class DrawerPage(QWidget):
                                       for check, plugin in self.targets.values()))
         self.hover_delay.setEnabled(self.open_on.currentData() == OPEN_HOVER)
         self.close_delay.setEnabled(bool(self.auto_close.currentData()))
+        custom = self.icon.currentData() == "custom"
+        self.icon_custom.setEnabled(custom)
+        self.icon_choose.setEnabled(custom)
+
+    def choose_icon(self):
+        name, _ = QFileDialog.getOpenFileName(
+            self, tr("Choose an image"), os.path.dirname(self.icon_custom.text()),
+            "(*.svg *.svgz *.png *.jpg *.jpeg *.webp)")
+        if name:
+            self.icon_custom.setText(name)
 
     def values(self):
         return {"targets": [str(i) for i, (check, _) in self.targets.items()
@@ -1939,15 +2526,20 @@ class DrawerPage(QWidget):
                 "taskMode": self.task_mode.currentData(),
                 "openOn": self.open_on.currentData(),
                 "hoverDelay": self.hover_delay.value(),
+                "openOnAttention": self.attention.isChecked(),
+                "openOnDesktop": self.on_desktop.isChecked(),
                 "autoClose": bool(self.auto_close.currentData()),
                 "closeScope": self.auto_close.currentData() or self.drawer["config"]["closeScope"],
                 "closeDelay": round(self.close_delay.value() * 1000),
                 "closeOnPanelClick": self.panel_click.isChecked(),
-                "openOnAttention": self.attention.isChecked(),
-                "animate": self.animate.isChecked(),
-                "reverseArrow": self.reverse.isChecked(),
+                "closeAfterUse": self.after_use.isChecked(),
+                "closeOnMaximized": self.on_maximized.isChecked(),
+                "icon": self.icon.currentData(),
+                "iconCustom": self.icon_custom.text().strip(),
                 "indicator": self.mark.currentData(),
-                "place": self.place.currentData()}
+                "place": self.place.currentData(),
+                "reverseArrow": self.reverse.isChecked(),
+                "animate": self.animate.isChecked()}
 
     def apply(self, plasma):
         config = self.drawer["config"]
@@ -1958,6 +2550,10 @@ class DrawerPage(QWidget):
         if "targets" in changed or "place" in changed:
             # The arrow belongs next to what it hides.
             plasma.place_drawer(self.drawer["id"], config["targets"], config["place"])
+        shortcut = self.shortcut.keySequence().toString(QKeySequence.SequenceFormat.PortableText)
+        if shortcut != self.drawer.get("shortcut", ""):
+            plasma.set_drawer_shortcut(self.drawer["id"], shortcut)
+            self.drawer["shortcut"] = shortcut
 
 
 class DrawerTab(QWidget):
@@ -1991,16 +2587,12 @@ class DrawerTab(QWidget):
         self.selector.currentIndexChanged.connect(self.stack.setCurrentIndex)
         layout.addWidget(self.stack)
 
-        self.follow = QCheckBox(tr("Close and open the drawers together with the desktop icons"))
+        box = QGroupBox(tr("All drawers"))
+        box_layout = QVBoxLayout(box)
+        self.follow = QCheckBox(tr("Close and open together with the desktop icons"))
         self.follow.setChecked(autohide.settings.value("drawer_follow", False, bool))
-        layout.addWidget(self.follow)
-
-        hint = QLabel(tr("The arrow sits next to the items it hides. To place it yourself, "
-                         "choose \"Where I put it myself\", right-click the panel, choose "
-                         "Enter Edit Mode and drag it."))
-        hint.setWordWrap(True)
-        hint.setEnabled(False)
-        layout.addWidget(hint)
+        box_layout.addWidget(self.follow)
+        layout.addWidget(box)
         layout.addStretch()
         self.rebuild()
 
@@ -2117,10 +2709,9 @@ class FocusTab(QWidget):
         row.addStretch()
         layout.addLayout(row)
 
-        hint = QLabel(tr("Focus mode is also in the tray menu, and you can give it a shortcut: "
-                         "System Settings → Keyboard → Shortcuts → Add New → Application… → "
-                         "Tidy. A closed drawer still opens when you click or point at its "
-                         "arrow."))
+        hint = QLabel(tr("Focus mode is also in the tray menu, and you can give it a shortcut "
+                         "(see the General tab). A closed drawer still opens when you click or "
+                         "point at its arrow."))
         hint.setWordWrap(True)
         hint.setEnabled(False)
         layout.addWidget(hint)
@@ -2233,6 +2824,8 @@ class SettingsDialog(QDialog):
         self.focus_tab = FocusTab(autohide)
         tabs.addTab(self.focus_tab, QIcon.fromTheme("mode-focus", QIcon.fromTheme("view-hidden")),
                     tr("Focus mode"))
+        general_tab = QWidget()
+        tabs.addTab(general_tab, QIcon.fromTheme("configure"), tr("General"))
         self.about_tab = AboutTab()
         tabs.addTab(self.about_tab, QIcon.fromTheme("help-about"),
                     tr("About {app}").format(app=APP_NAME))
@@ -2309,6 +2902,10 @@ class SettingsDialog(QDialog):
         self.panel.setChecked(settings.value("hide_panel", False, bool))
         form.addRow(self.panel)
 
+        layout.addStretch()
+
+        # --- general ---
+        form = QFormLayout(general_tab)
         self.autostart = QCheckBox(tr("Start at login"))
         self.autostart.setChecked(os.path.exists(AUTOSTART))
         form.addRow(self.autostart)
@@ -2320,12 +2917,22 @@ class SettingsDialog(QDialog):
             max(0, self.language.findData(settings.value("language", "auto"))))
         form.addRow(tr("Language:"), self.language)
 
-        hint = QLabel(tr("Set shortcuts in System Settings → Keyboard → Shortcuts → "
-                         "Add New → Application… → Tidy."))
+        hint = QLabel(tr("Shortcuts: System Settings → Keyboard → Shortcuts → Add New → "
+                         "Application… → Tidy. There you can give a key to showing and hiding "
+                         "the icons, switching Tidy on or off, focus mode, opening or closing "
+                         "the drawers, and restoring everything."))
         hint.setWordWrap(True)
         hint.setEnabled(False)
-        layout.addWidget(hint)
-        layout.addStretch()
+        form.addRow(hint)
+
+        restore = QPushButton(QIcon.fromTheme("edit-undo"), tr("Restore everything…"))
+        restore.setToolTip(tr("Shows everything again, puts back the Plasma settings that Tidy "
+                              "changed, and switches Tidy off."))
+        restore.clicked.connect(lambda: autohide.ask_restore(self))
+        row = QHBoxLayout()
+        row.addWidget(restore)
+        row.addStretch()
+        form.addRow(row)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                            | QDialogButtonBox.StandardButton.Cancel)
@@ -2336,9 +2943,6 @@ class SettingsDialog(QDialog):
         support.setToolTip(tr("Donate or more information"))
         support.linkActivated.connect(self.on_support)
         footer.addWidget(support)
-        restore = QPushButton(QIcon.fromTheme("edit-undo"), tr("Restore everything…"))
-        restore.clicked.connect(lambda: autohide.ask_restore(self))
-        footer.addWidget(restore)
         footer.addStretch()
         footer.addWidget(self.button_box)
         outer.addLayout(footer)
@@ -2491,6 +3095,8 @@ class Tidy(QObject):
             self.idle_since = None
             if self.hidden and self.mode() == MODE_ACTIVITY and not self.hold_icons:
                 self.show()
+            if not self.focus:
+                self.plasma.open_drawers_on_desktop()
         elif not active and was and self.idle_since is None:
             # Away from the desktop: from now on the timer keeps counting.
             self.idle_since = time.monotonic()

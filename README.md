@@ -59,8 +59,6 @@ the menu.
 | Screen corner shows | Moving the mouse into this corner shows the icons | none |
 | Activity in other windows doesn't count | The icons hide behind the window you're working in | on |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
-| Start at login | Adds or removes the autostart entry | off |
-| Language | System language, English or Nederlands; takes effect at once | system language |
 
 *Show desktop* (Meta+D) always brings the icons back.
 
@@ -78,21 +76,46 @@ drawer starts with the system tray. The arrow sits next to the widgets it hides 
 along when you change them. To place it yourself, choose *Where I put it myself*, right-click
 the panel, choose *Enter Edit Mode* and drag it.
 
+The settings of a drawer come in three parts.
+
+*Contents*
+
 | Setting | What it does | Default |
 | --- | --- | --- |
 | In this drawer | Which of the panel's widgets the drawer hides | the task manager |
 | Task manager | Hide all programs, open ones too; or only the pinned programs that are not open | all programs |
+
+*Opening and closing*
+
+| Setting | What it does | Default |
+| --- | --- | --- |
 | Open with | A click on the arrow, or pointing at it (a click always works) | click |
 | Pointing opens after | How long the pointer must rest on the arrow | 200 ms |
+| Shortcut | A key for this drawer alone | none |
+| Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
+| Open when the desktop is shown | Opens when you go to the desktop; needs Tidy running | off |
 | Close by itself | Never, when the pointer leaves the drawer (the arrow and the items it shows), or when it leaves the panel | never |
 | Closes after | How long after the pointer left | 2 s |
 | Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer; a click on a widget does what it always did | off |
-| Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
-| Sliding animation | Slide and fade, or switch at once | on |
+| Close after a click on something in the drawer | Closes once you have started or picked something; a pop-up it opened is waited for | off |
+| Close when a window that fills the screen comes to the front | Closes each time a maximized or full-screen window becomes the active one | off |
+
+*Arrow*
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| Icon | Arrow, double arrow, triangle, dots, menu lines, grip, an icon or image of your own, or none at all: the spot then stays clickable and lights up under the pointer | arrow |
 | Mark on the closed drawer | A dot on the arrow when hidden programs are open, their number, a dot only when one asks for attention, or nothing. Applies when the drawer hides a task manager with all its programs | a dot |
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
-| Close and open the drawers together with the desktop icons | The drawers follow Tidy's hiding and showing of the desktop icons | off |
+| Sliding animation | Slide and fade, or switch at once | on |
+
+Below the drawers, *All drawers: close and open together with the desktop icons* makes every
+drawer follow Tidy's hiding and showing of the desktop icons (off by default).
+
+A drawer also has a settings page of its own: right-click the arrow and choose *Configure Tidy
+Drawer*. It has the same settings except the place of the arrow, and it works when Tidy is
+not running.
 
 A widget that fills the panel, usually the task manager, keeps its place while hidden, so the
 rest of the panel does not jump. Other widgets give up their space.
@@ -115,13 +138,26 @@ The *System tray* tab lists every icon in your system tray. For each one, choose
 - **Off**: switched off completely (Plasma's own items only; icons that belong to an
   application can be shown or hidden, not switched off)
 
-Three buttons set every icon at once; items that are switched off stay off, and nothing
-changes until you press OK:
+The buttons below the list set every icon at once. Nothing changes until you press OK.
 
 - **Minimal**: network, volume and battery shown; notifications, devices, camera and Caps Lock
   indicators automatic; everything else hidden
-- **Show all**: every icon always visible in the panel
-- **Hide all**: every icon under the `^` arrow
+- **Show all**, **Hide all**, **All automatic**: every icon on that choice; items that are
+  switched off stay off
+- **Plasma default**: everything switched on and automatic
+- **Save as my preset** and **My preset**: keep an arrangement of your own and apply it again
+- **Undo**: back to how the list was when you opened the window
+
+The search field above the list narrows it down by name.
+
+### General
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| Start at login | Adds or removes the autostart entry | off |
+| Language | System language, English or Nederlands; takes effect at once | system language |
+
+*Restore everything* is on this tab too.
 
 ### Focus mode
 
@@ -144,7 +180,7 @@ starts.
 
 ### Restore everything
 
-*Restore everything* (in the tray menu and at the bottom of the settings) puts your desktop
+*Restore everything* (in the tray menu and on the *General* tab) puts your desktop
 back as if Tidy were not there. It shows the desktop icons, the panel and everything in the
 drawers, and puts back the Plasma settings Tidy changed: the desktop folder, the panel's
 visibility, and a task manager's pinned list and *Fill free space on panel*. If you tick the
