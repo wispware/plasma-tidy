@@ -17,6 +17,9 @@ a click on the desktop, a screen corner or a shortcut.
   "catcher" window just above the desktop and below all other windows. A small
   KWin script keeps it there and out of the taskbar/Alt+Tab, and also handles
   the screen corner.
+- Activity in other windows doesn't count (a setting): the same KWin script
+  reports whether the desktop is the active window and whether the pointer is
+  above the desktop.
 - Show desktop (Meta+D) hides the catcher too; that is why Meta+D itself brings
   the icons back, and why every activity counts in that view.
 
@@ -81,6 +84,8 @@ IDLE_LINK = os.path.join(DATA_DIR, "tidy-idle")
 
 DRAWER_ID = "io.github.wispware.plasmatidy.drawer"
 DRAWER_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{DRAWER_ID}")
+FADE_ID = "io.github.wispware.plasmatidy.fade"
+FADE_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{FADE_ID}")
 TASK_PLUGINS = ("org.kde.plasma.icontasks", "org.kde.plasma.taskmanager")
 # Widgets that never go into a drawer: separators, spacers and the drawers themselves.
 DRAWER_SKIP = ("org.kde.plasma.marginsseparator", "org.kde.plasma.panelspacer", DRAWER_ID)
@@ -103,7 +108,8 @@ DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [], 
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "closeAfterUse": False, "closeOnMaximized": False, "openOnDesktop": False,
                    "icon": "arrow", "iconCustom": "",
-                   "openOnAttention": True, "animate": True, "reverseArrow": False,
+                   "openOnAttention": True, "reverseArrow": False,
+                   "animation": "slide", "animationDuration": 250, "activePlace": "fixed",
                    "indicator": MARK_OPEN,
                    "place": PLACE_BEFORE}
 
@@ -140,6 +146,9 @@ PANEL_NAMES = {
     "org.kde.plasma.keyboardlayout": "Keyboard layout",
     "org.kde.plasma.weather": "Weather",
 }
+ANIMATIONS = [("slide", "Slide"), ("grow", "Grow"), ("cascade", "One by one"), ("fade", "Fade")]
+ACTIVE_PLACES = [("fixed", "On their pinned spot"), ("start", "All in front"),
+                 ("end", "All at the back")]
 ICON_STYLES = [("arrow", "Arrow"), ("double", "Double arrow"), ("triangle", "Triangle"),
                ("dots", "Dots"), ("menu", "Menu lines"), ("handle", "Grip"),
                ("custom", "My own icon"), ("none", "No icon")]
@@ -153,12 +162,14 @@ DRAWER_PAGE_TEXTS = [
     "When the pointer leaves the drawer", "When the pointer leaves the panel", "Closes after:",
     "Close with a click on an empty spot in the panel",
     "Close after a click on something in the drawer",
-    "Close when a window that fills the screen comes to the front", "Arrow", "Icon:",
+    "Close when a window that fills the screen comes to the front", "Appearance", "Icon:",
+    "Open programs:", "On their pinned spot", "All in front", "All at the back", "Animation:",
+    "Slide", "Grow", "One by one", "Fade", "Speed:",
     "Double arrow", "Triangle", "Dots", "Menu lines", "Grip", "My own icon", "No icon",
     "Icon name or image file", "Mark on the closed drawer:", "None",
     "A dot when programs are open", "The number of open programs",
     "A dot only when a program asks for attention", "Arrow points the other way",
-    "Sliding animation", "The place of the arrow is set in Tidy."]
+    "The place of the arrow is set in Tidy."]
 
 PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left panel",
                 "right": "Right panel"}
@@ -166,7 +177,8 @@ PANEL_PLACES = {"top": "Top panel", "bottom": "Bottom panel", "left": "Left pane
 # Tidy's own settings that belong to a profile or an export, with their defaults.
 PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,middle",
                     "rehide": "idle", "corner": "none", "only_desktop": True,
-                    "hide_panel": False, "skip_screens": "", "drawer_follow": False,
+                    "hide_panel": False, "skip_screens": "", "fade_icons": False,
+                    "fade_duration": 300, "drawer_follow": False,
                     "focus_icons": True, "focus_drawers": True, "focus_tray": True,
                     "focus_panel": False, "tray_hide_new": False}
 # What a drawer is doing right now; not part of a profile.
@@ -292,6 +304,32 @@ workspace.windowAdded.connect(trackPopup);
 reportPopups();
 """
 
+KWIN_POINTER_JS = """
+// Is the pointer above the desktop itself (or a window of ours)? Looked at a few times
+// a second at most while the pointer moves, and reported only when the answer changes.
+var pointerOnDesktop = null;
+var pointerChecked = 0;
+var pointerLater = new QTimer();
+pointerLater.singleShot = true;
+pointerLater.interval = 250;
+
+function checkPointer() {
+    pointerChecked = Date.now();
+    var top = workspace.windowAt(workspace.cursorPos, 1)[0];
+    var on = !top || top.desktopWindow || top.resourceClass == "%(app)s";
+    if (on === pointerOnDesktop) return;
+    pointerOnDesktop = on;
+    callDBus("%(name)s", "/", "%(name)s", "PointerOnDesktop", on);
+}
+pointerLater.timeout.connect(checkPointer);
+workspace.cursorPosChanged.connect(function () {
+    if (Date.now() - pointerChecked >= 250) checkPointer();
+    else if (!pointerLater.active) pointerLater.start();  // so the last position is seen too
+});
+workspace.windowActivated.connect(checkPointer);
+checkPointer();
+"""
+
 KWIN_EDGE_JS = """
 registerScreenEdge(%(edge)s, function () {
     callDBus("%(name)s", "/", "%(name)s", "Show");
@@ -322,7 +360,9 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="iconCustom" type="String"><default></default></entry>
     <entry name="uiTexts" type="String"><default>{}</default></entry>
     <entry name="openOnAttention" type="Bool"><default>true</default></entry>
-    <entry name="animate" type="Bool"><default>true</default></entry>
+    <entry name="animation" type="String"><default>slide</default></entry>
+    <entry name="animationDuration" type="Int"><default>250</default></entry>
+    <entry name="activePlace" type="String"><default>fixed</default></entry>
     <entry name="reverseArrow" type="Bool"><default>false</default></entry>
     <entry name="indicator" type="String"><default>open</default></entry>
     <entry name="place" type="String"><default>before</default></entry>
@@ -393,11 +433,19 @@ PlasmoidItem {
         return Array.from(cfg.targets).indexOf(id) >= 0;
     }
 
-    // Widgets hidden as a whole, and task managers that only lose their pinned icons.
-    readonly property var wholeTargets: siblings.filter(
-        s => inTargets(s.id) && (!isTasks(s.plugin) || cfg.taskMode === "all"))
-    readonly property var pinnedTargets: siblings.filter(
-        s => inTargets(s.id) && isTasks(s.plugin) && cfg.taskMode === "pinned")
+    // Widgets hidden as a whole, and task managers, whose icons are hidden one by one.
+    readonly property var wholeTargets: siblings.filter(s => inTargets(s.id) && !isTasks(s.plugin))
+    readonly property var taskManagers: siblings.filter(s => inTargets(s.id) && isTasks(s.plugin))
+    // Sliding makes things narrower until they are gone. Fading and one-by-one leave an
+    // icon at its normal size and only change how see-through it is; a whole widget (the
+    // system tray, the clock) still slides in one-by-one, as it is one thing.
+    readonly property bool shrinks: cfg.animation === "grow"
+    // "slide" (also for a style this version doesn't know): the icons keep their size and
+    // slide out from under the arrow together, like a drawer.
+    readonly property bool slides: !shrinks && cfg.animation !== "fade" && cfg.animation !== "cascade"
+    readonly property bool widgetsShrink: cfg.animation !== "fade"
+    // How long the task manager takes to move an icon aside.
+    readonly property int moveTime: Kirigami.Units.longDuration
     function scan() {
         var c = root.parent, hops = 0;
         while (c && !c.isAppletContainer && hops < 8) { c = c.parent; hops++; }
@@ -433,6 +481,7 @@ PlasmoidItem {
 
     // Diagnostics: with the "debug" setting on "on", the state goes to the journal twice a second.
     function report() {
+        polishTasks();
         console.warn("TIDYDRAWER " + JSON.stringify({
             own: ownPos, closed: cfg.closed, paused: cfg.paused, mode: cfg.taskMode,
             hover: panelHover !== null,
@@ -454,9 +503,48 @@ PlasmoidItem {
                                         + (s.item.visible ? "" : "/hidden") + "/o" + s.item.opacity
                                         + "/w" + Math.round(s.item.width)
                                         + (isTasks(s.plugin) ? "/L" + Array.from(s.item.applet.plasmoid.configuration.launchers).length : "")),
-            whole: wholeTargets.map(s => s.id), pinned: pinnedTargets.map(s => s.id)}));
+            whole: wholeTargets.map(s => s.id),
+            tasks: taskHiders.slice().sort((a, b) => (vertical ? a.item.y - b.item.y : a.item.x - b.item.x)).map(h => {
+                var m = h.item.model;
+                return (m.IsLauncher ? "L" : "W") + ":" + String(m.AppName || m.display).slice(0, 10)
+                    + "@" + Math.round(vertical ? h.item.y : h.item.x)
+                    + "/w" + Math.round(vertical ? h.item.height : h.item.width)
+                    + "/f" + h.hider.factor.toFixed(2) + (h.item.visible ? "" : "/hidden");
+            }),
+            layoutProbe: taskHiders.slice(0, 2).map(h => {
+                var L = null; try { L = h.item.Layout; } catch (e) { return "err " + e; }
+                return (typeof L) + "/" + (L ? L.maximumWidth + "/" + L.preferredWidth + "/" + L.minimumWidth + "/fill" + L.fillWidth : "-")
+                    + " b3target=" + (h.hider.b3.target ? "set" : "null") + " when=" + h.hider.b3.when + " value=" + h.hider.b3.value
+                    + " implicit=" + h.item.implicitWidth;
+            }),
+            listProbe: taskHiders.length ? (function (l) { return "w" + l.width + "/max" + l.Layout.maximumWidth + "/cols" + l.columns + "/uniform" + l.uniformCellWidths; })(taskHiders[0].item.parent) : "",
+            tasksMoving: tasksMoving}));
     }
     Timer { interval: 500; repeat: true; running: root.cfg.debug === "on"; onTriggered: root.report() }
+    // ...and while the icons of a task manager move, where they are, frame by frame.
+    property var trace: []
+    // Layouts are worked out when a frame is drawn; behind a lock screen none is. For the
+    // diagnostics, have them worked out now.
+    function polishTasks() {
+        try {
+            if (taskHiders.length) taskHiders[0].item.parent.ensurePolished();
+            if (container) container.parent.ensurePolished();
+        } catch (e) {}
+        return false;
+    }
+    Timer {
+        interval: 16; repeat: true
+        running: root.cfg.debug === "on" && (root.tasksMoving || root.slideActive)
+        onTriggered: root.polishTasks() || root.trace.push(root.taskHiders.slice()
+            .sort((a, b) => (root.vertical ? a.item.y - b.item.y : a.item.x - b.item.x))
+            .map(h => Math.round(root.vertical ? h.item.y : h.item.x) + ":" + Math.round(h.item.width)
+                      + ":" + (h.item.visible ? h.item.opacity.toFixed(2) : "--")
+                      + ":" + Math.round(h.item.transform[0] ? h.item.transform[0].x : 0)).join(" "))
+        onRunningChanged: {
+            if (running) { root.trace = []; return; }
+            console.warn("TIDYTRACE " + JSON.stringify(root.trace));
+        }
+    }
 
     Timer { id: rescan; interval: 300; onTriggered: root.scan() }
     Timer { id: trayRetry; interval: 2500; onTriggered: root.scan() }
@@ -523,8 +611,8 @@ PlasmoidItem {
             }
 
             Behavior on factor {
-                enabled: h.ready && root.cfg.animate && !root.leaving
-                NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+                enabled: h.ready && root.cfg.animation !== "none" && !root.leaving
+                NumberAnimation { duration: root.cfg.animationDuration; easing.type: Easing.InOutCubic }
             }
 
             property Binding b1: Binding {
@@ -553,7 +641,7 @@ PlasmoidItem {
                 property: root.vertical ? (h.after ? "topMargin" : "bottomMargin")
                                         : (h.after ? "leftMargin" : "rightMargin")
                 value: -h.slide
-                when: h.moving && h.size > 0
+                when: h.moving && h.size > 0 && root.widgetsShrink
                 restoreMode: Binding.RestoreBindingOrValue
             }
             property Binding b6: Binding {
@@ -561,11 +649,11 @@ PlasmoidItem {
                 property: root.vertical ? (h.after ? "bottomMargin" : "topMargin")
                                         : (h.after ? "rightMargin" : "leftMargin")
                 value: h.fills ? h.slide : 0
-                when: h.moving && h.size > 0
+                when: h.moving && h.size > 0 && root.widgetsShrink
                 restoreMode: Binding.RestoreBindingOrValue
             }
             // ...while a widget that gives up its space shrinks.
-            readonly property bool shrinking: h.moving && !h.fills && h.size > 0
+            readonly property bool shrinking: h.moving && !h.fills && h.size > 0 && root.widgetsShrink
             property Binding b7: Binding {
                 target: h.item ? h.item.Layout : null
                 property: root.vertical ? "maximumHeight" : "maximumWidth"
@@ -600,7 +688,424 @@ PlasmoidItem {
         }
     }
 
-    // --- task manager: only the pinned icons -------------------------------------
+    // --- task managers: icon by icon ----------------------------------------------
+    // A task manager is not hidden as a whole: each of its icons is, so that they can slide
+    // away smoothly, one after the other if wanted, and so that in "pinned" mode the open
+    // programs simply stay. The icons are the children of the task manager's "taskList";
+    // each has its model entry (IsLauncher: pinned and not running).
+
+    property var taskHiders: []          // [{item, hider}]
+    property int tasksMovingCount: 0
+    readonly property bool tasksMoving: tasksMovingCount > 0 || settle.running
+    Timer { id: settle; interval: 60 }   // bridges the gap between two icons of a cascade
+    Timer { id: taskSync; interval: 30; onTriggered: root.syncTaskHiders() }
+    onTaskManagersChanged: taskSync.restart()
+
+    function taskItems() {
+        var found = [];
+        taskManagers.forEach(s => {
+            var list = null;
+            try { list = s.item.applet.taskList; } catch (e) {}
+            if (!list) return;
+            for (var i = 0; i < list.children.length; i++) {
+                var c = list.children[i];
+                if (c && c.model !== undefined && c.isWindow !== undefined)
+                    found.push({item: c, after: s.pos > ownPos});
+            }
+        });
+        return found;
+    }
+    function syncTaskHiders() {
+        var wanted = taskItems(), kept = [];
+        taskHiders.forEach(h => {
+            if (wanted.some(w => w.item === h.item)) kept.push(h);
+            else h.hider.destroy();   // lets go of the icon first, see release()
+        });
+        wanted.forEach(w => {
+            if (!kept.some(h => h.item === w.item))
+                kept.push({item: w.item, hider: taskHiderComponent.createObject(
+                    root, {task: w.item, after: w.after})});
+        });
+        taskHiders = kept;
+    }
+    // In a cascade the icons go one after the other: closing, the one furthest from the
+    // arrow first; opening, the nearest first.
+    function cascadeDelay(hider) {
+        if (cfg.animation !== "cascade" || !hider.task) return 0;
+        var along = t => vertical ? t.y : t.x;
+        var mine = along(hider.task), before = 0;
+        taskHiders.forEach(h => {
+            if (h.hider === hider || !h.hider.takesPart || !h.item) return;
+            var nearer = hider.after ? along(h.item) < mine : along(h.item) > mine;
+            if (hider.hideMe ? !nearer : nearer) before++;
+        });
+        return Math.round(before * (moveTime + cfg.animationDuration * 0.4));
+    }
+    readonly property real someTaskSize: {
+        for (var i = 0; i < taskHiders.length; i++)
+            if (taskHiders[i].hider.size > 0) return taskHiders[i].hider.size;
+        return Kirigami.Units.iconSizes.large;
+    }
+    onTasksMovingChanged: {
+        if (tasksMoving) return;
+        // The task manager animates its icons when they move; that is switched off while we
+        // move them. Tell it where they are now, or it would animate from the old place later.
+        taskHiders.forEach(h => {
+            try { h.item.oldX = h.item.x; h.item.oldY = h.item.y; } catch (e) {}
+        });
+    }
+
+    // Sliding. All icons move together, at their normal size: the ones that go slide out of
+    // the task manager's edge and the others close up. The row itself only changes at the
+    // start (opening) or the end (closing); in between every icon is drawn shifted by its
+    // "shift" times how far the drawer is from open.
+    property real slideP: 1            // 0 = closed, 1 = open
+    property bool slideActive: false
+    property bool slideBusy: false     // from before the row changes until after: no animation of the task manager's own
+    property bool slideOpening: false
+    property var slideSet: []          // the hiders of the icons that come or go
+    property real knobTravel: 0        // how far the arrow travels, when it stands after them
+    Timer { id: slideKick; interval: 0; onTriggered: root.runSlide() }
+    NumberAnimation {
+        id: slideAnim
+        target: root; property: "slideP"
+        duration: root.cfg.animationDuration; easing.type: Easing.InOutCubic
+        onFinished: root.finishSlide()
+    }
+    function settleTasks() {
+        taskHiders.forEach(e => {
+            try { e.item.oldX = e.item.x; e.item.oldY = e.item.y; } catch (err) {}
+        });
+    }
+    function finishSlide() {
+        if (!slideActive) return;
+        slideAnim.stop();
+        slideSet.forEach(h => {
+            h.factor = slideOpening ? 1 : 0;
+            if (!slideOpening) h.present = false;
+            h.sliding = false;
+        });
+        if (!slideOpening) polishTasks();   // the row closes up in the same frame the shifts end
+        slideActive = false;
+        taskHiders.forEach(e => { e.hider.unshift(); });
+        knobTravel = 0;
+        slideSet = [];
+        settleTasks();
+        slideBusy = false;
+    }
+    function runSlide() {
+        if (slideActive) finishSlide();
+        var show = [], hide = [];
+        taskHiders.forEach(e => {
+            var h = e.hider;
+            if (!h.task) return;
+            if (h.hideMe && h.present) hide.push(h);
+            else if (!h.hideMe && (!h.present || h.factor < 1)) show.push(h);
+        });
+        if (!show.length && !hide.length) return;
+        slideBusy = true;
+        if ((show.length && hide.length) || !slides || leaving) {
+            // Some come while others go (a setting changed): no show, just do it.
+            show.forEach(h => { h.present = true; h.factor = 1; });
+            hide.forEach(h => { h.factor = 0; h.present = false; });
+            polishTasks();
+            settleTasks();
+            slideBusy = false;
+            return;
+        }
+        slideOpening = show.length > 0;
+        slideSet = slideOpening ? show : hide;
+        slideSet.forEach(h => { h.sliding = true; });
+        if (slideOpening) {
+            slideSet.forEach(h => { h.present = true; });
+            polishTasks();   // the row opens now; the shifts below put everything back where it was
+        }
+        // How far each icon is from its place in the closed row. Icons that go slide as one
+        // block with the icons after them: by the width of the whole run they are in.
+        var along = i => vertical ? i.y : i.x, size = i => vertical ? i.height : i.width;
+        var rows = [];
+        taskHiders.forEach(e => {
+            if (!e.hider.task || !e.hider.present) return;
+            var row = rows.find(r => r.list === e.item.parent);
+            if (!row) rows.push(row = {list: e.item.parent, hiders: []});
+            row.hiders.push(e.hider);
+        });
+        knobTravel = 0;
+        rows.forEach(row => {
+            row.hiders.sort((a, b) => along(a.task) - along(b.task));
+            var total = 0, i = 0;
+            while (i < row.hiders.length) {
+                if (!row.hiders[i].sliding) { row.hiders[i].shift = total; i++; continue; }
+                var end = i;
+                while (end < row.hiders.length && row.hiders[end].sliding) { total += size(row.hiders[end].task); end++; }
+                for (; i < end; i++) row.hiders[i].shift = total;
+            }
+            if (row.hiders.length && !row.hiders[0].after) knobTravel += total;
+        });
+        slideP = slideOpening ? 0 : 1;
+        slideActive = true;
+        slideAnim.from = slideP;
+        slideAnim.to = slideOpening ? 1 : 0;
+        slideAnim.restart();
+    }
+
+    Component {
+        id: taskHiderComponent
+        QtObject {
+            id: th
+            property Item task: null
+            property bool after: true
+            readonly property bool launcherOnly: task && task.model ? task.model.IsLauncher === true : false
+            // Does this icon go into the drawer at all, and should it be hidden now?
+            readonly property bool takesPart: task !== null
+                && (root.cfg.taskMode === "all" || (root.cfg.taskMode === "pinned" && launcherOnly))
+            readonly property bool hideMe: root.wantClosed && takesPart
+            property real size: 0     // natural size, remembered while visible
+            readonly property real naturalSize: size > 0 ? size : root.someTaskSize
+            // Two things make an icon come and go: its place in the row ("present") and how
+            // see-through it is ("factor"). Sliding ties them together: the place gets
+            // narrower as the icon fades. Fading and one-by-one keep the icon at its normal
+            // size: opening, its place opens first and the neighbours make room, then it
+            // fades in; closing, it fades out and then gives up its place.
+            property real factor: 1
+            property bool present: true
+            property int delay: 0
+            property bool ready: false
+            readonly property bool moving: factor > 0 && factor < 1
+            // Sliding: is this icon one of those that come or go, and how far is it shifted.
+            property bool sliding: false
+            property real shift: 0
+            property var mover: null   // the icon's own "translate", which draws it shifted
+            readonly property real seen: (root.slideActive && sliding) ? Math.min(1, root.slideP * 1.5) : factor
+
+            function measure() {
+                if (task && factor === 1 && !root.tasksMoving)
+                    size = root.vertical ? task.height : task.width;
+            }
+            function apply() {
+                appear.stop();
+                vanish.stop();
+                if (!ready || root.leaving) {
+                    present = !hideMe;
+                    factor = hideMe ? 0 : 1;
+                    return;
+                }
+                if (root.slides) {
+                    slideKick.restart();   // all icons together, see runSlide()
+                    return;
+                }
+                delay = root.cascadeDelay(th);
+                settle.restart();
+                if (root.shrinks) factor = hideMe ? 0 : 1;   // the Behavior below animates it
+                else if (hideMe) vanish.start();
+                else appear.start();
+            }
+            onHideMeChanged: apply()
+            onMovingChanged: root.tasksMovingCount += moving ? 1 : -1
+            onFactorChanged: {
+                if (root.shrinks) present = factor > 0;
+                // Fully back: tell the task manager where the icon is, so that it does not
+                // animate it from an old place the next time something moves.
+                if (factor === 1 && task) {
+                    try { task.oldX = task.x; task.oldY = task.y; } catch (e) {}
+                }
+            }
+            Component.onCompleted: {
+                try { mover = task.transform.length ? task.transform[0] : null; } catch (e) {}
+                measure();
+                apply();
+                ready = true;
+            }
+            // Must let go of the icon before it goes: the bindings only restore while they exist.
+            function release() {
+                ready = false;
+                appear.stop();
+                vanish.stop();
+                unshift();
+                sliding = false;
+                present = true;
+                factor = 1;
+            }
+            Component.onDestruction: release()
+            property Connections sizes: Connections {
+                target: th.task
+                function onWidthChanged() { th.measure(); }
+                function onHeightChanged() { th.measure(); }
+            }
+
+            Behavior on factor {
+                enabled: th.ready && root.shrinks && !root.leaving
+                NumberAnimation { duration: root.cfg.animationDuration; easing.type: Easing.InOutCubic }
+            }
+            property SequentialAnimation appear: SequentialAnimation {
+                PauseAnimation { duration: th.delay }
+                ScriptAction { script: th.present = true }
+                PauseAnimation { duration: root.moveTime }   // the neighbours make room
+                NumberAnimation {
+                    target: th; property: "factor"; to: 1
+                    duration: root.cfg.animationDuration; easing.type: Easing.InOutQuad
+                }
+            }
+            property SequentialAnimation vanish: SequentialAnimation {
+                PauseAnimation { duration: th.delay }
+                NumberAnimation {
+                    target: th; property: "factor"; to: 0
+                    duration: root.cfg.animationDuration; easing.type: Easing.InOutQuad
+                }
+                ScriptAction { script: th.present = false }
+            }
+
+            property Binding b1: Binding {
+                target: th.task; property: "visible"; value: false
+                when: !th.present
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            property Binding b2: Binding {
+                target: th.task; property: "opacity"; value: th.seen
+                when: th.seen < 1
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            // The shift while sliding, on the icon's own "translate" (the one the task manager
+            // uses for its move animation, which is off meanwhile).
+            property Binding b7: Binding {
+                target: th.mover
+                property: root.vertical ? "y" : "x"
+                value: -th.shift * (1 - root.slideP)
+                when: root.slideActive && th.shift !== 0
+                restoreMode: Binding.RestoreNone   // put back to zero by hand, see unshift()
+            }
+            function unshift() {
+                shift = 0;
+                if (mover) { mover.x = 0; mover.y = 0; }
+            }
+            // The icon's room in the row. A hidden icon keeps no width either, because the task
+            // manager adds up the widths of all its icons.
+            readonly property real room: root.shrinks ? naturalSize * factor : (present ? naturalSize : 0)
+            readonly property bool holding: factor < 1 || !present
+            property Binding b3: Binding {
+                target: th.task ? th.task.Layout : null
+                property: root.vertical ? "maximumHeight" : "maximumWidth"
+                value: th.room
+                when: th.holding
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b4: Binding {
+                target: th.task ? th.task.Layout : null
+                property: root.vertical ? "preferredHeight" : "preferredWidth"
+                value: th.room
+                when: th.holding
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b5: Binding {
+                target: th.task ? th.task.Layout : null
+                property: root.vertical ? "minimumHeight" : "minimumWidth"
+                value: 0
+                when: th.holding
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b6: Binding {
+                target: th.task; property: "clip"; value: true
+                when: th.moving && root.shrinks
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            // The task manager animates an icon whenever it changes place; "completed" is its
+            // switch for that. Off for every icon while we slide them ourselves, and off for
+            // an icon that is hidden or fading: it must not fly in from where it last was.
+            property Binding b8: Binding {
+                target: th.task; property: "completed"; value: false
+                when: (root.tasksMoving && root.shrinks) || root.slideActive || root.slideBusy
+                      || (!root.shrinks && th.holding)
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+        }
+    }
+
+    // Per task manager in the drawer: notice icons coming and going, where the open programs
+    // stand, and a program that asks for attention.
+    Instantiator {
+        id: managers
+        model: root.taskManagers
+        delegate: QtObject {
+            id: tm
+            required property var modelData
+            readonly property var applet: modelData && modelData.item ? modelData.item.applet : null
+            readonly property var tasksModel: applet && applet.tasksModel !== undefined ? applet.tasksModel : null
+            property bool live: true
+            function release() { live = false; }
+            Component.onDestruction: release()
+            readonly property bool arranging: live && !root.leaving && !root.cfg.paused
+            property Connections icons: Connections {
+                target: tm.applet && tm.applet.taskList !== undefined ? tm.applet.taskList : null
+                function onChildrenChanged() { taskSync.restart(); }
+            }
+            // Icons that slide out go out of sight at the edge of the row.
+            property Binding clip: Binding {
+                target: tm.applet && tm.applet.taskList !== undefined ? tm.applet.taskList : null
+                property: "clip"; value: true
+                when: root.slideActive
+                restoreMode: Binding.RestoreBindingOrValue
+            }
+            // Where the open programs stand: on their pinned spot (the task manager's own way),
+            // or all together before or after the pinned programs. For that the task manager
+            // must stop putting a running pinned program on its pinned spot ("launchInPlace")
+            // and allow pinned and open programs to mix ("separateLaunchers" off); then the
+            // open ones are moved to the front or the back.
+            readonly property bool ordering: arranging && root.cfg.activePlace !== "fixed"
+            property Binding b1: Binding {
+                target: tm.tasksModel; property: "launchInPlace"; value: false
+                when: tm.ordering
+                restoreMode: Binding.RestoreBinding
+            }
+            property Binding b2: Binding {
+                target: tm.tasksModel; property: "separateLaunchers"; value: false
+                when: tm.ordering
+                restoreMode: Binding.RestoreBinding
+            }
+            readonly property string order: ordering ? root.cfg.activePlace : ""
+            onOrderChanged: arrange.restart()
+            function isOpen(model, row) {
+                return !model.data(model.makeModelIndex(row), TaskManager.AbstractTasksModel.IsLauncher);
+            }
+            function arrangeOpen() {
+                var model = tm.tasksModel;
+                if (!ordering || !model) return;
+                var row, spot;
+                if (root.cfg.activePlace === "start") {
+                    for (row = 0, spot = 0; row < model.count; row++) {
+                        if (!isOpen(model, row)) continue;
+                        if (row !== spot) model.move(row, spot);
+                        spot++;
+                    }
+                } else {
+                    for (row = model.count - 1, spot = model.count - 1; row >= 0; row--) {
+                        if (!isOpen(model, row)) continue;
+                        if (row !== spot) model.move(row, spot);
+                        spot--;
+                    }
+                }
+            }
+            property Timer arrange: Timer { interval: 60; onTriggered: tm.arrangeOpen() }
+            property Connections rows: Connections {
+                target: tm.ordering ? tm.tasksModel : null
+                function onRowsInserted() { tm.arrange.restart(); }
+                function onRowsRemoved() { tm.arrange.restart(); }
+                function onDataChanged() { tm.arrange.restart(); }
+            }
+            property Connections attention: Connections {
+                target: tm.applet ? tm.applet.plasmoid : null
+                function onStatusChanged() {
+                    if (root.cfg.openOnAttention && root.cfg.closed && !root.cfg.paused
+                            && root.cfg.taskMode === "all"
+                            && tm.applet.plasmoid.status === PlasmaCore.Types.NeedsAttentionStatus)
+                        root.cfg.closed = false;
+                }
+            }
+        }
+    }
+
+    // --- task manager: the pinned list (older versions) -----------------------------
+    // Older versions emptied the task manager's list of pinned programs. Nothing is taken
+    // any more; this only hands a list back that such a version still holds.
     // The pinned icons are a list in the task manager's settings. Closed: remember the list
     // and empty it; programs that are running stay, they are windows. Open: put it back,
     // keeping anything that was pinned in the meantime.
@@ -643,8 +1148,7 @@ PlasmoidItem {
             if (!conf) return;
             // Worked out here rather than taken from pinnedTargets: right after a settings
             // change that list may not have caught up yet.
-            var hide = cfg.closed && !leaving && !cfg.paused && cfg.taskMode === "pinned"
-                       && inTargets(s.id);
+            var hide = false;
             if (hide && !(s.id in saved)) {
                 // Save first, empty afterwards: a crash in between must not lose the list.
                 saved[s.id] = Array.from(conf.launchers);
@@ -685,6 +1189,12 @@ PlasmoidItem {
         for (var i = 0; i < hiders.count; i++) {
             var hider = hiders.objectAt(i);
             if (hider) hider.release();
+        }
+        finishSlide();
+        taskHiders.forEach(h => { try { h.hider.release(); } catch (e) {} });
+        for (var j = 0; j < managers.count; j++) {
+            var manager = managers.objectAt(j);
+            if (manager) manager.release();
         }
         leaving = true;
         syncFill();
@@ -742,7 +1252,7 @@ PlasmoidItem {
     // that programs are open in there, or that one asks for attention. The windows are
     // counted with a model of our own, set up like the hidden task manager.
 
-    readonly property var hiddenTasks: wholeTargets.filter(s => isTasks(s.plugin))
+    readonly property var hiddenTasks: cfg.taskMode === "all" ? taskManagers : []
     readonly property var hiddenTasksConf: {
         try { return hiddenTasks.length ? hiddenTasks[0].item.applet.plasmoid.configuration : null; }
         catch (e) { return null; }
@@ -1040,6 +1550,10 @@ PlasmoidItem {
         PlasmaCore.ToolTipArea {
             width: root.vertical ? parent.width : root.thickness
             height: root.vertical ? root.thickness : parent.height
+            // Standing after the icons, the arrow slides along with them.
+            readonly property real travel: root.slideActive ? -root.knobTravel * (1 - root.slideP) : 0
+            x: root.vertical ? 0 : travel
+            y: root.vertical ? travel : 0
             readonly property string action: root.cfg.paused ? root.cfg.textPaused
                 : (root.cfg.closed ? root.cfg.textOpen : root.cfg.textClose)
             // With a name: the name, and below it what a click does.
@@ -1107,6 +1621,102 @@ PlasmoidItem {
 }
 """
 
+FADE_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="fade" type="String"><default></default></entry>
+    <entry name="duration" type="Int"><default>300</default></entry>
+    <entry name="debug" type="String"><default></default></entry>
+  </group>
+</kcfg>
+"""
+
+# The fade helper (QML): an invisible widget on the desktop that fades the icons. Tidy still
+# hides them the usual way; this only makes them go and come gently.
+FADE_QML = r"""// SPDX-FileCopyrightText: 2026 Ivar
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Tidy's fade helper: sits on the desktop, unseen, and fades the desktop icons out and in
+// when Tidy asks. Generated by plasma-tidy; edit it there.
+//
+// Plasma has no public way to fade the icons, so this reaches into the desktop it sits on
+// and changes the opacity of the layer that holds them. Nothing else is touched; when the
+// helper goes, the icons are fully visible again.
+
+import QtQuick
+import org.kde.plasma.plasmoid
+import org.kde.plasma.core as PlasmaCore
+
+PlasmoidItem {
+    id: root
+
+    readonly property var cfg: Plasmoid.configuration
+    property Item icons: null   // the desktop's layer of icons
+    property int tries: 0
+
+    preferredRepresentation: fullRepresentation
+    Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
+    fullRepresentation: Item {}
+
+    // The helper itself is never seen and never in the way of a click.
+    Binding {
+        target: root.parent; property: "visible"; value: false
+        when: root.parent !== null
+        restoreMode: Binding.RestoreBindingOrValue
+    }
+
+    function find() {
+        var c = root.parent, hops = 0;
+        while (c && hops < 10) {
+            if (c.folderViewLayer !== undefined && c.folderViewLayer) {
+                icons = c.folderViewLayer;
+                return;
+            }
+            c = c.parent;
+            hops++;
+        }
+        if (++tries < 10) look.restart();
+    }
+    Timer { id: look; interval: 700; onTriggered: root.find() }
+    onParentChanged: look.restart()
+    Component.onCompleted: look.restart()
+
+    NumberAnimation {
+        id: fader
+        target: root.icons
+        property: "opacity"
+        duration: Math.max(0, root.cfg.duration)
+        easing.type: Easing.InOutQuad
+        onFinished: if (root.cfg.debug === "on") console.warn("TIDYFADE at " + root.icons.opacity)
+    }
+    // Tidy writes "out <n>" or "in <n>"; the number makes every request a change.
+    Connections {
+        target: root.cfg
+        function onFadeChanged() {
+            if (!root.icons) return;
+            fader.stop();
+            fader.to = String(root.cfg.fade).indexOf("out") === 0 ? 0 : 1;
+            fader.start();
+        }
+    }
+
+    // Never leave the icons invisible: not when the helper is removed, not after a restart
+    // of Plasma (it starts with the icons fully visible, whatever was asked last).
+    function letGo() {
+        fader.stop();
+        if (icons) icons.opacity = 1;
+    }
+    Connections {
+        target: Plasmoid
+        function onDestroyedChanged(destroyed) { if (destroyed) root.letGo(); }
+    }
+    Component.onDestruction: letGo()
+}
+"""
+
 DRAWER_CONFIG_MODEL = """import QtQuick
 import org.kde.plasma.configuration
 
@@ -1152,7 +1762,9 @@ KCM.SimpleKCM {
     property bool cfg_closeOnMaximized
     property bool cfg_openOnDesktop
     property bool cfg_openOnAttention
-    property bool cfg_animate
+    property string cfg_animation
+    property int cfg_animationDuration
+    property string cfg_activePlace
     property bool cfg_reverseArrow
     property string cfg_indicator
     property string cfg_icon
@@ -1222,6 +1834,14 @@ KCM.SimpleKCM {
             value: page.cfg_taskMode
             onChosen: value => page.cfg_taskMode = value
         }
+        Choice {
+            Kirigami.FormData.label: page.t("Open programs:")
+            enabled: page.hasTasks
+            choices: [["fixed", "On their pinned spot"], ["start", "All in front"],
+                      ["end", "All at the back"]]
+            value: page.cfg_activePlace
+            onChosen: value => page.cfg_activePlace = value
+        }
 
         // --- opening and closing ---
         Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("Opening and closing") }
@@ -1288,7 +1908,7 @@ KCM.SimpleKCM {
         }
 
         // --- arrow ---
-        Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("Arrow") }
+        Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("Appearance") }
         Choice {
             Kirigami.FormData.label: page.t("Icon:")
             choices: [["arrow", "Arrow"], ["double", "Double arrow"], ["triangle", "Triangle"],
@@ -1317,10 +1937,20 @@ KCM.SimpleKCM {
             checked: page.cfg_reverseArrow
             onToggled: page.cfg_reverseArrow = checked
         }
-        QQC2.CheckBox {
-            text: page.t("Sliding animation")
-            checked: page.cfg_animate
-            onToggled: page.cfg_animate = checked
+        Choice {
+            Kirigami.FormData.label: page.t("Animation:")
+            choices: [["slide", "Slide"], ["grow", "Grow"], ["cascade", "One by one"],
+                      ["fade", "Fade"]]
+            value: page.cfg_animation
+            onChosen: value => page.cfg_animation = value
+        }
+        QQC2.SpinBox {
+            Kirigami.FormData.label: page.t("Speed:")
+            from: 50; to: 2000; stepSize: 50
+            value: page.cfg_animationDuration
+            textFromValue: value => value + " ms"
+            valueFromText: text => parseInt(text) || 250
+            onValueModified: page.cfg_animationDuration = value
         }
         QQC2.Label {
             Layout.fillWidth: true
@@ -1449,7 +2079,31 @@ TRANSLATIONS = {
         "Close with a click on an empty spot in the panel":
             "Sluiten met een klik op een lege plek in het paneel",
         "Open when a program asks for attention": "Openen als een programma om aandacht vraagt",
-        "Sliding animation": "Schuifanimatie",
+        "Animation:": "Animatie:",
+        "Slide": "Schuiven",
+        "One by one": "Eén voor één",
+        "Fade": "Vervagen",
+        "Slide: the icons slide out from under the arrow at their normal size, like a drawer. "
+        "Grow: they grow from small to their normal size. One by one: they come and go one "
+        "after the other. Fade: they fade together and the rest closes up.":
+            "Schuiven: de pictogrammen schuiven op normale grootte onder het pijltje vandaan, "
+            "als een la. Groeien: ze groeien van klein naar hun normale grootte. Eén voor één: "
+            "ze komen en gaan na elkaar. Vervagen: ze vervagen tegelijk en de rest sluit aan.",
+        "Grow": "Groeien",
+        "Speed:": "Snelheid:",
+        "How long the movement takes; one by one, how long each icon takes.":
+            "Hoe lang de beweging duurt; bij één voor één, hoe lang elk pictogram erover doet.",
+        "Appearance": "Uiterlijk",
+        "Open programs:": "Open programma's:",
+        "On their pinned spot": "Op hun vaste plek",
+        "All in front": "Allemaal vooraan",
+        "All at the back": "Allemaal achteraan",
+        "A pinned program that is open normally stays on its pinned spot, between the others. "
+        "In front or at the back, the open programs stand together and the pinned ones slide "
+        "out next to them.":
+            "Een vastgemaakt programma dat open is, blijft normaal op zijn vaste plek staan, "
+            "tussen de andere. Vooraan of achteraan staan de open programma's bij elkaar en "
+            "schuiven de vastgemaakte ernaast uit.",
         "Arrow points the other way": "Pijltje wijst de andere kant op",
         "Contents": "Inhoud",
         "Opening and closing": "Openen en sluiten",
@@ -1597,10 +2251,12 @@ TRANSLATIONS = {
         "Screen corner shows:": "Schermhoek toont:",
         "Activity in other windows doesn't count": "Activiteit in andere vensters telt niet mee",
         "On: while you work in another window the timer keeps running "
-        "and the icons disappear behind your window.\n"
+        "and the icons disappear behind your window. Moving the mouse over "
+        "the desktop itself always counts.\n"
         "Off: every mouse movement or key press, anywhere, counts.":
             "Aan: werk je in een ander venster, dan loopt de teller door "
-            "en verdwijnen de pictogrammen achter je venster.\n"
+            "en verdwijnen de pictogrammen achter je venster. De muis bewegen "
+            "boven het bureaublad zelf telt altijd mee.\n"
             "Uit: elke muisbeweging of toets, waar dan ook, telt.",
         "Also hide the panel (taskbar)": "Paneel (taakbalk) ook verbergen",
         "Start at login": "Starten bij inloggen",
@@ -1608,6 +2264,11 @@ TRANSLATIONS = {
         "System language": "Systeemtaal",
         "General": "Algemeen",
         "Hide the icons on:": "Pictogrammen verbergen op:",
+        "Fade the icons in and out": "Pictogrammen laten vervagen bij verbergen en tonen",
+        "Uses a small helper widget on the desktop. It is invisible; Tidy puts it there and "
+        "takes it away again.":
+            "Gebruikt een klein hulpwidget op het bureaublad. Het is onzichtbaar; Tidy zet het "
+            "er neer en haalt het ook weer weg.",
         "New icons go under the ^ arrow by themselves":
             "Nieuwe pictogrammen gaan vanzelf onder het pijltje ^",
         "An application that shows a tray icon for the first time gets it hidden. Works while "
@@ -1746,21 +2407,36 @@ def drawer_files():
             "contents/ui/main.qml": DRAWER_QML.lstrip("\n")}
 
 
+def fade_files():
+    """The fade helper as Plasma wants it on disk: {relative path: contents}."""
+    metadata = {"KPlugin": {"Id": FADE_ID, "Name": f"{APP_NAME} fade helper",
+                            "Description": "Fades the desktop icons for Tidy; invisible",
+                            "Icon": "view-visible", "Category": "Utilities",
+                            "Version": VERSION, "License": LICENSE},
+                "KPackageStructure": "Plasma/Applet",
+                "X-Plasma-API-Minimum-Version": "6.0",
+                "NoDisplay": True}
+    return {"metadata.json": json.dumps(metadata, indent=4) + "\n",
+            "contents/config/main.xml": FADE_CONFIG_XML,
+            "contents/ui/main.qml": FADE_QML.lstrip("\n")}
+
+
 def install_drawer():
-    """Write the drawer widget where Plasma finds it. It ships inside this file, so that
-    installing Tidy stays a matter of copying one file. A changed widget is picked up by
-    Plasma at its next start."""
-    for name, text in drawer_files().items():
-        path = os.path.join(DRAWER_DIR, name)
-        try:
-            with open(path) as f:
-                if f.read() == text:
-                    continue
-        except OSError:
-            pass
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            f.write(text)
+    """Write Tidy's widgets (the drawer and the fade helper) where Plasma finds them. They
+    ship inside this file, so that installing Tidy stays a matter of copying one file. A
+    changed widget is picked up by Plasma at its next start."""
+    for folder, files in ((DRAWER_DIR, drawer_files()), (FADE_DIR, fade_files())):
+        for name, text in files.items():
+            path = os.path.join(folder, name)
+            try:
+                with open(path) as f:
+                    if f.read() == text:
+                        continue
+            except OSError:
+                pass
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(text)
 
 
 def drawer_texts():
@@ -1824,6 +2500,40 @@ class Plasma:
             return {int(k): v for k, v in json.loads(out).items()}
         except ValueError:
             return {}
+
+    def ensure_fade_helpers(self, wanted):
+        """Have a fade helper on every desktop that is on a screen, or none at all. Returns
+        how many there are afterwards."""
+        out = self.run("var type = %s, wanted = %s;" % (json.dumps(FADE_ID), json.dumps(wanted)) + """
+            var n = 0;
+            desktops().forEach(function (d) {
+                if (d.type != "org.kde.plasma.folder") return;
+                var have = d.widgets().filter(function (w) { return w.type == type; });
+                if (!wanted) { have.forEach(function (w) { w.remove(); }); return; }
+                if (!have.length && d.screen >= 0) {
+                    var w = d.addWidget(type);
+                    if (w && w.id) n++;
+                }
+                n += have.length;
+            });
+            print(n);""")
+        try:
+            return int(out)
+        except ValueError:
+            return 0
+
+    def fade_desktop(self, visible, duration, serial):
+        """Ask the fade helpers to fade the desktop icons in or out."""
+        self.run("var type = %s, text = %s, duration = %d;" % (
+            json.dumps(FADE_ID), json.dumps(("in " if visible else "out ") + str(serial)),
+            duration) + """
+            desktops().forEach(function (d) { d.widgets().forEach(function (w) {
+                if (w.type != type) return;
+                w.currentConfigGroup = ["General"];
+                w.writeConfig("duration", duration);
+                w.writeConfig("fade", text);
+                w.reloadConfig();
+            }); });""")
 
     def desktop_screens(self):
         """Where each desktop is shown: {desktop id: (x, y, width, height)}; desktops that are
@@ -2091,8 +2801,10 @@ class KWin:
                                         "org.kde.kwin.Scripting", bus)
         self.kwin = QDBusInterface("org.kde.KWin", "/KWin", "org.kde.KWin", bus)
 
-    def load(self, corner):
+    def load(self, corner, pointer=False):
         script = KWIN_JS % {"app": APP, "prefix": CATCHER_PREFIX, "name": DBUS_NAME}
+        if pointer:
+            script += KWIN_POINTER_JS % {"app": APP, "name": DBUS_NAME}
         edge = dict((key, js) for key, _, js in CORNERS).get(corner)
         if edge:
             script += KWIN_EDGE_JS % {"edge": edge, "name": DBUS_NAME}
@@ -2151,6 +2863,10 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     @pyqtSlot(bool)
     def DesktopActive(self, active):
         self.autohide.on_desktop_active(active)
+
+    @pyqtSlot(bool)
+    def PointerOnDesktop(self, on):
+        self.autohide.on_pointer_on_desktop(on)
 
     @pyqtSlot(bool)
     def PopupOpen(self, open_):
@@ -2473,6 +3189,16 @@ class DrawerPage(QWidget):
                                      "stay in the panel and only the pinned icons of programs "
                                      "that are not running disappear."))
         form.addRow(tr("Task manager:"), self.task_mode)
+
+        self.active_place = QComboBox()
+        for key, label in ACTIVE_PLACES:
+            self.active_place.addItem(tr(label), key)
+        self.active_place.setCurrentIndex(max(0, self.active_place.findData(config["activePlace"])))
+        self.active_place.setToolTip(tr("A pinned program that is open normally stays on its "
+                                        "pinned spot, between the others. In front or at the "
+                                        "back, the open programs stand together and the pinned "
+                                        "ones slide out next to them."))
+        form.addRow(tr("Open programs:"), self.active_place)
         parts.addTab(page, tr("Contents"))
 
         # --- opening and closing ---
@@ -2588,9 +3314,22 @@ class DrawerPage(QWidget):
         self.reverse.setChecked(config["reverseArrow"])
         form.addRow(self.reverse)
 
-        self.animate = QCheckBox(tr("Sliding animation"))
-        self.animate.setChecked(config["animate"])
-        form.addRow(self.animate)
+        self.animation = QComboBox()
+        for key, label in ANIMATIONS:
+            self.animation.addItem(tr(label), key)
+        self.animation.setCurrentIndex(max(0, self.animation.findData(config["animation"])))
+        self.animation.setToolTip(tr("Slide: the icons slide out from under the arrow at their "
+                                     "normal size, like a drawer. Grow: they grow from small to "
+                                     "their normal size. One by one: they come and go one after "
+                                     "the other. Fade: they fade together and the rest closes "
+                                     "up."))
+        form.addRow(tr("Animation:"), self.animation)
+
+        self.duration = QSpinBox(suffix=" ms", minimum=50, maximum=2000, singleStep=50)
+        self.duration.setValue(config["animationDuration"])
+        self.duration.setToolTip(tr("How long the movement takes; one by one, how long each "
+                                    "icon takes."))
+        form.addRow(tr("Speed:"), self.duration)
 
         hint = QLabel(tr("The arrow sits next to the items it hides. To place it yourself, "
                          "choose \"Where I put it myself\", right-click the panel, choose "
@@ -2598,7 +3337,7 @@ class DrawerPage(QWidget):
         hint.setWordWrap(True)
         hint.setEnabled(False)
         form.addRow(hint)
-        parts.addTab(page, tr("Arrow"))
+        parts.addTab(page, tr("Appearance"))
 
         self.update_enabled()
         self.relabel()
@@ -2617,8 +3356,10 @@ class DrawerPage(QWidget):
             self.on_label(self)
 
     def update_enabled(self):
-        self.task_mode.setEnabled(any(check.isChecked() and plugin in TASK_PLUGINS
-                                      for check, plugin in self.targets.values()))
+        tasks = any(check.isChecked() and plugin in TASK_PLUGINS
+                    for check, plugin in self.targets.values())
+        self.task_mode.setEnabled(tasks)
+        self.active_place.setEnabled(tasks)
         self.hover_delay.setEnabled(self.open_on.currentData() == OPEN_HOVER)
         self.close_delay.setEnabled(bool(self.auto_close.currentData()))
         custom = self.icon.currentData() == "custom"
@@ -2637,6 +3378,7 @@ class DrawerPage(QWidget):
                 "targets": [str(i) for i, (check, _) in self.targets.items()
                             if check.isChecked()],
                 "taskMode": self.task_mode.currentData(),
+                "activePlace": self.active_place.currentData(),
                 "openOn": self.open_on.currentData(),
                 "hoverDelay": self.hover_delay.value(),
                 "openOnAttention": self.attention.isChecked(),
@@ -2652,7 +3394,8 @@ class DrawerPage(QWidget):
                 "indicator": self.mark.currentData(),
                 "place": self.place.currentData(),
                 "reverseArrow": self.reverse.isChecked(),
-                "animate": self.animate.isChecked()}
+                "animation": self.animation.currentData(),
+                "animationDuration": self.duration.value()}
 
     def apply(self, plasma):
         config = self.drawer["config"]
@@ -3022,7 +3765,9 @@ class SettingsDialog(QDialog):
         self.only_desktop = QCheckBox(tr("Activity in other windows doesn't count"))
         self.only_desktop.setChecked(settings.value("only_desktop", True, bool))
         self.only_desktop.setToolTip(tr("On: while you work in another window the timer keeps "
-                                        "running and the icons disappear behind your window.\n"
+                                        "running and the icons disappear behind your window. "
+                                        "Moving the mouse over the desktop itself always "
+                                        "counts.\n"
                                         "Off: every mouse movement or key press, anywhere, "
                                         "counts."))
         form.addRow(self.only_desktop)
@@ -3030,6 +3775,19 @@ class SettingsDialog(QDialog):
         self.panel = QCheckBox(tr("Also hide the panel (taskbar)"))
         self.panel.setChecked(settings.value("hide_panel", False, bool))
         form.addRow(self.panel)
+
+        self.fade_icons = QCheckBox(tr("Fade the icons in and out"))
+        self.fade_icons.setChecked(settings.value("fade_icons", False, bool))
+        self.fade_icons.setToolTip(tr("Uses a small helper widget on the desktop. It is "
+                                      "invisible; Tidy puts it there and takes it away again."))
+        self.fade_icons.toggled.connect(self.update_enabled)
+        self.fade_duration = QSpinBox(suffix=" ms", minimum=50, maximum=3000, singleStep=50)
+        self.fade_duration.setValue(settings.value("fade_duration", 300, int))
+        row = QHBoxLayout()
+        row.addWidget(self.fade_icons)
+        row.addWidget(self.fade_duration)
+        row.addStretch()
+        form.addRow(row)
 
         # Per screen, only when there is a choice to make.
         self.skipped = [name for name in settings.value("skip_screens", "").split(",") if name]
@@ -3192,6 +3950,7 @@ class SettingsDialog(QDialog):
         self.rehide.setEnabled(click)
         # In click mode at least one button must be chosen.
         valid = not click or any(b.isChecked() for b in self.buttons.values())
+        self.fade_duration.setEnabled(self.fade_icons.isChecked())
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
         self.apply_button.setEnabled(valid and self.changed)
 
@@ -3306,9 +4065,17 @@ class Tidy(QObject):
         self.hidden = False
         self.focus = False          # focus mode: everything away, and it stays away
         self.hold_icons = False     # in focus mode, with the desktop icons part of it
+        # Fading the icons: what still has to happen once a fade is over, or before one starts.
+        self.fade_helpers = 0
+        self.fade_serial = 0
+        self.fade_next = None
+        self.fade_timer = QTimer(self, singleShot=True)
+        self.fade_timer.timeout.connect(self.on_fade_timer)
         self.idle = None
         self.idle_since = None      # moment the current stillness began
+        self.still_since = None     # the same, whether or not that stillness counts
         self.desktop_active = True  # is the desktop the active window?
+        self.pointer_on_desktop = False  # is the pointer above the desktop (or our own window)?
         self.popup_open = False     # is a menu or pop-up open somewhere?
         self.plasma_shell = QDBusInterface("org.kde.plasmashell", "/PlasmaShell",
                                            "org.kde.PlasmaShell", QDBusConnection.sessionBus())
@@ -3372,6 +4139,7 @@ class Tidy(QObject):
         if self.enabled_action.isChecked():
             self.start_idle()
         QTimer.singleShot(5000, self.backup_launchers)
+        QTimer.singleShot(2500, self.update_fade_helpers)
 
         # New icons in the system tray.
         self.tray_timer = QTimer(self, interval=2000, singleShot=True)
@@ -3388,8 +4156,16 @@ class Tidy(QObject):
         return self.mode() == MODE_CLICK and self.settings.value("rehide", REHIDE_IDLE) == REHIDE_FIXED
 
     def counts_activity(self):
-        """Does mouse/keyboard input count right now? Not while you work in another window."""
-        return self.desktop_active or not self.settings.value("only_desktop", True, bool)
+        """Does mouse/keyboard input count right now? Not while you work in another window,
+        unless the pointer is above the desktop itself."""
+        return (self.desktop_active or self.pointer_on_desktop
+                or not self.settings.value("only_desktop", True, bool))
+
+    def load_kwin(self):
+        watch = self.settings.value("only_desktop", True, bool)
+        if not watch:
+            self.pointer_on_desktop = False
+        self.kwin.load(self.settings.value("corner", "none"), watch)
 
     def on_desktop_active(self, active):
         was = self.desktop_active
@@ -3401,8 +4177,20 @@ class Tidy(QObject):
                 self.show()
             if not self.focus:
                 self.plasma.open_drawers_on_desktop()
-        elif not active and was and self.idle_since is None:
+        elif not active and was and self.idle_since is None and not self.counts_activity():
             # Away from the desktop: from now on the timer keeps counting.
+            self.idle_since = time.monotonic()
+
+    def on_pointer_on_desktop(self, on):
+        counted = self.counts_activity()
+        self.pointer_on_desktop = on
+        if on and not counted:
+            # The pointer came onto the desktop: what you do counts again.
+            self.idle_since = self.still_since
+            if (self.still_since is None and self.hidden and self.mode() == MODE_ACTIVITY
+                    and not self.hold_icons):
+                self.show()
+        elif not on and counted and self.idle_since is None and not self.counts_activity():
             self.idle_since = time.monotonic()
 
     def remaining(self):
@@ -3462,7 +4250,13 @@ class Tidy(QObject):
         # Save first, hide afterwards: that way a crash can never lose anything.
         self.settings.setValue("saved_state", json.dumps(state))
         self.settings.sync()
-        self.plasma.set_desktop_urls({k: EMPTY_URL for k in urls})
+        empty = {k: EMPTY_URL for k in urls}
+        if self.fading():
+            # Fade out first; the folder is switched once the icons are out of sight.
+            duration = self.fade(False)
+            self.after_fade(duration + 50, lambda: self.plasma.set_desktop_urls(empty))
+        else:
+            self.plasma.set_desktop_urls(empty)
         self.hidden = True
         self.update_icon()
         if self.settings.value("drawer_follow", False, bool):
@@ -3472,10 +4266,14 @@ class Tidy(QObject):
 
     def show(self):
         self.hide_catchers()
+        self.after_fade(0, None)  # a folder switch still waiting for a fade-out: not any more
         raw = self.settings.value("saved_state", "")
         if raw:
             state = json.loads(raw)
             self.plasma.set_desktop_urls({int(k): v for k, v in state.get("urls", {}).items()})
+            if self.fading():
+                # Give the icons a moment to load, then fade them in.
+                self.after_fade(150, lambda: self.fade(True))
             if "panels" in state:
                 self.plasma.set_panel_modes({int(k): v for k, v in state["panels"].items()})
             self.settings.remove("saved_state")
@@ -3488,6 +4286,36 @@ class Tidy(QObject):
         if hasattr(self, "tray"):
             self.update_icon()
 
+    # --- fading the icons ---------------------------------------------------
+
+    def fading(self):
+        return self.fade_helpers > 0 and self.settings.value("fade_icons", False, bool)
+
+    def fade(self, visible):
+        duration = self.settings.value("fade_duration", 300, int)
+        self.fade_serial += 1
+        self.plasma.fade_desktop(visible, duration, self.fade_serial)
+        return duration
+
+    def after_fade(self, delay, action):
+        """Do something a little later; a newer request replaces an older one."""
+        self.fade_timer.stop()
+        self.fade_next = action
+        if action:
+            self.fade_timer.start(delay)
+
+    def on_fade_timer(self):
+        action, self.fade_next = self.fade_next, None
+        if action:
+            action()
+
+    def update_fade_helpers(self):
+        """Put the fade helper on the desktops, or take it away, as the setting says."""
+        wanted = self.settings.value("fade_icons", False, bool)
+        self.fade_helpers = self.plasma.ensure_fade_helpers(wanted)
+        if wanted and not self.hidden:
+            self.fade(True)  # whatever a helper was last told: the icons are visible now
+
     def recover_after_crash(self):
         """Was the desktop still on the empty folder (crash, logout)? Put it back."""
         if self.settings.value("saved_state", ""):
@@ -3497,6 +4325,7 @@ class Tidy(QObject):
             self.plasma.set_desktop_urls(stuck)
 
     def on_plasma_restarted(self):
+        self.update_fade_helpers()
         if not self.hidden:
             self.recover_after_crash()
         if not self.focus:
@@ -3585,6 +4414,7 @@ class Tidy(QObject):
         self.catchers = []
 
     def on_screens_changed(self, _screen):
+        QTimer.singleShot(3000, self.update_fade_helpers)  # a new screen gets a desktop first
         if self.catchers:
             self.show_catchers()
 
@@ -3621,6 +4451,7 @@ class Tidy(QObject):
     def start_idle(self):
         self.stop_idle()
         self.idle_since = None
+        self.still_since = None
         self.idle = QProcess()
         self.idle.readyReadStandardOutput.connect(self.on_idle_output)
         self.idle.finished.connect(self.on_idle_died)
@@ -3647,9 +4478,11 @@ class Tidy(QObject):
         for line in bytes(self.idle.readAllStandardOutput()).decode().split():
             if line == "idle":
                 since = time.monotonic() - IDLE_STEP
+                self.still_since = since
                 if self.idle_since is None or self.counts_activity():
                     self.idle_since = since
             elif line == "active":
+                self.still_since = None
                 if not self.counts_activity():
                     continue
                 self.idle_since = None
@@ -3788,11 +4621,32 @@ class Tidy(QObject):
         self.dialog.deleteLater()
         self.dialog = None
 
+    def hidden_setup(self):
+        """The settings that decide what exactly is hidden while the icons are hidden."""
+        return (self.settings.value("hide_panel", False, bool),
+                self.settings.value("skip_screens", ""))
+
+    def after_settings(self, was_hidden, setup):
+        """New settings are in use from now. Icons that were hidden stay hidden."""
+        if was_hidden and self.hidden:
+            if setup != self.hidden_setup():
+                # What is hidden has changed (the panel, which screens): hide afresh.
+                self.show()
+                self.hide()
+            elif self.mode() == MODE_CLICK and not self.hold_icons:
+                self.show_catchers()
+            else:
+                self.hide_catchers()
+        else:
+            self.shown_at = time.monotonic()
+            self.idle_since = None if self.counts_activity() else time.monotonic()
+
     def apply_settings(self, dlg):
         self.set_focus(False)  # the settings below would get mixed up with what it holds
-        self.show()  # new settings take effect from now
+        was_hidden, setup = self.hidden, self.hidden_setup()
         dlg.focus_tab.save()
-        old_corner = self.settings.value("corner", "none")
+        old_kwin = (self.settings.value("corner", "none"),
+                    self.settings.value("only_desktop", True, bool))
         self.settings.setValue("timeout", dlg.timeout.value())
         self.settings.setValue("mode", dlg.mode.currentData())
         self.settings.setValue("buttons", dlg.chosen_buttons())
@@ -3801,6 +4655,9 @@ class Tidy(QObject):
         self.settings.setValue("hide_panel", dlg.panel.isChecked())
         self.settings.setValue("only_desktop", dlg.only_desktop.isChecked())
         self.settings.setValue("skip_screens", dlg.skipped_screens())
+        self.settings.setValue("fade_icons", dlg.fade_icons.isChecked())
+        self.settings.setValue("fade_duration", dlg.fade_duration.value())
+        self.update_fade_helpers()
         self.set_autostart(dlg.autostart.isChecked())
         if dlg.language.currentData() != self.settings.value("language", "auto"):
             self.settings.setValue("language", dlg.language.currentData())
@@ -3810,8 +4667,9 @@ class Tidy(QObject):
         self.backup_launchers()  # before a drawer may start holding them
         dlg.drawer_tab.apply()
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
-        if dlg.corner.currentData() != old_corner:
-            self.kwin.load(dlg.corner.currentData())
+        if (dlg.corner.currentData(), dlg.only_desktop.isChecked()) != old_kwin:
+            self.load_kwin()
+        self.after_settings(was_hidden, setup)
         dlg.applied()
 
     def skipped_screens(self):
@@ -3859,7 +4717,7 @@ class Tidy(QObject):
         """Apply settings from a profile or an import. Drawers are matched by the place they
         have in the panel's bookkeeping (their id); a drawer that isn't there is skipped."""
         self.set_focus(False)
-        self.show()
+        was_hidden, setup = self.hidden, self.hidden_setup()
         for key, default in PROFILE_SETTINGS.items():
             value = data.get("settings", {}).get(key)
             if isinstance(value, type(default)):
@@ -3883,8 +4741,9 @@ class Tidy(QObject):
                                          config.get("place", PLACE_BEFORE))
             if "shortcut" in saved:
                 self.plasma.set_drawer_shortcut(saved["id"], saved["shortcut"])
-        self.kwin.load(self.settings.value("corner", "none"))
-        self.shown_at = time.monotonic()
+        self.load_kwin()
+        self.update_fade_helpers()
+        self.after_settings(was_hidden, setup)
         if self.dialog:
             # The window shows the old values: open it afresh.
             self.dialog.reject()
@@ -4005,7 +4864,7 @@ def main():
     adaptor = DBusAdaptor(autohide)
     bus.registerObject("/", autohide)
     # Load only now: the KWin script reports the active window over D-Bus right away.
-    autohide.kwin.load(autohide.settings.value("corner", "none"))
+    autohide.load_kwin()
     if command and command != "Toggle":
         QTimer.singleShot(0, getattr(adaptor, command))
 

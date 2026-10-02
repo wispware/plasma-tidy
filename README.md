@@ -61,8 +61,9 @@ change something.
 | With mouse button | Which buttons count as a click on the desktop (left, middle, right) | all three |
 | Hide again | After that time without movement, or after a fixed time even while you move | without movement |
 | Screen corner shows | Moving the mouse into this corner shows the icons | none |
-| Activity in other windows doesn't count | The icons hide behind the window you're working in | on |
+| Activity in other windows doesn't count | The icons hide behind the window you're working in; moving the mouse over the desktop itself always counts | on |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
+| Fade the icons in and out | The icons fade away and back instead of switching at once, in the time you set; uses an invisible helper widget on the desktop | off, 300 ms |
 | Hide the icons on | With more than one screen: the screens whose icons are hidden; the others keep theirs | every screen |
 
 *Show desktop* (Meta+D) always brings the icons back.
@@ -92,6 +93,7 @@ The settings of a drawer come in three parts.
 | --- | --- | --- |
 | In this drawer | Which of the panel's widgets the drawer hides | the task manager |
 | Task manager | Hide all programs, open ones too; or only the pinned programs that are not open | all programs |
+| Open programs | Where open programs stand in the task manager: on their pinned spot, all in front, or all at the back | pinned spot |
 
 *Opening and closing*
 
@@ -108,7 +110,7 @@ The settings of a drawer come in three parts.
 | Close after a click on something in the drawer | Closes once you have started or picked something; a pop-up it opened is waited for | off |
 | Close when a window that fills the screen comes to the front | Closes each time a maximized or full-screen window becomes the active one | off |
 
-*Arrow*
+*Appearance*
 
 | Setting | What it does | Default |
 | --- | --- | --- |
@@ -116,7 +118,8 @@ The settings of a drawer come in three parts.
 | Mark on the closed drawer | A dot on the arrow when hidden programs are open, their number, a dot only when one asks for attention, or nothing. Applies when the drawer hides a task manager with all its programs | a dot |
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
-| Sliding animation | Slide and fade, or switch at once | on |
+| Animation | Slide: the icons of a task manager slide out from under the arrow at their normal size, like a drawer. Grow: they grow from small to their normal size. One by one: they come and go one after the other. Fade: they fade together and the rest closes up | slide |
+| Speed | How long the movement takes; one by one, how long each icon takes | 250 ms |
 
 Below the drawers, *All drawers: close and open together with the desktop icons* makes every
 drawer follow Tidy's hiding and showing of the desktop icons (off by default).
@@ -125,16 +128,20 @@ A drawer also has a settings page of its own: right-click the arrow and choose *
 Drawer*. It has the same settings except the place of the arrow, and it works when Tidy is
 not running.
 
-A widget that fills the panel, usually the task manager, keeps its place while hidden, so the
-rest of the panel does not jump. Other widgets give up their space.
+A task manager is not hidden as a whole: its icons are, one by one, so they can slide away
+smoothly. The task manager itself keeps its place, and the rest of the panel does not jump.
+Other widgets give up their space.
+
+With *Open programs* in front or at the back, the open programs stand together and the pinned
+ones slide out next to them, instead of appearing in between.
 
 With the arrow *just after* a task manager, it sits right behind the last program. For that
 the task manager stops filling the panel (its own *Fill free space on panel* setting) and the
 drawer fills it instead; the setting is put back when you move the arrow or remove the drawer.
 
-With *only the pinned programs*, open programs stay in the panel: they are windows. Tidy
-remembers the pinned list while the drawer is closed and puts it back when it opens,
-including anything you pinned in the meantime.
+With *only the pinned programs*, open programs stay in the panel and only the icons of pinned
+programs that are not running slide away. Start one of them some other way and its icon
+appears.
 
 ### System tray
 
@@ -241,31 +248,37 @@ plasma-tidy --version   print the version
   saved first and put back when the icons are shown, when you quit Tidy, when you log out,
   and (after a crash) the next time Tidy starts.
 - **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol.
+- **Whose activity counts** comes from the same KWin script: it tells Tidy whether the desktop
+  is the active window and whether the pointer is above the desktop. It never sees what you
+  type or click.
 - **Click to show** puts an invisible window on each screen, just above the desktop and below
   everything else. A small KWin script, loaded while Tidy runs, keeps it there, keeps it out
   of the task switcher, and handles the screen corner.
 - **The drawer** is a small Plasma widget that ships inside Tidy and is written to
   `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
-  widget, so the drawer reaches into the panel's layout and makes its neighbours invisible. It
-  changes two settings of a task manager, and only when you ask for it: in *only the pinned
-  programs* mode it empties the pinned list while closed, and with the arrow *just after* the
-  task manager it switches off *Fill free space on panel*. Both are put back when the drawer
-  opens, moves or is removed. The drawer keeps working when Tidy is not running; Tidy is only
-  needed to change its settings.
+  widget, so the drawer reaches into the panel's layout and makes its neighbours invisible; in
+  a task manager it does that per icon. It changes one setting of a task manager, and only
+  when you ask for it: with the arrow *just after* the task manager it switches off *Fill
+  free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
+  drawer keeps working when Tidy is not running; Tidy is only needed to change its settings.
+- **Fading the desktop icons** needs something inside Plasma as well: a helper widget that
+  Tidy puts on each desktop. It is invisible and only changes how see-through the layer of
+  icons is. Hiding itself works as described above; without the helper the icons simply switch
+  at once.
 
 Tidy needs no root access and changes nothing outside your own Plasma configuration.
 
 ## Limitations
 
 - Plasma 6 on Wayland only.
-- The desktop icons appear and disappear at once; there is no fade.
 - On the desktop only icons are hidden. Widgets you placed there stay visible.
 - Hiding reloads the desktop's Folder View, so Tidy postpones it while a menu is open or the
   desktop is in edit mode.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
-- The drawer depends on how Plasma builds its panel, which is not a public interface. It is
-  tested with Plasma 6.7. If a Plasma update changes the panel, the drawer stops hiding
-  things; nothing is lost, your widgets simply stay visible.
+- The drawer and the fade depend on how Plasma builds its panel, task manager and desktop,
+  which is not a public interface. They are tested with Plasma 6.7. If a Plasma update changes
+  these, the drawer stops hiding things or the icons stop fading; nothing is lost, your
+  widgets simply stay visible.
 - A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
   and in once.
 - Closing by itself follows the pointer inside the panel. A window preview or a menu that
@@ -285,8 +298,8 @@ or run `plasma-tidy --restore`.
 
 ## Uninstall
 
-Remove your drawers in the *Panel* tab and quit Tidy from the tray menu, so your panel and
-icons are restored. Then:
+Remove your drawers in the *Panel* tab, switch off *Fade the icons in and out*, and quit Tidy
+from the tray menu, so your panel and desktop are as they were. Then:
 
 ```sh
 rm ~/.local/bin/plasma-tidy
@@ -294,6 +307,7 @@ rm ~/.local/share/applications/plasma-tidy.desktop
 rm -f ~/.config/autostart/plasma-tidy.desktop
 rm -rf ~/.config/plasma-tidy ~/.local/share/plasma-tidy
 rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.drawer
+rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.fade
 ```
 
 ## Feedback
