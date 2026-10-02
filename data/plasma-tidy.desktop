@@ -8,7 +8,7 @@ Exec=plasma-tidy
 Icon=view-visible
 Categories=Settings;DesktopSettings;
 Keywords=plasma;tidy;clean;declutter;hide;autohide;icons;desktop;panel;taskbar;drawer;tray;systray;opruimen;verbergen;pictogrammen;bureaublad;paneel;taakbalk;la;systeemvak;
-Actions=show;hide;toggle;drawer;restore;
+Actions=show;hide;toggle;focus;drawer;restore;
 
 [Desktop Action show]
 Name=Show icons
@@ -34,3 +34,8 @@ Exec=plasma-tidy --drawer-toggle
 Name=Restore everything
 Name[nl]=Alles terugzetten
 Exec=plasma-tidy --restore
+
+[Desktop Action focus]
+Name=Focus mode on or off
+Name[nl]=Focusmodus aan of uit
+Exec=plasma-tidy --focus

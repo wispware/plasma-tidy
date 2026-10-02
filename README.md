@@ -6,6 +6,8 @@ Tidy keeps your KDE Plasma desktop, panel and system tray clean.
   mouse movement, a click on the desktop, a screen corner or a shortcut.
 - **Panel:** a drawer, an arrow in the panel, tucks the programs and widgets you choose away
   and brings them back on a click or when you point at it.
+- **Focus mode:** one shortcut hides the icons, closes the drawers and trims the system tray,
+  and keeps it that way until you switch it off.
 - **System tray:** choose per icon whether it's shown, hidden under `^`, automatic or disabled.
 
 It lives in the system tray as a small eye icon and stays out of the way: it never steals
@@ -87,6 +89,7 @@ the panel, choose *Enter Edit Mode* and drag it.
 | Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer; a click on a widget does what it always did | off |
 | Open when a program asks for attention | A hidden program that wants you opens the drawer | on |
 | Sliding animation | Slide and fade, or switch at once | on |
+| Mark on the closed drawer | A dot on the arrow when hidden programs are open, their number, a dot only when one asks for attention, or nothing. Applies when the drawer hides a task manager with all its programs | a dot |
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
 | Close and open the drawers together with the desktop icons | The drawers follow Tidy's hiding and showing of the desktop icons | off |
@@ -120,6 +123,25 @@ changes until you press OK:
 - **Show all**: every icon always visible in the panel
 - **Hide all**: every icon under the `^` arrow
 
+### Focus mode
+
+Focus mode tucks everything away at once and keeps it away: the desktop icons are hidden, the
+panel drawers closed and the system tray set to *Minimal*, and nothing comes back on mouse
+movement, a click on the desktop or the screen corner. Switch it on and off in the tray menu,
+on the *Focus mode* tab, with a shortcut or with `plasma-tidy --focus`. Switching it off puts
+everything back as it was.
+
+| Setting | What focus mode does | Default |
+| --- | --- | --- |
+| Hide the desktop icons | Hides them and keeps them hidden | on |
+| Close the panel drawers | Closes every drawer; a drawer still opens on its arrow | on |
+| Set the system tray to Minimal | Network, volume and battery visible, the rest under `^` | on |
+| Auto-hide the panel | The panel slides away until you move to the screen edge | off |
+
+Opening the settings and pressing OK, switching Tidy off, and *Restore everything* end focus
+mode. After a crash or a logout in focus mode, Tidy puts everything back the next time it
+starts.
+
 ### Restore everything
 
 *Restore everything* (in the tray menu and at the bottom of the settings) puts your desktop
@@ -134,9 +156,9 @@ settings are kept.
 
 ### Shortcuts and command line
 
-Tidy has five actions you can bind to a key in System Settings → Keyboard → Shortcuts →
-Add New → Application → Tidy: show the icons, hide the icons, switch Tidy on or off, open or
-close the panel drawers, and restore everything.
+Tidy has six actions you can bind to a key in System Settings → Keyboard → Shortcuts →
+Add New → Application → Tidy: show the icons, hide the icons, switch Tidy on or off, focus
+mode on or off, open or close the panel drawers, and restore everything.
 
 The same actions are available from the command line. Only one copy of Tidy runs at a time; a
 second call passes its command to the running one.
@@ -147,6 +169,7 @@ plasma-tidy --show      show the icons now
 plasma-tidy --hide      hide the icons now
 plasma-tidy --toggle    switch Tidy on or off
 plasma-tidy --settings  open the settings
+plasma-tidy --focus     switch focus mode on or off
 plasma-tidy --drawer-open    open the panel drawers
 plasma-tidy --drawer-close   close the panel drawers
 plasma-tidy --drawer-toggle  close them if one is open, otherwise open them

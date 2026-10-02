@@ -87,6 +87,10 @@ OPEN_CLICK = "click"
 OPEN_HOVER = "hover"
 SCOPE_DRAWER = "drawer"
 SCOPE_PANEL = "panel"
+MARK_NONE = "none"
+MARK_OPEN = "open"
+MARK_COUNT = "count"
+MARK_ATTENTION = "attention"
 PLACE_BEFORE = "before"
 PLACE_AFTER = "after"
 PLACE_MANUAL = "manual"
@@ -95,6 +99,7 @@ DRAWER_DEFAULTS = {"closed": False, "paused": False, "targets": [], "taskMode": 
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
                    "openOnAttention": True, "animate": True, "reverseArrow": False,
+                   "indicator": MARK_OPEN,
                    "place": PLACE_BEFORE}
 
 MODE_ACTIVITY = "activity"
@@ -278,6 +283,7 @@ DRAWER_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8"?>
     <entry name="openOnAttention" type="Bool"><default>true</default></entry>
     <entry name="animate" type="Bool"><default>true</default></entry>
     <entry name="reverseArrow" type="Bool"><default>false</default></entry>
+    <entry name="indicator" type="String"><default>open</default></entry>
     <entry name="place" type="String"><default>before</default></entry>
     <entry name="savedLaunchers" type="String"><default>{}</default></entry>
     <entry name="savedFill" type="String"><default>{}</default></entry>
@@ -310,6 +316,7 @@ import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.kirigami as Kirigami
+import org.kde.taskmanager as TaskManager
 
 PlasmoidItem {
     id: root
@@ -383,7 +390,8 @@ PlasmoidItem {
             own: ownPos, closed: cfg.closed, paused: cfg.paused, mode: cfg.taskMode,
             hover: panelHover !== null,
             width: Math.round(root.width), stretching: stretching, savedFill: cfg.savedFill,
-            arrow_icon: arrowIcon,
+            arrow_icon: arrowIcon, windows: hiddenWindows, attention: hiddenAttention,
+            mark: markShown,
             inPanel: pointerInPanel, inDrawer: pointerInDrawer, arrow: arrowHovered,
             popup: popupOpen, saved: cfg.savedLaunchers, tap: panelTap !== null,
             memory: JSON.stringify(savedMemory),
@@ -659,6 +667,40 @@ PlasmoidItem {
         stretching = Object.keys(saved).length > 0;
     }
 
+    // --- a mark on the closed drawer ----------------------------------------------
+    // When the drawer hides a task manager with everything in it, a mark on the arrow tells
+    // that programs are open in there, or that one asks for attention. The windows are
+    // counted with a model of our own, set up like the hidden task manager.
+
+    readonly property var hiddenTasks: wholeTargets.filter(s => isTasks(s.plugin))
+    readonly property var hiddenTasksConf: {
+        try { return hiddenTasks.length ? hiddenTasks[0].item.applet.plasmoid.configuration : null; }
+        catch (e) { return null; }
+    }
+    Loader {
+        id: counter
+        active: root.cfg.indicator !== "none" && root.hiddenTasks.length > 0
+        sourceComponent: Item {
+            readonly property int windows: tasksModel.count
+            readonly property bool attention: tasksModel.anyTaskDemandsAttention
+            TaskManager.VirtualDesktopInfo { id: desktopInfo }
+            TaskManager.ActivityInfo { id: activityInfo }
+            TaskManager.TasksModel {
+                id: tasksModel
+                virtualDesktop: desktopInfo.currentDesktop
+                activity: activityInfo.currentActivity
+                filterByVirtualDesktop: root.hiddenTasksConf ? root.hiddenTasksConf.showOnlyCurrentDesktop : false
+                filterByActivity: root.hiddenTasksConf ? root.hiddenTasksConf.showOnlyCurrentActivity : true
+                filterNotMinimized: root.hiddenTasksConf ? root.hiddenTasksConf.showOnlyMinimized : false
+                groupMode: TaskManager.TasksModel.GroupDisabled
+            }
+        }
+    }
+    readonly property int hiddenWindows: counter.item ? counter.item.windows : 0
+    readonly property bool hiddenAttention: counter.item ? counter.item.attention : false
+    readonly property bool markShown: wantClosed && counter.item !== null
+        && (hiddenAttention || (cfg.indicator !== "attention" && hiddenWindows > 0))
+
     // --- opening and closing ---------------------------------------------------
 
     function toggle() { cfg.closed = !cfg.closed; }
@@ -842,9 +884,33 @@ PlasmoidItem {
                 anchors.centerIn: parent
                 width: Kirigami.Units.iconSizes.small
                 height: width
+                id: arrow
                 source: root.arrowIcon
                 active: root.arrowHovered
                 opacity: root.cfg.paused ? 0.4 : 1
+            }
+            // The mark: a dot, or the number of open programs.
+            Rectangle {
+                id: mark
+                readonly property bool counting: root.cfg.indicator === "count" && root.hiddenWindows > 0
+                visible: root.markShown
+                anchors.horizontalCenter: arrow.right
+                anchors.horizontalCenterOffset: -Math.round(arrow.width * 0.15)
+                anchors.verticalCenter: arrow.top
+                anchors.verticalCenterOffset: Math.round(arrow.height * 0.1)
+                height: Math.round(arrow.height * (counting ? 0.7 : 0.4))
+                width: counting ? Math.max(height, number.implicitWidth + Math.round(height * 0.5)) : height
+                radius: height / 2
+                color: root.hiddenAttention ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.highlightColor
+                Text {
+                    id: number
+                    visible: mark.counting
+                    anchors.centerIn: parent
+                    text: root.hiddenWindows
+                    color: Kirigami.Theme.highlightedTextColor
+                    font.pixelSize: Math.round(mark.height * 0.8)
+                    font.bold: true
+                }
             }
             MouseArea {
                 anchors.fill: parent
@@ -981,6 +1047,16 @@ TRANSLATIONS = {
         "Open when a program asks for attention": "Openen als een programma om aandacht vraagt",
         "Sliding animation": "Schuifanimatie",
         "Arrow points the other way": "Pijltje wijst de andere kant op",
+        "Mark on the closed drawer:": "Teken op een gesloten la:",
+        "A dot when programs are open": "Een stip als er programma's open zijn",
+        "The number of open programs": "Het aantal open programma's",
+        "A dot only when a program asks for attention":
+            "Alleen een stip als een programma om aandacht vraagt",
+        "Shown on the arrow while the drawer is closed and hides a task manager with all its "
+        "programs. The dot changes colour when a program asks for attention.":
+            "Staat op het pijltje zolang de la dicht is en een taakbeheer met al zijn "
+            "programma's verbergt. De stip verandert van kleur als een programma om aandacht "
+            "vraagt.",
         "Place of the arrow:": "Plaats van het pijltje:",
         "Just before the items it hides": "Direct vóór de onderdelen die het verbergt",
         "Just after the items it hides": "Direct na de onderdelen die het verbergt",
@@ -1000,6 +1076,31 @@ TRANSLATIONS = {
         "Hide the items": "Onderdelen verbergen",
         "{app} settings…": "{app}-instellingen…",
         "Paused. Click to resume": "Gepauzeerd. Klik om te hervatten",
+        # focus mode
+        "Focus mode": "Focusmodus",
+        "Focus mode tucks everything away at once and keeps it away: nothing comes back on "
+        "mouse movement or a click on the desktop. Switching it off puts everything back as "
+        "it was.":
+            "De focusmodus bergt alles in één keer op en houdt het weg: er komt niets terug "
+            "bij een muisbeweging of een klik op het bureaublad. Zet je hem uit, dan staat "
+            "alles weer zoals het was.",
+        "In focus mode": "In de focusmodus",
+        "Hide the desktop icons": "Bureaubladpictogrammen verbergen",
+        "Close the panel drawers": "Paneelladen sluiten",
+        "Set the system tray to Minimal": "Systeemvak op Minimaal zetten",
+        "Auto-hide the panel": "Paneel automatisch verbergen",
+        "Switch focus mode off": "Focusmodus uitzetten",
+        "Save and switch focus mode on": "Opslaan en focusmodus aanzetten",
+        "Focus mode is also in the tray menu, and you can give it a shortcut: System Settings → "
+        "Keyboard → Shortcuts → Add New → Application… → Tidy. A closed drawer still opens when "
+        "you click or point at its arrow.":
+            "De focusmodus staat ook in het systeemvakmenu, en je kunt er een sneltoets aan "
+            "geven: Systeeminstellingen → Toetsenbord → Sneltoetsen → Nieuwe toevoegen → "
+            "Toepassing… → Tidy. Een gesloten la gaat nog steeds open als je op het pijltje "
+            "klikt of het aanwijst.",
+        "Focus mode — everything stays away until you switch it off":
+            "Focusmodus — alles blijft weg tot je hem uitzet",
+        "{app} — focus mode": "{app} — focusmodus",
         # restore everything
         "Restore everything…": "Alles terugzetten…",
         "Restore everything?": "Alles terugzetten?",
@@ -1097,10 +1198,10 @@ TRANSLATIONS = {
         "{app} — icons hidden": "{app} — pictogrammen verborgen",
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
-        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
-        "--drawer-close | --drawer-toggle | --restore | --version]":
-            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
-            "--drawer-close | --drawer-toggle | --restore | --version]",
+        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | "
+        "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]":
+            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --focus | "
+            "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]",
         "swayidle is missing.\n\nInstall it with:\nsudo dnf install swayidle":
             "swayidle ontbreekt.\n\nInstalleer het met:\nsudo dnf install swayidle",
     },
@@ -1512,7 +1613,8 @@ class DBusAdaptor(QDBusAbstractAdaptor):
 
     @pyqtSlot()
     def Show(self):
-        self.autohide.show()
+        if not self.autohide.hold_icons:  # in focus mode the icons stay away
+            self.autohide.show()
 
     @pyqtSlot()
     def Hide(self):
@@ -1551,6 +1653,10 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     def Restore(self):
         self.autohide.restore_everything()
 
+    @pyqtSlot()
+    def Focus(self):
+        self.autohide.focus_action.toggle()
+
 
 def tray_app_items():
     """Application icons (StatusNotifierItems) currently in the system tray."""
@@ -1574,6 +1680,34 @@ def tray_app_items():
         if item_id:
             items[item_id] = get(service, path, "org.kde.StatusNotifierItem", "Title") or item_id
     return items
+
+
+def tray_minimal(config, apps):
+    """The "Minimal" choice for the system tray, as (extra, shown, hidden): only network,
+    volume and battery visible, a few indicators automatic, the rest under ^."""
+    plasmoids = list(dict.fromkeys(config["known"] + [
+        i for i in config["extra"] if i.startswith("org.kde.")]))
+    others = list(dict.fromkeys(list(apps) + [
+        i for i in config["shown"] + config["hidden"] + config["extra"] if i not in plasmoids]))
+    extra, shown, hidden = list(config["extra"]), [], []
+    for item in plasmoids + others:
+        if item in TRAY_MINIMAL_SHOWN or item in TRAY_MINIMAL_AUTO:
+            if item in TRAY_MINIMAL_SHOWN:
+                shown.append(item)
+            if item in plasmoids and item not in extra:
+                extra.append(item)
+        elif item in plasmoids and item not in config["extra"]:
+            continue  # what was already off stays off
+        else:
+            hidden.append(item)
+    return extra, shown, hidden
+
+
+def remember_tray(settings, config):
+    """Remember how the tray was before Tidy first touched it, for "Restore everything"."""
+    if not settings.value("tray_original", ""):
+        settings.setValue("tray_original", json.dumps(
+            {k: config[k] for k in ("extra", "shown", "hidden")}))
 
 
 class TrayTab(QWidget):
@@ -1691,10 +1825,7 @@ class TrayTab(QWidget):
                   if i in self.plasmoids and m != TRAY_DISABLED and i not in extra]
         shown = [i for i, m in modes.items() if m == TRAY_SHOWN]
         hidden = [i for i, m in modes.items() if m == TRAY_HIDDEN]
-        if not self.settings.value("tray_original", ""):
-            # Remember how the tray was before Tidy first touched it, for "Restore everything".
-            self.settings.setValue("tray_original", json.dumps(
-                {k: self.config[k] for k in ("extra", "shown", "hidden")}))
+        remember_tray(self.settings, self.config)
         self.plasma.set_tray_config(extra, shown, hidden)
 
 
@@ -1769,6 +1900,17 @@ class DrawerPage(QWidget):
         self.animate.setChecked(config["animate"])
         form.addRow(self.animate)
 
+        self.mark = QComboBox()
+        self.mark.addItem(tr("None"), MARK_NONE)
+        self.mark.addItem(tr("A dot when programs are open"), MARK_OPEN)
+        self.mark.addItem(tr("The number of open programs"), MARK_COUNT)
+        self.mark.addItem(tr("A dot only when a program asks for attention"), MARK_ATTENTION)
+        self.mark.setCurrentIndex(max(0, self.mark.findData(config["indicator"])))
+        self.mark.setToolTip(tr("Shown on the arrow while the drawer is closed and hides a task "
+                                "manager with all its programs. The dot changes colour when a "
+                                "program asks for attention."))
+        form.addRow(tr("Mark on the closed drawer:"), self.mark)
+
         self.reverse = QCheckBox(tr("Arrow points the other way"))
         self.reverse.setChecked(config["reverseArrow"])
         form.addRow(self.reverse)
@@ -1804,6 +1946,7 @@ class DrawerPage(QWidget):
                 "openOnAttention": self.attention.isChecked(),
                 "animate": self.animate.isChecked(),
                 "reverseArrow": self.reverse.isChecked(),
+                "indicator": self.mark.currentData(),
                 "place": self.place.currentData()}
 
     def apply(self, plasma):
@@ -1939,6 +2082,70 @@ class DrawerTab(QWidget):
             page.apply(self.plasma)
 
 
+class FocusTab(QWidget):
+    """Tab for focus mode: everything tucked away at once."""
+
+    PARTS = [("icons", "Hide the desktop icons", True),
+             ("drawers", "Close the panel drawers", True),
+             ("tray", "Set the system tray to Minimal", True),
+             ("panel", "Auto-hide the panel", False)]
+
+    def __init__(self, autohide):
+        super().__init__()
+        self.autohide = autohide
+        layout = QVBoxLayout(self)
+        intro = QLabel(tr("Focus mode tucks everything away at once and keeps it away: nothing "
+                          "comes back on mouse movement or a click on the desktop. Switching it "
+                          "off puts everything back as it was."))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        box = QGroupBox(tr("In focus mode"))
+        box_layout = QVBoxLayout(box)
+        self.boxes = {}
+        for key, text, default in self.PARTS:
+            check = QCheckBox(tr(text))
+            check.setChecked(autohide.settings.value("focus_" + key, default, bool))
+            self.boxes[key] = check
+            box_layout.addWidget(check)
+        layout.addWidget(box)
+
+        row = QHBoxLayout()
+        self.button = QPushButton()
+        self.button.clicked.connect(self.toggle)
+        row.addWidget(self.button)
+        row.addStretch()
+        layout.addLayout(row)
+
+        hint = QLabel(tr("Focus mode is also in the tray menu, and you can give it a shortcut: "
+                         "System Settings → Keyboard → Shortcuts → Add New → Application… → "
+                         "Tidy. A closed drawer still opens when you click or point at its "
+                         "arrow."))
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        layout.addWidget(hint)
+        layout.addStretch()
+        self.refresh()
+
+    def refresh(self):
+        self.button.setText(tr("Switch focus mode off") if self.autohide.focus
+                            else tr("Save and switch focus mode on"))
+
+    def save(self):
+        for key, check in self.boxes.items():
+            self.autohide.settings.setValue("focus_" + key, check.isChecked())
+
+    def toggle(self):
+        if self.autohide.focus:
+            self.autohide.set_focus(False)
+            self.refresh()
+        else:
+            # Apply the whole window first: focus mode starts from the saved settings.
+            autohide = self.autohide
+            self.window().accept()
+            QTimer.singleShot(0, lambda: autohide.set_focus(True))
+
+
 def open_donate():
     if DONATE_URL:
         QDesktopServices.openUrl(QUrl(DONATE_URL))
@@ -2023,6 +2230,9 @@ class SettingsDialog(QDialog):
         self.tray_tab = TrayTab(autohide.plasma, settings)
         tabs.addTab(self.tray_tab, QIcon.fromTheme("preferences-desktop-notification"),
                     tr("System tray"))
+        self.focus_tab = FocusTab(autohide)
+        tabs.addTab(self.focus_tab, QIcon.fromTheme("mode-focus", QIcon.fromTheme("view-hidden")),
+                    tr("Focus mode"))
         self.about_tab = AboutTab()
         tabs.addTab(self.about_tab, QIcon.fromTheme("help-about"),
                     tr("About {app}").format(app=APP_NAME))
@@ -2161,7 +2371,12 @@ class SettingsDialog(QDialog):
         a = self.autohide
         remaining = a.remaining()
         total = a.settings.value("timeout", 10, int)
-        if not a.enabled_action.isChecked():
+        if a.focus:
+            self.status_label.setText(tr("Focus mode — everything stays away until you switch "
+                                         "it off"))
+            self.bar.setValue(0)
+            self.bar.setFormat("—")
+        elif not a.enabled_action.isChecked():
             self.status_label.setText(tr("Disabled"))
             self.bar.setValue(0)
             self.bar.setFormat("—")
@@ -2192,6 +2407,8 @@ class Tidy(QObject):
         self.plasma = Plasma()
         self.kwin = KWin()
         self.hidden = False
+        self.focus = False          # focus mode: everything away, and it stays away
+        self.hold_icons = False     # in focus mode, with the desktop icons part of it
         self.idle = None
         self.idle_since = None      # moment the current stillness began
         self.desktop_active = True  # is the desktop the active window?
@@ -2205,6 +2422,7 @@ class Tidy(QObject):
         install_drawer()
 
         self.recover_after_crash()
+        self.restore_focus_state()  # crashed or logged out in focus mode: put things back
         self.showing_desktop = self.kwin.showing_desktop()
         bus = QDBusConnection.sessionBus()
         bus.connect("org.kde.KWin", "/KWin", "org.kde.KWin",
@@ -2226,6 +2444,9 @@ class Tidy(QObject):
         self.enabled_action.setChecked(self.settings.value("enabled", True, bool))
         self.enabled_action.toggled.connect(self.set_enabled)
         menu.addAction(self.enabled_action)
+        self.focus_action = QAction(menu, checkable=True)
+        self.focus_action.toggled.connect(self.set_focus)
+        menu.addAction(self.focus_action)
         settings_action = menu.addAction(QIcon.fromTheme("configure"), "", self.show_settings)
         restore_action = menu.addAction(QIcon.fromTheme("edit-undo"), "", self.ask_restore)
         about_action = menu.addAction(QIcon.fromTheme("help-about"), "",
@@ -2234,7 +2455,8 @@ class Tidy(QObject):
         menu.addSeparator()
         quit_action = menu.addAction("", self.quit)
         # English texts; retranslate() fills them in, and again when the language changes.
-        self.menu_texts = [(self.enabled_action, "Enabled"), (settings_action, "Settings…"),
+        self.menu_texts = [(self.enabled_action, "Enabled"), (self.focus_action, "Focus mode"),
+                           (settings_action, "Settings…"),
                            (restore_action, "Restore everything…"),
                            (about_action, "About {app}"), (donate_action, "♥ Donate…"),
                            (quit_action, "Quit")]
@@ -2267,7 +2489,7 @@ class Tidy(QObject):
         if active and not was:
             # Going to the desktop is activity in itself.
             self.idle_since = None
-            if self.hidden and self.mode() == MODE_ACTIVITY:
+            if self.hidden and self.mode() == MODE_ACTIVITY and not self.hold_icons:
                 self.show()
         elif not active and was and self.idle_since is None:
             # Away from the desktop: from now on the timer keeps counting.
@@ -2320,7 +2542,7 @@ class Tidy(QObject):
         self.update_icon()
         if self.settings.value("drawer_follow", False, bool):
             self.plasma.set_drawers_closed(True)
-        if self.mode() == MODE_CLICK:
+        if self.mode() == MODE_CLICK and not self.hold_icons:
             self.show_catchers()
 
     def show(self):
@@ -2352,6 +2574,72 @@ class Tidy(QObject):
     def on_plasma_restarted(self):
         if not self.hidden:
             self.recover_after_crash()
+        if not self.focus:
+            self.restore_focus_state()
+
+    # --- focus mode -----------------------------------------------------------
+
+    def set_focus(self, on):
+        """Focus mode: tuck everything away at once and keep it away until it is switched
+        off; then everything goes back to how it was."""
+        if on == self.focus:
+            return
+        if on:
+            setting = lambda key, default: self.settings.value("focus_" + key, default, bool)
+            state = {}
+            if setting("drawers", True):
+                state["drawers"] = {str(d["id"]): d["config"]["closed"]
+                                    for d in self.plasma.drawers()}
+            tray = self.plasma.tray_config() if setting("tray", True) else None
+            if tray:
+                state["tray"] = {k: tray[k] for k in ("extra", "shown", "hidden")}
+            if setting("panel", False):
+                state["panels"] = self.plasma.panel_modes()
+            # Save first, change afterwards: that way a crash can never lose anything.
+            self.settings.setValue("focus_state", json.dumps(state))
+            self.settings.sync()
+            self.focus = True
+            if "drawers" in state:
+                self.plasma.set_drawers_closed(True)
+            if tray:
+                remember_tray(self.settings, tray)
+                extra, shown, hidden = tray_minimal(tray, tray_app_items())
+                if APP not in tray["hidden"]:
+                    # Our own icon stays where it was: it is the way out of focus mode.
+                    hidden = [i for i in hidden if i != APP]
+                self.plasma.set_tray_config(extra, shown, hidden)
+            if state.get("panels"):
+                self.plasma.set_panel_modes({k: "autohide" for k in state["panels"]})
+            if setting("icons", True):
+                self.hold_icons = True
+                self.hide_catchers()  # no click on the desktop brings them back now
+                self.hide()
+        else:
+            self.focus = False
+            self.hold_icons = False
+            self.show()
+            self.restore_focus_state()
+        self.focus_action.setChecked(on)
+        self.update_icon()
+
+    def restore_focus_state(self):
+        """Put back what focus mode changed. Also after a crash or a logout in focus mode."""
+        raw = self.settings.value("focus_state", "")
+        if not raw or not self.plasma.panel_modes():
+            return  # nothing to do, or plasmashell unreachable: a later try will do it
+        try:
+            state = json.loads(raw)
+        except ValueError:
+            state = {}
+        for drawer_id, closed in state.get("drawers", {}).items():
+            self.plasma.set_drawer_config(int(drawer_id), {"closed": closed})
+        if "tray" in state:
+            tray = state["tray"]
+            self.plasma.set_tray_config(tray["extra"], tray["shown"], tray["hidden"])
+        if state.get("panels"):
+            self.plasma.set_panel_modes(state["panels"])
+        self.settings.remove("focus_state")
+        self.settings.sync()
 
     # --- catchers ---------------------------------------------------------
 
@@ -2374,13 +2662,13 @@ class Tidy(QObject):
 
     def on_catcher_click(self, button):
         chosen = self.settings.value("buttons", "left,right,middle").split(",")
-        if any(BUTTONS[k] == button for k in chosen if k in BUTTONS):
+        if any(BUTTONS[k] == button for k in chosen if k in BUTTONS) and not self.hold_icons:
             self.show()
 
     @pyqtSlot(bool)
     def on_showing_desktop(self, showing):
         self.showing_desktop = showing
-        if showing and self.hidden:
+        if showing and self.hidden and not self.hold_icons:
             self.show()
 
     # --- idle -------------------------------------------------------------
@@ -2437,13 +2725,17 @@ class Tidy(QObject):
                 if not self.counts_activity():
                     continue
                 self.idle_since = None
-                if self.hidden and (self.mode() == MODE_ACTIVITY or self.showing_desktop):
+                if self.hidden and not self.hold_icons and (self.mode() == MODE_ACTIVITY
+                                                       or self.showing_desktop):
                     self.show()
 
     # --- tray -------------------------------------------------------------
 
     def update_icon(self):
-        if not self.enabled_action.isChecked():
+        if self.focus:
+            self.tray.setIcon(QIcon.fromTheme("view-hidden"))
+            status = tr("{app} — focus mode")
+        elif not self.enabled_action.isChecked():
             pixmap = QIcon.fromTheme("view-visible").pixmap(64, QIcon.Mode.Disabled)
             self.tray.setIcon(QIcon(pixmap))
             status = tr("{app} — disabled")
@@ -2470,6 +2762,7 @@ class Tidy(QObject):
             # Drawers paused by "Restore everything" resume.
             self.plasma.set_drawer_config(None, {"paused": False})
         else:
+            self.set_focus(False)
             self.stop_idle()
             self.show()
 
@@ -2502,6 +2795,7 @@ class Tidy(QObject):
     def restore_everything(self, tray=False):
         """Put the desktop back as if Tidy were not there: everything visible, every Plasma
         setting that Tidy or a drawer changed restored, and Tidy itself switched off."""
+        self.set_focus(False)
         self.enabled_action.setChecked(False)  # stops the timer and shows the icons
         self.show()                            # also when Tidy already was off
         self.recover_after_crash()
@@ -2566,7 +2860,9 @@ class Tidy(QObject):
         self.dialog = None
 
     def apply_settings(self, dlg):
+        self.set_focus(False)  # the settings below would get mixed up with what it holds
         self.show()  # new settings take effect from now
+        dlg.focus_tab.save()
         old_corner = self.settings.value("corner", "none")
         self.settings.setValue("timeout", dlg.timeout.value())
         self.settings.setValue("mode", dlg.mode.currentData())
@@ -2600,6 +2896,7 @@ class Tidy(QObject):
     def quit(self):
         if self.dialog:
             self.dialog.reject()
+        self.set_focus(False)
         self.stop_idle()
         self.show()
         self.kwin.unload()
@@ -2617,9 +2914,9 @@ def migrate_old_config():
 
 COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--settings": "Settings",
             "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
-            "--drawer-toggle": "DrawerToggle", "--restore": "Restore"}
-USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --drawer-open | "
-         "--drawer-close | --drawer-toggle | --restore | --version]")
+            "--drawer-toggle": "DrawerToggle", "--restore": "Restore", "--focus": "Focus"}
+USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | "
+         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]")
 
 
 def main():
