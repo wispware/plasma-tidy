@@ -562,10 +562,12 @@ TRANSLATIONS = {
             "Deze pop-up zweeft boven het paneel, net als Plasma's eigen pop-ups",
         "On: the same distance from the panel as the start menu and the system tray's own "
         "pop-up. Off: against the panel, as Plasma puts it. Only a floating panel shows the "
-        "difference. Works for a task manager that is in a drawer.":
+        "difference. Works in a panel that has a drawer.":
             "Aan: dezelfde afstand tot het paneel als het startmenu en de eigen pop-up van "
-            "het systeemvak. Uit: tegen het paneel aan, zoals Plasma hem zet. Alleen bij een "
-            "zwevend paneel zie je verschil. Werkt voor een takenbeheer dat in een la zit.",
+            "het systeemvak. Uit: tegen het paneel aan, zoals Plasma het doet. Alleen bij een "
+            "zwevend paneel zie je verschil. Werkt in een paneel waar een la in zit.",
+        "Balloons float above the panel, like Plasma's own pop-ups":
+            "Ballonnen zweven boven het paneel, net als Plasma's eigen pop-ups",
         "Only the preview of the window": "Alleen het voorbeeld van het venster",
         "The arrow shows a balloon when you point at it":
             "Het pijltje toont een ballon als je het aanwijst",

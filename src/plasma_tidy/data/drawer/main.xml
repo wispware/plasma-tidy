@@ -20,6 +20,7 @@
     <entry name="taskBare" type="Bool"><default>false</default></entry>
     <entry name="taskClose" type="Bool"><default>true</default></entry>
     <entry name="taskGap" type="Bool"><default>false</default></entry>
+    <entry name="tipGap" type="Bool"><default>false</default></entry>
     <entry name="fitPanel" type="Bool"><default>false</default></entry>
     <entry name="taskKeep" type="StringList"><default></default></entry>
     <entry name="taskList" type="String"><default></default></entry>

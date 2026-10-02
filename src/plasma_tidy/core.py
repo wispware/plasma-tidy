@@ -404,7 +404,8 @@ class Tidy(QObject):
         # pop-up away, or shows it, instead. The drawers' own balloons follow Plasma's too.
         want = {"taskTips": popup != "none", "balloons": balloons, "taskBare": popup == "only",
                 "taskClose": self.settings.value("task_close", True, bool),
-                "taskGap": self.settings.value("task_gap", False, bool)}
+                "taskGap": self.settings.value("task_gap", False, bool),
+                "tipGap": self.settings.value("balloon_gap", False, bool)}
         if any(d["config"][k] != v for d in self.plasma.drawers() for k, v in want.items()):
             self.plasma.set_drawer_config(None, want)
 
@@ -422,7 +423,7 @@ class Tidy(QObject):
             self.settings.remove("tips_original")
         self.settings.setValue("task_popup", "preview" if all(
             self.plasma.task_previews().values()) else "text")
-        self.plasma.set_drawer_config(None, {"taskTips": True, "balloons": True, "taskBare": False, "taskGap": False})
+        self.plasma.set_drawer_config(None, {"taskTips": True, "balloons": True, "taskBare": False, "taskGap": False, "tipGap": False})
 
     def update_fit_panels(self):
         """Tell each drawer whether its panel is as long as its contents; it then fades
@@ -852,6 +853,7 @@ class Tidy(QObject):
         self.settings.setValue("task_popup", dlg.drawer_tab.task_popup.currentData())
         self.settings.setValue("task_close", dlg.drawer_tab.task_close.isChecked())
         self.settings.setValue("task_gap", dlg.drawer_tab.task_gap.isChecked())
+        self.settings.setValue("balloon_gap", dlg.drawer_tab.balloon_gap.isChecked())
         self.apply_tips()
         self.settings.setValue("drawer_follow", dlg.drawer_tab.follow.isChecked())
         if self.kwin_setup() != old_kwin:
@@ -1117,7 +1119,7 @@ class Tidy(QObject):
                 self.plasma.set_drawer_shortcut(saved["id"], saved["shortcut"])
         self.load_kwin()
         self.update_helpers()
-        if any(k in data.get("settings", {}) for k in ("balloons", "task_popup", "task_close", "task_gap")):
+        if any(k in data.get("settings", {}) for k in ("balloons", "task_popup", "task_close", "task_gap", "balloon_gap")):
             self.apply_tips()
         self.peek_key.set(self.settings.value("peek_key", ""))
         self.after_settings(was_hidden, setup)

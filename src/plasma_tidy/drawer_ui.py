@@ -476,6 +476,14 @@ class DrawerTab(QWidget):
             "desktop. Off: none of them appear. The pop-up of a program in the panel is "
             "chosen below, and can stay."))
         form.addRow(self.balloons)
+        self.balloon_gap = QCheckBox(tr("Balloons float above the panel, like Plasma's own pop-ups"))
+        self.balloon_gap.setChecked(autohide.settings.value("balloon_gap", False, bool))
+        self.balloon_gap.setToolTip(tr(
+            "On: the same distance from the panel as the start menu and the system tray's "
+            "own pop-up. Off: against the panel, as Plasma puts it. Only a floating panel "
+            "shows the difference. Works in a panel that has a drawer."))
+        form.addRow(self.balloon_gap)
+        self.balloons.toggled.connect(self.update_tips)
         self.task_popup = QComboBox()
         for key, label in TASK_POPUPS:
             self.task_popup.addItem(tr(label), key)
@@ -505,7 +513,7 @@ class DrawerTab(QWidget):
         self.task_gap.setToolTip(tr(
             "On: the same distance from the panel as the start menu and the system tray's "
             "own pop-up. Off: against the panel, as Plasma puts it. Only a floating panel "
-            "shows the difference. Works for a task manager that is in a drawer."))
+            "shows the difference. Works in a panel that has a drawer."))
         form.addRow(self.task_gap)
         self.task_popup.currentIndexChanged.connect(self.update_tips)
         self.update_tips()
@@ -516,6 +524,7 @@ class DrawerTab(QWidget):
     def update_tips(self):
         self.task_close.setEnabled(self.task_popup.currentData() == "only")
         self.task_gap.setEnabled(self.task_popup.currentData() != "none")
+        self.balloon_gap.setEnabled(self.balloons.isChecked())
 
     def rebuild(self, select=None):
         """Read the drawers from the panels again and show a page for each."""

@@ -153,14 +153,15 @@ Below the drawers, *All drawers: close and open together with the desktop icons*
 drawer follow Tidy's hiding and showing of the desktop icons (off by default).
 
 Under that, *Balloons and previews* is about what comes up when you point at something in the
-panel. The first two are Plasma's own settings, shown as they are now; the rest is done by a
-drawer:
+panel. The balloons switch and the pop-up with or without a preview are Plasma's own settings,
+shown as they are now; the rest is done by a drawer:
 
 | Setting | What it does |
 |---|---|
 | Plasma shows a balloon with text when you point at something | Plasma's switch for every text balloon in the panel, the system tray and on the desktop. Off: none of them appear. The pop-up of a program in the panel is the setting below, and can stay |
 | Pop-up of a program in the panel | *With a preview of the window*, *Title and text only* (both are the task manager's own setting), *Only the preview of the window* (no title or text, and the close button stays above the preview if you tick *With only the preview: keep the close button, above it*; a program that is not open has no pop-up) or *None*. Only the preview, no pop-up at all, and a pop-up while Plasma's balloons are off, are done by a drawer, so they work for a task manager that is in a drawer |
-| This pop-up floats above the panel, like Plasma's own pop-ups | On: the program's pop-up keeps the same distance from the panel as the start menu and the system tray's own pop-up. Off: against the panel, as Plasma puts it. Only a floating panel shows the difference; for a task manager that is in a drawer |
+| Balloons float above the panel, like Plasma's own pop-ups | On: the balloons of what is in the panel keep the same distance from it as the start menu and the system tray's own pop-up. Off: against the panel, as Plasma puts them. Only a floating panel shows the difference; works in a panel that has a drawer |
+| This pop-up floats above the panel, like Plasma's own pop-ups | The same for the pop-up of a program |
 
 A drawer also has a settings page of its own: right-click the arrow and choose *Configure Tidy
 Drawer*. It has the same settings except the place of the arrow, and it works when Tidy is
@@ -366,8 +367,9 @@ plasma-tidy --version   print the version
   (`plasmarc`), and the preview in a program's pop-up with the task manager's own. Plasma has
   no setting for the rest, so a drawer that holds the task manager does it, in the same way
   it hides icons: it asks for the pop-up itself when Plasma's balloons are off, keeps it away
-  for *None*, gives the title and the text no room for *Only the preview*, and sets the
-  distance to the panel while the pop-up is up. How Plasma had its settings is remembered the
+  for *None*, and gives the title and the text no room for *Only the preview*. The distance
+  to the panel is set on the one window Plasma shows all its balloons in, each time that
+  window is about to show something of a panel with a drawer. How Plasma had its settings is remembered the
   first time Tidy changes them.
 - **Rules** look at the power supply (UPower), the screens, the clock, the active window and
   virtual desktop (the KWin script) and the activity (KDE's activity manager). Tidy is told
@@ -396,8 +398,6 @@ it uses about 30 MB of memory and no processor time.
   and in once.
 - In a pop-up drawer a program shows its name at most, not a preview of its window: the
   preview comes with an icon that is in the panel itself.
-- With *Only the preview of the window*, the pop-up of a program with several windows may keep
-  some empty room above the previews.
 - Closing by itself follows the pointer inside the panel. A window preview or a menu that
   opens above the panel counts as having left the drawer.
 

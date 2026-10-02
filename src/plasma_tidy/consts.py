@@ -56,6 +56,7 @@ DRAWER_DEFAULTS = {"closed": False, "paused": False, "name": "", "targets": [],
                    "display": DISPLAY_PANEL, "popupStyle": "row", "popupBackground": True,
                    "popupGap": True, "trayArrow": "open", "arrowTip": True, "taskTips": True, "balloons": True,
                    "taskBare": False, "taskClose": True, "taskGap": False,
+                   "tipGap": False,
                    "fitPanel": False,
                    "hoverDelay": 200, "autoClose": False, "closeDelay": 2000,
                    "closeScope": SCOPE_DRAWER, "closeOnPanelClick": False,
@@ -152,10 +153,10 @@ PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,mi
                     "focus_panel": False, "tray_hide_new": False, "tray_rules": "",
                     "peek_key": "", "peek_panel": True, "balloons": True,
                     "task_popup": "preview", "task_close": True,
-                    "task_gap": False}
+                    "task_gap": False, "balloon_gap": False}
 # What a drawer is doing right now; not part of a profile.
 DRAWER_STATE = ("closed", "paused", "taskList", "fitPanel", "taskTips", "balloons", "taskBare",
-                "taskClose", "taskGap")
+                "taskClose", "taskGap", "tipGap")
 # Rules: when something is the case, use a profile or switch focus mode on.
 RULE_WHEN = [("battery", "On battery"), ("mains", "On mains power"),
              ("external", "An external screen is connected"),

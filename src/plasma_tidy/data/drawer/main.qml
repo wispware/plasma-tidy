@@ -157,7 +157,8 @@ PlasmoidItem {
                     + (g ? "/grid count" + g.count + " rows" + g.rowsOrColumns + " cell" + Math.round(g.cellWidth) + "x" + Math.round(g.cellHeight) + " size" + Math.round(g.width) + "x" + Math.round(g.height) : "")); } } return r; })(),
             taskTips: cfg.taskTips + "/" + taskHiders.filter(h => { try { return h.item.active === true; } catch (e) { return false; } }).length
                 + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
-                + (tipWindow ? tipWindow.margin : "?"),
+                + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length,
+            tipTexts: cfg.debug === "on" ? tipFind().map(a => String(a.mainText)).filter(t => t !== "") : [],
             display: cfg.display, shelf: popupMode ? (popup.visible ? "open" : "closed") + "/" + popupItems.length
                 + "/" + Math.round(popup.width) + "x" + Math.round(popup.height) : "",
             animation: animation, fitPanel: cfg.fitPanel,
@@ -463,12 +464,16 @@ PlasmoidItem {
             tipList = item.contentItem;
         for (var i = 0; i < kids.length; i++) trimWalk(kids[i], depth + 1);
     }
-    // The pop-up of a program at the same distance from the panel as Plasma's other pop-ups
-    // (the start menu, the system tray's). Plasma puts every balloon against the panel; its
-    // pop-up window takes a distance, which is set while a program's pop-up is up and taken
-    // away again after it, since all balloons share that one window.
-    property var tipWindow: null
-    property Item tipOwner: null
+    // Balloons, and the pop-up of a program, at the same distance from the panel as Plasma's
+    // other pop-ups (the start menu, the system tray's). Plasma puts them against the panel.
+    // All of them are shown by one window, which takes a distance: that is set each time
+    // the window is given something in this panel to stand at, and taken away for anything
+    // else, so that nothing outside this panel changes.
+    property var tipWindow: null      // that window, known once a balloon of this panel has shown
+    property bool tipMine: false      // the distance on it is ours
+    property Item tipOwner: null      // the program whose pop-up showed last
+    property var tipAreas: []         // what in this panel shows balloons, listened to until then
+    readonly property bool gapWanted: (cfg.tipGap || cfg.taskGap) && !cfg.paused
     function tipGap() {
         if (!panelBar) findBar();
         try {
@@ -488,29 +493,84 @@ PlasmoidItem {
     function tipUp() {
         try { return tipWindow !== null && tipWindow.visible === true && tipOwner !== null; } catch (e) { return false; }
     }
-    function tipFloat(on) {
+    function isTipWindow(w) {
+        return !!w && w.margin !== undefined && w.popupDirection !== undefined && w.visualParent !== undefined;
+    }
+    // The window is only to be had from something that is being shown in it.
+    function tipLearn() {
+        if (tipWindow) return;
+        var found = null;
+        try { if (tipDelegate && isTipWindow(tipDelegate.Window.window)) found = tipDelegate.Window.window; } catch (e) {}
+        for (var i = 0; !found && i < tipAreas.length; i++) {
+            try {
+                var w = tipAreas[i].mainItem.Window.window;
+                if (isTipWindow(w)) found = w;
+            } catch (e) {}
+        }
+        if (!found) return;
+        tipWindow = found;
+        tipListen(false);
+        tipApply();
+    }
+    // Everything in this panel that shows a balloon.
+    function tipFind() {
+        var found = [], top = root;
+        function walk(item, depth) {
+            if (!item || depth > 40) return;
+            if (item.mainText !== undefined && item.toolTipVisibleChanged !== undefined
+                    && typeof item.showToolTip === "function") found.push(item);
+            var kids = item.children;
+            for (var i = 0; i < kids.length; i++) walk(kids[i], depth + 1);
+        }
+        while (top.parent) top = top.parent;
+        try { walk(top, 0); } catch (e) {}
+        return found;
+    }
+    function tipListen(on) {
+        tipAreas.forEach(a => { try { a.toolTipVisibleChanged.disconnect(root.tipLearn); } catch (e) {} });
+        var found = (on && !tipWindow) ? tipFind() : [];
+        found.forEach(a => { try { a.toolTipVisibleChanged.connect(root.tipLearn); } catch (e) {} });
+        tipAreas = found;
+    }
+    function tipApply() {
         try {
-            if (!tipWindow && tipDelegate) {
-                var w = tipDelegate.Window.window;
-                if (w && w.margin !== undefined && w.popupDirection !== undefined) tipWindow = w;
+            if (!tipWindow) return;
+            var at = tipWindow.visualParent, mine = false, task = false;
+            if (at) {
+                mine = at.Window.window === root.Window.window;
+                task = at.inPopup !== undefined && at.smartLauncherItem !== undefined;
             }
-            if (tipWindow) tipWindow.margin = on ? tipGap() : 0;
+            var gap = (mine && !cfg.paused && !leaving && (task ? cfg.taskGap : cfg.tipGap)) ? tipGap() : 0;
+            if (gap > 0) {
+                tipMine = true;
+                if (tipWindow.margin !== gap) tipWindow.margin = gap;
+            } else if (tipMine || mine) {
+                // Not in this panel: only what this drawer set itself is taken away.
+                tipMine = false;
+                if (tipWindow.margin !== 0) tipWindow.margin = 0;
+            }
         } catch (e) {}
     }
-    // The distance stays for as long as the program's pop-up is up, also with the pointer in
-    // the pop-up itself or back on the panel. It goes when the pop-up goes, or when the
-    // window is handed something else to show: another widget's balloon.
     Connections {
         target: root.tipWindow
         ignoreUnknownSignals: true
-        function onMainItemChanged() {
-            try {
-                var shown = root.tipWindow.mainItem;
-                if (!shown || !root.tipOwner || shown === root.tipOwner.mainItem) return;
-            } catch (e) {}
-            root.tipOwner = null;
-            root.tipFloat(false);
+        function onVisualParentChanged() {
+            root.tipApply();
+            // A drawer in another panel may take its own distance away right after this, so
+            // look once more when all have had their turn.
+            if (root.tipMine) Qt.callLater(root.tipApply);
         }
+    }
+    // The widgets of the panel come one after the other when Plasma starts.
+    Timer {
+        id: tipListenSoon
+        interval: 4000
+        running: root.gapWanted && !root.tipWindow
+        onTriggered: root.tipListen(true)
+    }
+    onGapWantedChanged: {
+        if (!gapWanted) tipListen(false);
+        tipApply();
     }
     // The task manager's own close button, somewhere in this part of its pop-up.
     function findClose(item, depth) {
@@ -537,6 +597,8 @@ PlasmoidItem {
         target: root.cfg
         function onTaskBareChanged() { root.trimTips(); }
         function onTaskCloseChanged() { root.trimTips(); }
+        function onTaskGapChanged() { root.tipApply(); }
+        function onTipGapChanged() { root.tipApply(); }
     }
     property int tasksMovingCount: 0
     readonly property bool tasksMoving: tasksMovingCount > 0 || settle.running
@@ -1219,14 +1281,12 @@ PlasmoidItem {
                 function onAboutToShow() {
                     root.tipFrom(th.task);
                     root.tipOwner = th.task;
-                    root.tipFloat(root.cfg.taskGap && !root.cfg.paused);
                 }
                 function onToolTipVisibleChanged(visible) {
                     root.trimTips();
                     if (root.tipOwner !== th.task) return;
                     if (!visible) root.tipLeft = Date.now();
-                    // (The first time the pop-up's window is only known once it is up.)
-                    root.tipFloat(visible && root.cfg.taskGap && !root.cfg.paused);
+                    root.tipLearn();
                 }
             }
             // The other way round: Plasma's balloons are all off, but the pop-up of a program
@@ -1519,7 +1579,16 @@ PlasmoidItem {
             // As if a program in the pop-up were clicked: "use:<number>".
             var act = String(root.cfg.debug).split(":");
             // As if a program were pointed at with Plasma's balloons off: "tip:<number>".
-            // "tipapp:<name>": the same for the open program with that name.
+            // "tipapp:<name>": the same for the open program with that name. "tiptext:<text>":
+            // the balloon in this panel that has that text in its title.
+            if (act[0] === "tiptext")
+                root.tipFind().some(a => {
+                    try {
+                        if (String(a.mainText).indexOf(act[1]) < 0) return false;
+                        a.showToolTip();
+                        return true;
+                    } catch (e) { return false; }
+                });
             if (act[0] === "tipapp")
                 root.taskHiders.forEach(h => {
                     try {
@@ -1570,6 +1639,8 @@ PlasmoidItem {
             if (manager) manager.release();
         }
         leaving = true;
+        tipListen(false);
+        tipApply();
         syncFill();
         var saved = loadSaved("savedLaunchers");
         siblings.forEach(s => {
