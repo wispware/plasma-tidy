@@ -387,8 +387,29 @@ plasma-tidy --version   print the version
 - **The peek key** is a global shortcut registered with KDE, which reports both the press
   and the release.
 
-Tidy needs no root access and changes nothing outside your own Plasma configuration. At rest
-it uses about 25 MB of memory and no processor time.
+Tidy needs no root access and changes nothing outside your own Plasma configuration.
+
+## How light it is
+
+Measured on Fedora 44 with Plasma 6.7 (memory is PSS, what Tidy really adds to the system):
+
+| | |
+|---|---|
+| Memory, running in the background | about 24 MB |
+| Memory with the settings window open | about 62 MB |
+| Memory after the settings window was open | about 36 MB, until Tidy is started again |
+| Processor at rest (icons hidden, or you are working in another window) | none: no processor time and not a single wake-up in a minute |
+| Hiding and showing the icons once | less than a hundredth of a second of processor time |
+| Start-up | well under a second |
+| Size | one file of 0.8 MB, plus Python and PyQt6 from your distribution |
+
+Tidy does not poll. It sleeps until something happens (a signal from KWin, Plasma or the idle
+watcher) or until the moment the icons are due to hide. `swayidle` only runs while its answer
+matters, and the KWin script looks at the pointer at most twice a second.
+
+The drawers and the helper on the desktop are widgets and run inside Plasma itself, so their
+share cannot be measured apart from Plasma's. They are event-driven too: nothing in them runs
+on a timer while nothing changes.
 
 ## Limitations
 

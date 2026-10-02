@@ -30,6 +30,18 @@ from .welcome import Welcome
 from .widgets import drawer_texts, install_drawer, stored
 
 
+def give_back_memory():
+    """The settings window is gone: hand the memory it used back to the system. Python and
+    the C library keep freed memory for later use by themselves; Tidy has no later use."""
+    import ctypes
+    import gc
+    gc.collect()
+    try:
+        ctypes.CDLL(None).malloc_trim(0)
+    except (OSError, AttributeError):
+        pass  # another C library than glibc: nothing to do
+
+
 class Tidy(QObject):
     def __init__(self, app):
         super().__init__()
@@ -823,6 +835,7 @@ class Tidy(QObject):
         self.dialog.deleteLater()
         self.dialog = None
         self.rules_changed()
+        QTimer.singleShot(1500, give_back_memory)
 
     def hidden_setup(self):
         """The settings that decide what exactly is hidden while the icons are hidden."""
