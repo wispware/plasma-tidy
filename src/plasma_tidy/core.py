@@ -14,6 +14,7 @@ from PyQt6.QtGui import QAction, QIcon, QKeySequence
 from PyQt6.QtWidgets import QCheckBox, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from .catcher import Catcher
+from .checks import Checks
 from .consts import (APP, APP_NAME, AUTOSTART, BUTTONS, CLICKS_DOUBLE, CLICKS_SINGLE, DATA_DIR,
                      DONATE_URL, DRAWER_DEFAULTS, DRAWER_STATE, EMPTY_DIR, EMPTY_URL, IDLE_LINK,
                      IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PROFILE_SETTINGS,
@@ -76,6 +77,9 @@ class Tidy(QObject):
         self.vdesktop_names = []
         os.makedirs(EMPTY_DIR, exist_ok=True)
         install_drawer()
+        self.checks = Checks()
+        self.check_timer = QTimer(self, interval=8000, singleShot=True)
+        self.check_timer.timeout.connect(self.review_checks)
 
         self.restore_peek_panels()  # crashed while peeking: the panel back to how it was
         self.recover_after_crash()
@@ -489,6 +493,34 @@ class Tidy(QObject):
             self.recover_after_crash()
         if not self.focus:
             self.restore_focus_state()
+
+    # --- looking at itself ----------------------------------------------------
+
+    def on_check(self, kind, key, text):
+        try:
+            found = json.loads(text)
+        except ValueError:
+            return
+        self.checks.take(kind, key, found)
+        self.check_timer.start()  # all reports in, then one look
+
+    def plasma_version(self):
+        return self.plasma.run("print(applicationVersion);").strip()
+
+    def review_checks(self):
+        """Say once, per Plasma version, what does not work in it. Nothing when all is well."""
+        version = self.plasma_version()
+        text = self.checks.notice(version)
+        told = version + "|" + ",".join(self.checks.problems()) if text else ""
+        if told == self.settings.value("checks_told", ""):
+            return
+        self.settings.setValue("checks_told", told)
+        if text and getattr(self, "tray", None):
+            self.tray.showMessage(APP_NAME, text, QSystemTrayIcon.MessageIcon.Warning, 20000)
+
+    def check_report(self):
+        names = {str(d["id"]): d["config"].get("name", "") for d in self.plasma.drawers()}
+        return self.checks.report(VERSION, self.plasma_version(), names)
 
     # --- focus mode -----------------------------------------------------------
 

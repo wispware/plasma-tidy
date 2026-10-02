@@ -22,7 +22,7 @@ COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--setting
             "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
             "--drawer-toggle": "DrawerToggle", "--restore": "Restore", "--focus": "Focus"}
 USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]")
+         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --version]")
 
 
 def migrate_old_config():
@@ -39,12 +39,29 @@ def pass_on(bus, command):
     bus.call(QDBusMessage.createMethodCall(DBUS_NAME, "/", DBUS_NAME, command or "Settings"))
 
 
+def check():
+    """Print what works of what Tidy reaches into, as the running Tidy has been told."""
+    bus = QDBusConnection.sessionBus()
+    if not bus.interface().isServiceRegistered(DBUS_NAME).value():
+        print(tr("Tidy is not running. Start it, wait a few seconds, and try again."),
+              file=sys.stderr)
+        return 1
+    reply = bus.call(QDBusMessage.createMethodCall(DBUS_NAME, "/", DBUS_NAME, "Check"))
+    if reply.type() != QDBusMessage.MessageType.ReplyMessage or not reply.arguments():
+        print(tr("Tidy did not answer."), file=sys.stderr)
+        return 1
+    print(reply.arguments()[0])
+    return 0
+
+
 def main():
     command = None
     for arg in sys.argv[1:]:
         if arg == "--version":
             print(f"{APP_NAME} (plasma-tidy) {VERSION}")
             return 0
+        if arg == "--check":
+            return check()
         if arg in COMMANDS:
             command = COMMANDS[arg]
         else:

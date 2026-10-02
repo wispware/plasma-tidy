@@ -73,6 +73,8 @@ PlasmoidItem {
             tidyLink = Qt.createQmlObject('import QtQuick; import org.kde.plasma.workspace.dbus as DBus; '
                 + 'QtObject { id: link; property string name: "io.github.wispware.PlasmaTidy"; '
                 + 'property bool runs: watch.registered; signal peek(bool on); signal desktop(); signal menu(bool on); '
+                + 'function call(member, args) { DBus.SessionBus.asyncCall({"service": name, "path": "/", '
+                + '"iface": name, "member": member, "arguments": args}); } '
                 + 'signal panelGone(string screen, string edge); '
                 + 'property var watch: DBus.DBusServiceWatcher { busType: DBus.BusType.Session; '
                 + 'watchedService: link.name } '
@@ -93,6 +95,7 @@ PlasmoidItem {
             // Tidy gone in the middle of a peek: it is over. And nothing is known of menus.
             tidyLink.runsChanged.connect(() => {
                 if (!tidyLink.runs) { root.peeking = false; root.menuOpen = false; }
+                else { root.lastCheck = ""; checkTimer.restart(); }  // a new Tidy hears it all
             });
             tidyLink.desktop.connect(() => {
                 if (root.cfg.openOnDesktop && root.cfg.closed && !root.cfg.paused)
@@ -192,7 +195,7 @@ PlasmoidItem {
             taskTips: cfg.taskTips + "/" + taskHiders.filter(h => { try { return h.item.active === true; } catch (e) { return false; } }).length
                 + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
                 + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length, tipShowing: tipShowing,
-            menus: taskMenuOpen + "/" + menuOpen, panel: Screen.name + "/" + panelEdge, closing: closeTimer.running,
+            menus: taskMenuOpen + "/" + menuOpen, panel: Screen.name + "/" + panelEdge, check: lastCheck, closing: closeTimer.running,
             slim: slim + "/room " + room + (container && !container.visible ? "/out of the panel" : "")
                 + "/shortcut " + hasShortcut,
             tipTexts: cfg.debug === "on" ? tipFind().map(a => String(a.mainText)).filter(t => t !== "") : [],
@@ -484,6 +487,7 @@ PlasmoidItem {
         trimTips();
     }
     property bool tipsTouched: false  // something in the pop-up is changed and must be put back
+    property string trimSeen: ""      // for the look at itself: "ok", "missing", or not tried yet
     function trimTips() {
         tipsTrimmed = 0;
         // Nothing asked and nothing to put back: the pop-up is left alone.
@@ -492,6 +496,10 @@ PlasmoidItem {
             if (tipDelegate && tipDelegate.item) trimWalk(tipDelegate.item, 0);
         } catch (e) {}
         tipsTouched = tipsTrimmed > 0;
+        try {
+            if (cfg.taskBare && tipDelegate && tipDelegate.item && tipDelegate.isWin === true)
+                trimSeen = tipsTrimmed > 0 ? "ok" : "missing";
+        } catch (e) {}
     }
     function trimWalk(item, depth) {
         if (!item || depth > 6) return;
@@ -707,6 +715,37 @@ PlasmoidItem {
         ownWindows = n;
         listPopup.restart();
     }
+
+    // --- a look at itself ----------------------------------------------------------------
+
+    // What the drawer reaches into in Plasma, and whether it found it: told to Tidy, which
+    // says once what does not work in a new Plasma. A part that is not found is simply not
+    // used, so nothing half works.
+    property string lastCheck: ""
+    function selfCheck() {
+        var has = ok => ok ? "ok" : "missing";
+        var trays = wholeTargets.filter(s => s.plugin === "org.kde.plasma.systemtray");
+        var found = {
+            panel: has(container !== null),
+            tasks: !taskManagers.length ? "unused" : has(taskManagers.every(s => {
+                try { return s.item.applet.taskList !== undefined && s.item.applet.tasksModel !== undefined; }
+                catch (e) { return false; }
+            })),
+            tray: !trays.length ? "unused" : has(trays.every(s => s.tray !== null)),
+            popup: !cfg.taskBare ? "unused" : (trimSeen || "not yet seen"),
+            gap: !gapWanted ? "unused" : (tipWindow ? "ok" : "not yet seen")
+        };
+        var text = JSON.stringify(found);
+        if (text === lastCheck || !tidyLink || !tidyLink.runs) return;
+        lastCheck = text;
+        try { tidyLink.call("DrawerCheck", [String(Plasmoid.id), text]); } catch (e) {}
+    }
+    // Looked at a while after anything it depends on changed (the system tray, for one,
+    // builds its inside late), and never on a clock.
+    readonly property string checkKey: [container !== null, taskManagers.length, wholeTargets.length,
+        siblings.length, cfg.taskBare, gapWanted, tipWindow !== null, trimSeen].join("/")
+    onCheckKeyChanged: checkTimer.restart()
+    Timer { id: checkTimer; interval: 6000; onTriggered: root.selfCheck() }
 
     // --- the pop-up ---------------------------------------------------------------------
 

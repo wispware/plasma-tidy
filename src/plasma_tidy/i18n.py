@@ -435,9 +435,39 @@ TRANSLATIONS = {
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
         "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-        "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]":
+        "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --version]":
             "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-            "--drawer-open | --drawer-close | --drawer-toggle | --restore | --version]",
+            "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --version]",
+        "the drawers": "de laden",
+        "hiding programs in a drawer": "programma's in een la verbergen",
+        "the system tray in a drawer": "het systeemvak in een la",
+        "only the preview in a program's pop-up": "alleen het voorbeeld in de pop-up van een programma",
+        "pop-ups and balloons floating above the panel": "pop-ups en ballonnen die boven het paneel zweven",
+        "the desktop helper": "de bureaubladhelper",
+        "hiding the widgets on the desktop": "de widgets op het bureaublad verbergen",
+        "the double-click on the desktop": "de dubbelklik op het bureaublad",
+        "knowing which window is in front": "weten welk venster vooraan staat",
+        "the pointer over the desktop counting": "de muis boven het bureaublad laten meetellen",
+        "drawers staying open under a menu": "laden die open blijven onder een menu",
+        "drawers closing when the panel hides": "laden die sluiten als het paneel verdwijnt",
+        "works": "werkt",
+        "does not work in this version": "werkt niet in deze versie",
+        "not in use": "niet in gebruik",
+        "not seen yet": "nog niet gezien",
+        "Plasma {version} is new to Tidy in some places. These parts are switched off: {parts}. "
+        "Everything else works as before. In a terminal, plasma-tidy --check tells more.":
+            "Plasma {version} is op een paar plekken nieuw voor Tidy. Deze onderdelen staan "
+            "uit: {parts}. Al het andere werkt zoals altijd. In een terminal vertelt "
+            "plasma-tidy --check meer.",
+        "Tidy {version} on Plasma {plasma}": "Tidy {version} op Plasma {plasma}",
+        "has not reported (yet)": "heeft (nog) niets gemeld",
+        "KWin script": "KWin-script",
+        "Desktop helper on desktop {id}": "Bureaubladhelper op bureaublad {id}",
+        "Desktop helper": "Bureaubladhelper",
+        "Drawer: {name}": "La: {name}",
+        "Tidy is not running. Start it, wait a few seconds, and try again.":
+            "Tidy draait niet. Start het, wacht een paar seconden en probeer het opnieuw.",
+        "Tidy did not answer.": "Tidy gaf geen antwoord.",
         "for example: discord":
             "bijvoorbeeld: discord",
         "Remove this rule":

@@ -99,3 +99,16 @@ function trackPanel(w) {
 }
 workspace.windowList().forEach(trackPanel);
 workspace.windowAdded.connect(trackPanel);
+
+// What of all this KWin still has: told once, for Tidy's look at itself.
+(function () {
+    var has = function (ok) { return ok ? "ok" : "missing"; };
+    var windows = workspace.windowList();
+    var dock = windows.filter(function (w) { return w.dock; })[0];
+    callDBus("%(name)s", "/", "%(name)s", "KWinCheck", JSON.stringify({
+        active: has("activeWindow" in workspace && workspace.windowActivated !== undefined),
+        pointer: has(typeof workspace.windowAt === "function" && "cursorPos" in workspace),
+        menus: has(windows.length > 0 && "popupWindow" in windows[0]),
+        panels: dock ? has("hidden" in dock && dock.hiddenChanged !== undefined) : "unused"
+    }));
+})();

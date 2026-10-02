@@ -337,6 +337,7 @@ plasma-tidy --drawer-open    open the panel drawers
 plasma-tidy --drawer-close   close the panel drawers
 plasma-tidy --drawer-toggle  close them if one is open, otherwise open them
 plasma-tidy --restore   restore everything and switch Tidy off (does not touch the tray)
+plasma-tidy --check     tell which parts work in this Plasma (see Limitations)
 plasma-tidy --version   print the version
 ```
 
@@ -422,9 +423,12 @@ on a timer while nothing changes.
   written to disk each time the icons go and come.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
 - The drawer and the helper on the desktop depend on how Plasma builds its panel, task
-  manager and desktop, which is not a public interface. They are tested with Plasma 6.7. If a
-  Plasma update changes these, the drawer stops hiding things, or Tidy falls back on hiding
-  the icons its other way (without fading and the double-click); nothing is lost.
+  manager and desktop, which is not a public interface. They are tested with Plasma 6.7.
+  Tidy keeps an eye on this itself: the widgets and the KWin script tell Tidy whether they
+  find what they reach into. A part that is not there any more is switched off rather than
+  half working (the icons are then hidden the safe way, without fading and the double-click),
+  and Tidy says once, in a notification, which parts that are in this Plasma version.
+  `plasma-tidy --check` lists every part and whether it works.
 - A new version of the helper, like the drawer, is picked up when Plasma starts.
 - A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
   and in once.

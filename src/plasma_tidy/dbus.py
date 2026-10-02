@@ -56,6 +56,23 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     def PanelHidden(self, screen, edge):
         self.PanelGone.emit(screen, edge)
 
+    # What the widgets and the KWin script find of what they reach into.
+    @pyqtSlot(str, str)
+    def DrawerCheck(self, drawer, found):
+        self.autohide.on_check("drawer", drawer, found)
+
+    @pyqtSlot(str, str)
+    def HelperCheck(self, desktop, found):
+        self.autohide.on_check("helper", desktop, found)
+
+    @pyqtSlot(str)
+    def KWinCheck(self, found):
+        self.autohide.on_check("kwin", "", found)
+
+    @pyqtSlot(result=str)
+    def Check(self):
+        return self.autohide.check_report()
+
     @pyqtSlot(str, bool)
     def ActiveWindow(self, name, fullscreen):
         self.autohide.on_active_window(name, fullscreen)

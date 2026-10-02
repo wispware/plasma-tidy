@@ -69,6 +69,7 @@ PlasmoidItem {
             hops++;
         }
         if (++tries < 10) look.restart();
+        else connect();  // not found: Tidy hears that too (see check())
     }
     Timer { id: look; interval: 700; onTriggered: root.find() }
     onParentChanged: look.restart()
@@ -111,6 +112,17 @@ PlasmoidItem {
     function ready() {
         if (bus && bus.runs && icons)
             bus.call("HelperReady", [String(Plasmoid.containment.id)]);
+        check();
+    }
+    // What the helper found of the desktop it reaches into, for Tidy's look at itself.
+    function check() {
+        if (!bus || !bus.runs) return;
+        var has = ok => ok ? "ok" : "missing";
+        bus.call("HelperCheck", [String(Plasmoid.containment.id), JSON.stringify({
+            icons: has(icons !== null),
+            widgets: has(layout !== null),
+            view: icons ? has(icons.view !== undefined && icons.view !== null) : "unused"
+        })]);
     }
     function told(text) {
         try { wish = JSON.parse(text); } catch (e) { wish = ({}); }
