@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# The single file that build.py makes out of src/
+/plasma-tidy

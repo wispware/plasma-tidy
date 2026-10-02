@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="closed" type="Bool"><default>false</default></entry>
+    <entry name="paused" type="Bool"><default>false</default></entry>
+    <entry name="name" type="String"><default></default></entry>
+    <entry name="targets" type="StringList"><default></default></entry>
+    <entry name="taskMode" type="String"><default>all</default></entry>
+    <entry name="taskKeep" type="StringList"><default></default></entry>
+    <entry name="taskList" type="String"><default></default></entry>
+    <entry name="openOn" type="String"><default>click</default></entry>
+    <entry name="hoverDelay" type="Int"><default>200</default></entry>
+    <entry name="autoClose" type="Bool"><default>false</default></entry>
+    <entry name="closeDelay" type="Int"><default>2000</default></entry>
+    <entry name="closeScope" type="String"><default>drawer</default></entry>
+    <entry name="closeOnPanelClick" type="Bool"><default>false</default></entry>
+    <entry name="openOnPanelClick" type="Bool"><default>false</default></entry>
+    <entry name="closeAfterUse" type="Bool"><default>false</default></entry>
+    <entry name="closeOnMaximized" type="Bool"><default>false</default></entry>
+    <entry name="openOnDesktop" type="Bool"><default>false</default></entry>
+    <entry name="icon" type="String"><default>arrow</default></entry>
+    <entry name="iconCustom" type="String"><default></default></entry>
+    <entry name="uiTexts" type="String"><default>{}</default></entry>
+    <entry name="openOnAttention" type="Bool"><default>true</default></entry>
+    <entry name="animation" type="String"><default>slide</default></entry>
+    <entry name="animationDuration" type="Int"><default>250</default></entry>
+    <entry name="activePlace" type="String"><default>fixed</default></entry>
+    <entry name="reverseArrow" type="Bool"><default>false</default></entry>
+    <entry name="indicator" type="String"><default>open</default></entry>
+    <entry name="place" type="String"><default>before</default></entry>
+    <entry name="savedLaunchers" type="String"><default>{}</default></entry>
+    <entry name="savedFill" type="String"><default>{}</default></entry>
+    <entry name="tidyCommand" type="String"><default></default></entry>
+    <entry name="textOpen" type="String"><default>Show the hidden items</default></entry>
+    <entry name="textClose" type="String"><default>Hide the items</default></entry>
+    <entry name="textSettings" type="String"><default>Tidy settings…</default></entry>
+    <entry name="textPaused" type="String"><default>Paused. Click to resume</default></entry>
+    <entry name="debug" type="String"><default></default></entry>
+  </group>
+</kcfg>

@@ -38,11 +38,13 @@ sudo dnf install python3-pyqt6 swayidle
 
 git clone https://github.com/wispware/plasma-tidy.git
 cd plasma-tidy
+./build.py
 install -Dm755 plasma-tidy ~/.local/bin/plasma-tidy
 install -Dm644 data/plasma-tidy.desktop ~/.local/share/applications/plasma-tidy.desktop
 ```
 
-`~/.local/bin` must be on your `PATH` (it is by default on Fedora). Start **Tidy** from the
+`./build.py` packs the code in `src/` into the single file `plasma-tidy`; that file is all
+there is to install. `~/.local/bin` must be on your `PATH` (it is by default on Fedora). Start **Tidy** from the
 application menu, or run `plasma-tidy`. To have it start when you log in, tick
 *Start at login* in the settings.
 
@@ -72,10 +74,11 @@ change something.
 | Screen corner shows | Moving the mouse into this corner shows the icons | none |
 | Activity in other windows doesn't count | The icons hide behind the window you're working in: what you type or do there does not postpone hiding. Moving the mouse over the desktop itself always does | on |
 | Moving over the panel does count | With the setting above: moving the mouse over the panel keeps the icons too, like moving over the desktop | on |
-| A double-click on an empty spot of the desktop hides the icons | Hides them at once, without waiting for the timer; uses the helper widget on the desktop | off |
+| Hide with a helper widget on the desktop (lighter) | An invisible widget on the desktop makes the icons go and come: at once, without extra memory and without writing to disk. Off: Tidy swaps the desktop's folder for an empty one instead, which needs nothing inside Plasma. See *How it works* | on |
+| A double-click on an empty spot of the desktop hides the icons | Hides them at once, without waiting for the timer; needs the helper widget | off |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
-| Also hide the widgets on the desktop | Clocks, notes and other widgets on the desktop go and come with the icons. With widgets on the desktop, a list below it lets you choose per widget: without a tick it stays in view. Uses the helper widget on the desktop | off, all widgets |
-| Fade the icons in and out | The icons fade away and back instead of switching at once, in the time you set; uses an invisible helper widget on the desktop | off, 300 ms |
+| Also hide the widgets on the desktop | Clocks, notes and other widgets on the desktop go and come with the icons. With widgets on the desktop, a list below it lets you choose per widget: without a tick it stays in view. Needs the helper widget | off, all widgets |
+| Fade the icons in and out | The icons fade away and back instead of switching at once, in the time you set; needs the helper widget | off, 300 ms |
 | Hide the icons on | With more than one screen: the screens whose icons are hidden; the others keep theirs | every screen |
 
 *Show desktop* (Meta+D) always brings the icons back.
@@ -295,49 +298,59 @@ plasma-tidy --version   print the version
 
 ## How it works
 
-- **Hiding** points the desktop's Folder View at an empty folder. The original folder is
-  saved first and put back when the icons are shown, when you quit Tidy, when you log out,
-  and (after a crash) the next time Tidy starts.
-- **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol. Tidy does
-  not poll: it sleeps until something happens, or until the moment the icons are due to hide.
-- **Whose activity counts** comes from the same KWin script: it tells Tidy whether the desktop
-  is the active window, and when the pointer moves over the desktop while another window is
-  the active one. It never sees what you type or click.
-- **Click to show** puts an invisible window on each screen, just above the desktop and below
-  everything else. A small KWin script, loaded while Tidy runs, keeps it there, keeps it out
-  of the task switcher, and handles the screen corner.
+- **Hiding** is done by a helper: a small, invisible widget that Tidy puts on each desktop.
+  Tidy tells it over the session bus (D-Bus) that the icons should go or come, and the helper
+  makes the layer of icons see-through and unreachable, with a fade if you like, and the
+  desktop's widgets with it. Nothing is written to Plasma's settings for this and the folder
+  is not reloaded, so it is instant. While the icons are away the helper catches the click
+  that brings them back; a click with a button you did not choose does what it always did.
+  When Tidy stops, the helper shows everything again by itself.
+- **Without the helper** (switched off, or a Plasma in which it does not work) Tidy hides the
+  other way: it points the desktop's Folder View at an empty folder and lays an invisible
+  window over the desktop for your click. The original folder is saved first and put back
+  when the icons are shown, when you quit Tidy, when you log out, and (after a crash) the
+  next time Tidy starts. This way needs nothing inside Plasma, but it reloads the desktop,
+  writes to its settings each time, and the window costs about 20 MB while the icons are
+  hidden. Fading, hiding desktop widgets and the double-click are not available this way.
+- **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol. It only
+  runs while it is needed: with the icons in view, or when movement is what brings them
+  back. Tidy does not poll: it sleeps until something happens, or until the moment the icons
+  are due to hide.
+- **A small KWin script**, loaded while Tidy runs, tells Tidy whether the desktop is the
+  active window, and when the pointer moves over the desktop while another window is the
+  active one. It also handles the screen corner. It only tells changes, and it never sees
+  what you type or click.
 - **The drawer** is a small Plasma widget that ships inside Tidy and is written to
   `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
   widget, so the drawer reaches into the panel's layout and makes its neighbours invisible; in
   a task manager it does that per icon. It changes one setting of a task manager, and only
   when you ask for it: with the arrow *just after* the task manager it switches off *Fill
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
-  drawer keeps working when Tidy is not running; Tidy is only needed to change its settings.
-- **Fading the icons, hiding desktop widgets and the double-click** need something inside
-  Plasma as well: a helper widget that Tidy puts on each desktop when one of these is switched
-  on, and takes away again. It is invisible. It changes how see-through the layer of icons
-  and the desktop's widgets are, and tells Tidy when an empty spot of the desktop is
-  double-clicked. Hiding itself works as described above.
+  drawer keeps working when Tidy is not running; Tidy is only needed to change its settings,
+  for a peek and for opening when the desktop is shown.
 - **Rules** look at the power supply (UPower), the screens, the clock, the active window and
   virtual desktop (the KWin script) and the activity (KDE's activity manager). Tidy is told
   when one of these changes; it does not keep checking.
 - **The peek key** is a global shortcut registered with KDE, which reports both the press
   and the release.
 
-Tidy needs no root access and changes nothing outside your own Plasma configuration.
+Tidy needs no root access and changes nothing outside your own Plasma configuration. At rest
+it uses about 30 MB of memory and no processor time.
 
 ## Limitations
 
 - Plasma 6 on Wayland only.
 - A program for a rule is chosen from the programs that were in front since Tidy started, or
   typed by its window class.
-- Hiding reloads the desktop's Folder View, so Tidy postpones it while a menu is open or the
-  desktop is in edit mode.
+- Tidy postpones hiding while a menu is open or the desktop is in edit mode.
+- With *Also hide the panel*, the panel's visibility is a Plasma setting, so that is still
+  written to disk each time the icons go and come.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
 - The drawer and the helper on the desktop depend on how Plasma builds its panel, task
   manager and desktop, which is not a public interface. They are tested with Plasma 6.7. If a
-  Plasma update changes these, the drawer stops hiding things, the icons stop fading or the
-  double-click stops working; nothing is lost, your widgets simply stay visible.
+  Plasma update changes these, the drawer stops hiding things, or Tidy falls back on hiding
+  the icons its other way (without fading and the double-click); nothing is lost.
+- A new version of the helper, like the drawer, is picked up when Plasma starts.
 - A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
   and in once.
 - Closing by itself follows the pointer inside the panel. A window preview or a menu that
@@ -357,9 +370,9 @@ or run `plasma-tidy --restore`.
 
 ## Uninstall
 
-Remove your drawers in the *Panel* tab, switch off the three options that use the helper
-widget (fading, hiding desktop widgets, the double-click), clear the peek key, and quit Tidy
-from the tray menu, so your panel and desktop are as they were. Then:
+Remove your drawers in the *Panel* tab, switch off *Hide with a helper widget on the
+desktop*, clear the peek key, and quit Tidy from the tray menu, so your panel and desktop are
+as they were. Then:
 
 ```sh
 rm ~/.local/bin/plasma-tidy
@@ -369,6 +382,25 @@ rm -rf ~/.config/plasma-tidy ~/.local/share/plasma-tidy
 rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.drawer
 rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.fade
 ```
+
+## Development
+
+The code is in `src/plasma_tidy/`: the program in Python, the two Plasma widgets and the KWin
+script as files of their own in `data/`. `./build.py` packs it all into the single file
+`plasma-tidy` (a Python zipapp). To run from the source without building:
+
+```sh
+PYTHONPATH=src python3 -m plasma_tidy
+```
+
+The tests need nothing but Python and PyQt6:
+
+```sh
+python3 -m unittest
+```
+
+They cover when the icons hide and what postpones that, the rules, what the helper is told,
+the translations (every text has one), and that every name the code uses exists.
 
 ## Feedback
 
