@@ -349,7 +349,7 @@ plasma-tidy --version   print the version
   hidden. Fading, hiding desktop widgets and the double-click are not available this way.
 - **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol. It only
   runs while it is needed: with the icons in view, or when movement is what brings them
-  back. Tidy does not poll: it sleeps until something happens, or until the moment the icons
+  back, and not while you work in another window and that does not count. Tidy does not poll: it sleeps until something happens, or until the moment the icons
   are due to hide.
 - **A small KWin script**, loaded while Tidy runs, tells Tidy whether the desktop is the
   active window, and when the pointer moves over the desktop while another window is the
@@ -378,7 +378,7 @@ plasma-tidy --version   print the version
   and the release.
 
 Tidy needs no root access and changes nothing outside your own Plasma configuration. At rest
-it uses about 30 MB of memory and no processor time.
+it uses about 25 MB of memory and no processor time.
 
 ## Limitations
 
@@ -398,8 +398,10 @@ it uses about 30 MB of memory and no processor time.
   and in once.
 - In a pop-up drawer a program shows its name at most, not a preview of its window: the
   preview comes with an icon that is in the panel itself.
-- Closing by itself follows the pointer inside the panel. A window preview or a menu that
-  opens above the panel counts as having left the drawer.
+- Closing by itself follows the pointer inside the panel. The pop-up of a program in the
+  drawer counts as the drawer, and so does an open menu: the drawer stays until it is gone.
+  Tidy tells the drawer of menus; without Tidy running only the menu of a program in the
+  drawer is known.
 
 ## Troubleshooting
 

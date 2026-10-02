@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The small things: tray rules, the warning for a bare key, reading a drawer's settings."""
 
+import tempfile
 import unittest
 from unittest import mock
 
@@ -11,7 +12,7 @@ from PyQt6.QtGui import QKeySequence
 
 from plasma_tidy.consts import TRAY_HIDDEN, TRAY_SHOWN
 from plasma_tidy.peek import bare_key
-from plasma_tidy.plasma import plasma_balloons, set_plasma_balloons
+from plasma_tidy.plasma import config_value, plasma_balloons, set_plasma_balloons
 from plasma_tidy.tray import tray_minimal, tray_rule_mode
 from plasma_tidy.widgets import drawer_value
 
@@ -66,29 +67,35 @@ class Balloons(unittest.TestCase):
     """Plasma's own switch for its text balloons: no delay above zero means off."""
 
     def read(self, text):
-        with mock.patch("plasma_tidy.plasma.subprocess.run") as run:
-            run.return_value.stdout = text
+        with mock.patch("plasma_tidy.plasma.plasmarc_delay", return_value=text):
             return plasma_balloons()
 
-    def test_nothing_set_is_on(self):
-        self.assertTrue(self.read("\n"))
-
     def test_a_delay_is_on_and_none_or_below_zero_is_off(self):
-        self.assertTrue(self.read("700\n"))
-        self.assertTrue(self.read("0,3\n"))
-        self.assertFalse(self.read("0\n"))
-        self.assertFalse(self.read("-1\n"))
+        self.assertTrue(self.read("700"))
+        self.assertTrue(self.read("0,3"))
+        self.assertFalse(self.read("0"))
+        self.assertFalse(self.read("-1"))
 
     def test_nonsense_is_on(self):
-        self.assertTrue(self.read("soon\n"))
+        self.assertTrue(self.read("soon"))
+
+    def test_reading_the_settings_file(self):
+        with tempfile.NamedTemporaryFile("w", suffix="rc") as f:
+            f.write("[Other]\nDelay=5\n\n[PlasmaToolTips]\nDelay=-1\n\n[Theme]\nname=x\n")
+            f.flush()
+            self.assertEqual(config_value(f.name, "PlasmaToolTips", "Delay"), "-1")
+            self.assertEqual(config_value(f.name, "Theme", "name"), "x")
+            self.assertIsNone(config_value(f.name, "Theme", "Delay"))
+        self.assertIsNone(config_value("/nonexistent/plasmarc", "PlasmaToolTips", "Delay"))
 
     def test_on_removes_the_setting_and_off_writes_it(self):
-        with mock.patch("plasma_tidy.plasma.subprocess.run") as run:
+        with mock.patch("plasma_tidy.plasma.QProcess") as process:
+            start = process.return_value.start
             set_plasma_balloons(True)
-            self.assertEqual(run.call_args[0][0][-1], "--delete")
+            self.assertEqual(start.call_args[0][1][-1], "--delete")
             set_plasma_balloons(False)
-            self.assertEqual(run.call_args[0][0][-2:], ["--", "-1"])
-            self.assertIn("--notify", run.call_args[0][0])  # or Plasma only sees it after a restart
+            self.assertEqual(start.call_args[0][1][-2:], ["--", "-1"])
+            self.assertIn("--notify", start.call_args[0][1])  # or Plasma only sees it after a restart
 
 
 if __name__ == "__main__":

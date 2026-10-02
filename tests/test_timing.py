@@ -141,6 +141,22 @@ class TheIdleWatcher(unittest.TestCase):
         tidy.enabled_action.on = False
         self.assertFalse(tidy.idle_needed())
 
+    def test_not_needed_while_you_work_in_another_window(self):
+        tidy = fake()
+        tidy.desktop_active = False
+        self.assertFalse(tidy.idle_needed())
+        tidy.hidden = True
+        tidy.settings.setValue("mode", MODE_ACTIVITY)
+        self.assertFalse(tidy.idle_needed())
+
+    def test_needed_in_another_window_when_everything_counts(self):
+        tidy = fake(only_desktop=False)
+        tidy.desktop_active = False
+        self.assertTrue(tidy.idle_needed())
+
+    def test_not_needed_with_a_fixed_time(self):
+        self.assertFalse(fake(rehide="fixed").idle_needed())
+
 
 if __name__ == "__main__":
     unittest.main()

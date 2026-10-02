@@ -14,10 +14,13 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLa
 from .consts import (TRAY_AUTO, TRAY_DISABLED, TRAY_HIDDEN, TRAY_MINIMAL_AUTO, TRAY_MINIMAL_SHOWN,
                      TRAY_MODES, TRAY_NAMES, TRAY_SHOWN)
 from .i18n import tr
+from .widgets import stored
 
 
-def tray_app_items():
-    """Application icons (StatusNotifierItems) currently in the system tray."""
+def tray_app_items(only=None, titles=True):
+    """Application icons (StatusNotifierItems) currently in the system tray, as {id: title}.
+    `only`: just these of them, as the system tray names them. Without `titles` the
+    applications are not asked for theirs."""
     bus = QDBusConnection.sessionBus()
     def get(service, path, interface, name):
         props = QDBusInterface(service, path, "org.freedesktop.DBus.Properties", bus)
@@ -32,11 +35,14 @@ def tray_app_items():
     entries = get("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
                   "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems") or []
     for entry in entries:
+        if only is not None and entry not in only:
+            continue
         service, _, path = entry.partition("/")
         path = "/" + (path or "StatusNotifierItem")
         item_id = get(service, path, "org.kde.StatusNotifierItem", "Id")
         if item_id:
-            items[item_id] = get(service, path, "org.kde.StatusNotifierItem", "Title") or item_id
+            title = get(service, path, "org.kde.StatusNotifierItem", "Title") if titles else None
+            items[item_id] = title or item_id
     return items
 
 
@@ -63,12 +69,7 @@ def tray_minimal(config, apps):
 
 def tray_rules(settings):
     """Rules for application icons by name: [{"match": text, "mode": shown/hidden/auto}]."""
-    try:
-        found = json.loads(settings.value("tray_rules", "") or "[]")
-    except ValueError:
-        return []
-    if not isinstance(found, list):
-        return []
+    found = stored(settings, "tray_rules", list)
     return [r for r in found if isinstance(r, dict) and r.get("match")
             and r.get("mode") in (TRAY_AUTO, TRAY_SHOWN, TRAY_HIDDEN)]
 

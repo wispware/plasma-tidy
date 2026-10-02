@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The files that ship inside Tidy: its Plasma widgets and its KWin script."""
 
-from importlib.resources import files
+import os
 
 
 def text(name):
-    """The contents of a file that ships inside Tidy."""
-    return files(__package__).joinpath("data", name).read_text(encoding="utf-8")
+    """The contents of a file that ships inside Tidy. Asked of whatever loaded this module,
+    so it works from the source tree and from the single file alike. (importlib.resources
+    does the same, but brings some fifty modules and 3 MB along.)"""
+    path = os.path.join(os.path.dirname(__file__), "data", *name.split("/"))
+    return __spec__.loader.get_data(path).decode("utf-8")
 
 
 KWIN_JS = text("kwin/helper.js")

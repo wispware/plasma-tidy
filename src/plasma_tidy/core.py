@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import QCheckBox, QMenu, QMessageBox, QSystemTrayIcon, QWid
 from .catcher import Catcher
 from .consts import (APP, APP_NAME, AUTOSTART, BUTTONS, CLICKS_DOUBLE, CLICKS_SINGLE, DATA_DIR,
                      DONATE_URL, DRAWER_DEFAULTS, DRAWER_STATE, EMPTY_DIR, EMPTY_URL, IDLE_LINK,
-                     IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PLACE_BEFORE, PROFILE_SETTINGS,
+                     IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PROFILE_SETTINGS,
                      TASK_POPUPS_PREVIEW,
                      REHIDE_FIXED, REHIDE_IDLE, RULE_FOCUS, RULE_PROFILE, TRAY_HIDDEN, TRAY_SHOWN,
                      VERSION)
@@ -27,7 +27,7 @@ from .plasma import Plasma, plasma_balloons, set_plasma_balloons
 from .settings import SettingsDialog, open_donate
 from .tray import TrayTab, remember_tray, tray_app_items, tray_minimal, tray_rule_mode, tray_rules
 from .welcome import Welcome
-from .widgets import drawer_texts, install_drawer
+from .widgets import drawer_texts, install_drawer, stored
 
 
 class Tidy(QObject):
@@ -47,10 +47,8 @@ class Tidy(QObject):
         self.hidden_by_helper = False
         self.idle = None
         self.idle_since = None      # moment the current stillness began
-        self.still_since = None     # the same, whether or not that stillness counts
         self.desktop_active = True  # is the desktop the active window?
         self.popup_open = False     # is a menu or pop-up open somewhere?
-        self.plasma_shell = self.plasma.iface
         self.shown_at = time.monotonic()
         self.catchers = []
         self.dialog = None
@@ -125,6 +123,7 @@ class Tidy(QObject):
         QTimer.singleShot(4000, self.update_fit_panels)
 
         # New icons in the system tray.
+        self.tray_new = set()  # the applications whose icon just came
         self.tray_timer = QTimer(self, interval=2000, singleShot=True)
         self.tray_timer.timeout.connect(self.check_tray_items)
         bus.connect("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
@@ -215,6 +214,7 @@ class Tidy(QObject):
         elif not active and was and self.idle_since is None and not self.counts_activity():
             # Away from the desktop: from now on the timer keeps counting.
             self.idle_since = time.monotonic()
+        self.update_idle()  # whether what you do counts has changed
 
     def on_desktop_motion(self):
         """Told by the KWin helper while another window is the active one: the pointer moves
@@ -226,6 +226,11 @@ class Tidy(QObject):
             self.idle_since = time.monotonic()
         elif self.mode() == MODE_ACTIVITY and not self.hold_icons:
             self.show()
+
+    def restart_countdown(self):
+        """The time until the icons hide starts afresh, as after showing them."""
+        self.shown_at = time.monotonic()
+        self.idle_since = None if self.counts_activity() else time.monotonic()
 
     def remaining(self):
         """Seconds until hiding (only meaningful while the icons are visible)."""
@@ -242,7 +247,7 @@ class Tidy(QObject):
     def busy(self):
         """Don't hide while you are editing Plasma or have a menu open:
         hiding reloads the desktop, which closes edit mode and menus."""
-        return self.popup_open or bool(self.plasma_shell.property("editMode"))
+        return self.popup_open or bool(self.plasma.iface.property("editMode"))
 
     def on_tick(self):
         if not self.enabled_action.isChecked() or self.hidden or self.peeking:
@@ -264,6 +269,12 @@ class Tidy(QObject):
             self.peek(False)  # first the panel back to how it was: hiding notes how it is set
         if self.hidden:
             return
+        if self.settings.value("saved_state", ""):
+            # An earlier putting back did not reach Plasma. First that, or what is noted
+            # below would be the hidden state.
+            self.show()
+            if self.settings.value("saved_state", ""):
+                return
         saved = {}
         by_helper = self.helper_way()
         if not by_helper:
@@ -272,13 +283,13 @@ class Tidy(QObject):
                 return  # plasmashell unreachable (e.g. restarting right now), or nothing to hide
             saved["urls"] = urls
         if self.settings.value("hide_panel", False, bool):
-            modes = self.plasma.panel_modes()
-            saved["panels"] = modes
-            self.plasma.set_panel_modes({k: "autohide" for k in modes})
+            saved["panels"] = self.plasma.panel_modes()
         if saved:
             # Save first, hide afterwards: that way a crash can never lose anything.
             self.settings.setValue("saved_state", json.dumps(saved))
             self.settings.sync()
+        if saved.get("panels"):
+            self.plasma.set_panel_modes({k: "autohide" for k in saved["panels"]})
         if not by_helper:
             self.plasma.set_desktop_urls({k: EMPTY_URL for k in saved["urls"]})
         self.hidden_by_helper = by_helper
@@ -316,19 +327,24 @@ class Tidy(QObject):
         self.hide_catchers()
         raw = self.settings.value("saved_state", "")
         if raw:
-            state = json.loads(raw)
+            state = stored(self.settings, "saved_state")
+            reached = True
             if state.get("urls"):
                 self.plasma.set_desktop_urls({int(k): v for k, v in state["urls"].items()})
-            if "panels" in state:
+                reached = self.plasma.reached
+            if state.get("panels"):
                 self.plasma.set_panel_modes({int(k): v for k, v in state["panels"].items()})
-            self.settings.remove("saved_state")
-            self.settings.sync()
+                reached = reached and self.plasma.reached
+            # Plasma not there right now (restarting): keep what was saved, it is put back
+            # when Plasma is.
+            if reached:
+                self.settings.remove("saved_state")
+                self.settings.sync()
         if (self.hidden or raw) and self.settings.value("drawer_follow", False, bool):
             self.plasma.set_drawers_closed(False)
         self.hidden = False
         self.hidden_by_helper = False
-        self.shown_at = time.monotonic()
-        self.idle_since = None if self.counts_activity() else time.monotonic()
+        self.restart_countdown()
         if hasattr(self, "tray"):
             self.update_icon()
         self.send_state()
@@ -411,10 +427,7 @@ class Tidy(QObject):
 
     def restore_tips(self):
         """Put Plasma's balloons and pop-ups back as they were before Tidy changed them."""
-        try:
-            saved = json.loads(self.settings.value("tips_original", "") or "{}")
-        except ValueError:
-            saved = {}
+        saved = stored(self.settings, "tips_original")
         if saved:
             set_plasma_balloons(bool(saved.get("balloons", True)))
             self.plasma.set_task_previews({int(k): bool(v)
@@ -469,6 +482,10 @@ class Tidy(QObject):
             return
         self.peek(False)
         if on:
+            # From how things are with the icons in view: what is noted here is put back
+            # when focus mode goes off, and hiding has changed the panel and the drawers.
+            if self.hidden:
+                self.show()
             setting = lambda key, default: self.settings.value("focus_" + key, default, bool)
             state = {}
             if setting("drawers", True):
@@ -512,10 +529,7 @@ class Tidy(QObject):
         raw = self.settings.value("focus_state", "")
         if not raw or not self.plasma.panel_modes():
             return  # nothing to do, or plasmashell unreachable: a later try will do it
-        try:
-            state = json.loads(raw)
-        except ValueError:
-            state = {}
+        state = stored(self.settings, "focus_state")
         for drawer_id, closed in state.get("drawers", {}).items():
             self.plasma.set_drawer_config(int(drawer_id), {"closed": closed})
         if "tray" in state:
@@ -584,11 +598,14 @@ class Tidy(QObject):
 
     def idle_needed(self):
         """Is there anything to learn from the idle watcher right now? With the icons in view:
-        when you stop moving. With the icons hidden: only if movement brings them back."""
-        if self.quitting or not self.enabled_action.isChecked():
+        when you stop moving. With the icons hidden: only if movement brings them back. And
+        nothing at all while what you do does not count: in another window (the time then
+        runs from when you left the desktop, and the KWin helper tells of the pointer over
+        the desktop), or with a fixed time until the icons hide again."""
+        if self.quitting or not self.enabled_action.isChecked() or not self.counts_activity():
             return False
         if not self.hidden:
-            return True
+            return not self.fixed_rehide()
         return not self.hold_icons and (self.mode() == MODE_ACTIVITY or self.showing_desktop)
 
     def update_idle(self):
@@ -603,7 +620,6 @@ class Tidy(QObject):
 
     def start_idle(self):
         self.stop_idle()
-        self.still_since = None
         self.idle = QProcess()
         self.idle.readyReadStandardOutput.connect(self.on_idle_output)
         self.idle.finished.connect(self.on_idle_died)
@@ -629,11 +645,9 @@ class Tidy(QObject):
         for line in bytes(self.idle.readAllStandardOutput()).decode().split():
             if line == "idle":
                 since = time.monotonic() - IDLE_STEP
-                self.still_since = since
                 if self.idle_since is None or self.counts_activity():
                     self.idle_since = since
             elif line == "active":
-                self.still_since = None
                 if not self.counts_activity():
                     continue
                 self.idle_since = None
@@ -687,10 +701,7 @@ class Tidy(QObject):
         """Keep a copy of every task manager's pinned programs, as a last resort for "Restore
         everything"."""
         held = self.plasma.held_launchers()
-        try:
-            backup = json.loads(self.settings.value("launchers_backup", "") or "{}")
-        except ValueError:
-            backup = {}
+        backup = stored(self.settings, "launchers_backup")
         for widget_id, launchers in self.plasma.task_launchers().items():
             # What a closed drawer holds, plus whatever was pinned since.
             complete = held.get(widget_id, []) + [i for i in launchers
@@ -701,10 +712,7 @@ class Tidy(QObject):
 
     def recover_launchers(self):
         """A task manager without any pinned program, while we have a copy: put it back."""
-        try:
-            backup = json.loads(self.settings.value("launchers_backup", "") or "{}")
-        except ValueError:
-            return
+        backup = stored(self.settings, "launchers_backup")
         for widget_id, launchers in self.plasma.task_launchers().items():
             if not launchers and backup.get(str(widget_id)):
                 self.plasma.set_task_launchers(widget_id, backup[str(widget_id)])
@@ -772,7 +780,9 @@ class Tidy(QObject):
         # Non-modal: a modal window would block clicks on our own catchers,
         # and with that trying out click mode.
         self.dialog = SettingsDialog(self)
-        self.dialog.accepted.connect(lambda dlg=self.dialog: self.apply_settings(dlg))
+        # OK with nothing changed is just closing the window.
+        self.dialog.accepted.connect(
+            lambda dlg=self.dialog: self.apply_settings(dlg) if dlg.changed else None)
         self.dialog.finished.connect(self.on_dialog_closed)
         if about:
             self.dialog.tabs.setCurrentWidget(self.dialog.about_tab)
@@ -803,8 +813,7 @@ class Tidy(QObject):
             else:
                 self.hide_catchers()
         else:
-            self.shown_at = time.monotonic()
-            self.idle_since = None if self.counts_activity() else time.monotonic()
+            self.restart_countdown()
         self.schedule()  # the way of showing may have changed, and with it what is needed
         self.send_state()
 
@@ -925,33 +934,34 @@ class Tidy(QObject):
     # --- rules ----------------------------------------------------------------------
 
     def rules(self):
-        try:
-            found = json.loads(self.settings.value("rules", "") or "[]")
-        except ValueError:
-            return []
-        if not isinstance(found, list):
-            return []
+        found = stored(self.settings, "rules", list)
         return [r for r in found if isinstance(r, dict) and r.get("when")]
 
     def on_battery(self):
         props = QDBusInterface("org.freedesktop.UPower", "/org/freedesktop/UPower",
                                "org.freedesktop.DBus.Properties", QDBusConnection.systemBus())
+        props.setTimeout(1000)
         args = props.call("Get", "org.freedesktop.UPower", "OnBattery").arguments()
         return bool(args and args[0] is True)
 
-    def activities(self):
-        """The activities as {id: name}, and the id of the current one."""
+    def ask_activities(self, *call):
         manager = QDBusInterface("org.kde.ActivityManager", "/ActivityManager/Activities",
                                  "org.kde.ActivityManager.Activities",
                                  QDBusConnection.sessionBus())
         manager.setTimeout(1000)
-        def ask(*call):
-            reply = manager.call(*call)
-            args = reply.arguments()
-            ok = reply.type() == QDBusMessage.MessageType.ReplyMessage
-            return args[0] if ok and args else None
-        names = {i: ask("ActivityName", i) or i for i in ask("ListActivities") or []}
-        return names, ask("CurrentActivity") or ""
+        reply = manager.call(*call)
+        args = reply.arguments()
+        ok = reply.type() == QDBusMessage.MessageType.ReplyMessage
+        return args[0] if ok and args else None
+
+    def activities(self):
+        """The activities as {id: name}, and the id of the current one."""
+        names = {i: self.ask_activities("ActivityName", i) or i
+                 for i in self.ask_activities("ListActivities") or []}
+        return names, self.current_activity()
+
+    def current_activity(self):
+        return self.ask_activities("CurrentActivity") or ""
 
     def rule_matches(self, rule):
         when, arg = rule.get("when"), str(rule.get("arg", ""))
@@ -974,7 +984,7 @@ class Tidy(QObject):
         if when == "vdesktop":
             return arg == str(self.vdesktop)
         if when == "activity":
-            return bool(arg) and arg == self.activities()[1]
+            return bool(arg) and arg == self.current_activity()
         return False
 
     @pyqtSlot()
@@ -1041,18 +1051,25 @@ class Tidy(QObject):
     # --- new icons in the system tray ---------------------------------------------
 
     @pyqtSlot(str)
-    def on_tray_item(self, _service):
+    def on_tray_item(self, service):
+        self.tray_new.add(service)
         self.tray_timer.start()  # a moment later: by then the icon has a name
 
     def check_tray_items(self):
         """Hide the icon of an application that shows one for the first time, if that is
         switched on. Which icons have been seen is always kept, so that switching it on
         later doesn't hide the ones you already had."""
-        titles = tray_app_items()
-        apps = set(titles)
         raw = self.settings.value("tray_seen", None)
-        seen = set(json.loads(raw)) if raw else None
+        try:
+            seen = set(json.loads(raw)) if raw else None
+        except ValueError:
+            seen = None
         rules = tray_rules(self.settings)
+        # Only the applications that just came are asked who they are, and for their title
+        # only when a rule needs it. (The first time ever: all of them.)
+        new, self.tray_new = self.tray_new, set()
+        titles = tray_app_items(only=None if seen is None else new, titles=bool(rules))
+        apps = set(titles)
         default = TRAY_HIDDEN if self.settings.value("tray_hide_new", False, bool) else None
         if seen is not None and (rules or default):
             config = self.plasma.tray_config()
@@ -1070,7 +1087,7 @@ class Tidy(QObject):
                 remember_tray(self.settings, config)
                 self.plasma.set_tray_config(config["extra"], config["shown"] + shown,
                                             config["hidden"] + hidden)
-        if apps or seen is None:
+        if seen is None or apps - seen:
             self.settings.setValue("tray_seen", json.dumps(sorted(apps | (seen or set()))))
 
     # --- profiles, export and import ------------------------------------------------
@@ -1094,34 +1111,50 @@ class Tidy(QObject):
         self.rule_focus = False
         self.set_focus(False)
         was_hidden, setup = self.hidden, self.hidden_setup()
+        # Only what differs is written: a rule may switch profiles many times a day, and
+        # most of a profile is the same as the one before it.
+        old_kwin, changed = self.kwin_setup(), set()
         for key, default in PROFILE_SETTINGS.items():
             value = data.get("settings", {}).get(key)
-            if isinstance(value, type(default)):
+            if isinstance(value, type(default)) and value != self.settings.value(
+                    key, default, type(default)):
                 self.settings.setValue(key, value)
+                changed.add(key)
         tray = data.get("tray")
-        current = self.plasma.tray_config()
-        if tray and current:
-            remember_tray(self.settings, current)
-            self.plasma.set_tray_config(tray["extra"], tray["shown"], tray["hidden"])
-        self.backup_launchers()  # before a drawer may start holding them
+        parts = ("extra", "shown", "hidden")
+        if isinstance(tray, dict) and all(isinstance(tray.get(k), list) for k in parts):
+            current = self.plasma.tray_config()
+            if current and any(tray[k] != current[k] for k in parts):
+                remember_tray(self.settings, current)
+                self.plasma.set_tray_config(*(tray[k] for k in parts))
         existing = {d["id"]: d for d in self.plasma.drawers()}
+        backed_up = False
         for saved in data.get("drawers", []):
-            if saved.get("id") not in existing:
+            now = existing.get(saved.get("id")) if isinstance(saved, dict) else None
+            if not now or not isinstance(saved.get("config", {}), dict):
                 continue
             config = {k: v for k, v in saved.get("config", {}).items()
                       if k in DRAWER_DEFAULTS and k not in DRAWER_STATE
-                      and isinstance(v, type(DRAWER_DEFAULTS[k]))}
-            self.plasma.set_drawer_config(saved["id"], config)
-            if "targets" in config:
-                self.plasma.place_drawer(saved["id"], config["targets"],
-                                         config.get("place", PLACE_BEFORE))
-            if "shortcut" in saved:
+                      and isinstance(v, type(DRAWER_DEFAULTS[k])) and v != now["config"][k]}
+            if config:
+                if not backed_up:
+                    self.backup_launchers()  # before a drawer may start holding them
+                    backed_up = True
+                self.plasma.set_drawer_config(saved["id"], config)
+            if "targets" in config or "place" in config:
+                # The arrow belongs next to what it hides.
+                placed = dict(now["config"], **config)
+                self.plasma.place_drawer(saved["id"], placed["targets"], placed["place"])
+            if isinstance(saved.get("shortcut"), str) and saved["shortcut"] != now.get("shortcut", ""):
                 self.plasma.set_drawer_shortcut(saved["id"], saved["shortcut"])
-        self.load_kwin()
-        self.update_helpers()
-        if any(k in data.get("settings", {}) for k in ("balloons", "task_popup", "task_close", "task_gap", "balloon_gap")):
+        if self.kwin_setup() != old_kwin:
+            self.load_kwin()
+        if "use_helper" in changed:
+            self.update_helpers()
+        if changed & {"balloons", "task_popup", "task_close", "task_gap", "balloon_gap"}:
             self.apply_tips()
-        self.peek_key.set(self.settings.value("peek_key", ""))
+        if "peek_key" in changed:
+            self.peek_key.set(self.settings.value("peek_key", ""))
         self.after_settings(was_hidden, setup)
         self.rules_changed()
         if self.dialog:
@@ -1131,11 +1164,7 @@ class Tidy(QObject):
             QTimer.singleShot(0, lambda: self.show_settings(tab=tab))
 
     def profiles(self):
-        try:
-            found = json.loads(self.settings.value("profiles", "") or "{}")
-            return found if isinstance(found, dict) else {}
-        except ValueError:
-            return {}
+        return stored(self.settings, "profiles")
 
     def save_profile(self, name):
         self.settings.setValue("profiles", json.dumps(dict(self.profiles(),

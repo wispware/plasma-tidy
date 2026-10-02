@@ -5,10 +5,9 @@
 import json
 import os
 import re
-import subprocess
 
-from PyQt6.QtCore import QLibraryInfo
-from PyQt6.QtDBus import QDBusConnection, QDBusInterface
+from PyQt6.QtCore import QLibraryInfo, QProcess, QStandardPaths
+from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
 from PyQt6.QtGui import QIcon
 
 from .consts import (DRAWER_DEFAULTS, DRAWER_ID, FADE_ID, PANEL_NAMES, PLACE_AFTER, PLACE_BEFORE,
@@ -105,22 +104,45 @@ def plasma_balloons():
     """Are Plasma's text balloons (tooltips) on? Its own setting: plasmarc, PlasmaToolTips,
     Delay, in milliseconds; nothing above zero means off."""
     try:
-        out = subprocess.run(["kreadconfig6", "--file", "plasmarc", "--group", "PlasmaToolTips",
-                              "--key", "Delay"], capture_output=True, text=True, timeout=5).stdout
-        return not out.strip() or float(out.strip().replace(",", ".")) > 0
-    except (OSError, ValueError, subprocess.SubprocessError):
+        return float(plasmarc_delay().replace(",", ".")) > 0
+    except ValueError:
         return True
+
+
+def plasmarc_delay():
+    """That setting as it is written, "" when it is not. Your own file goes before the
+    system's, as it does for Plasma."""
+    for path in QStandardPaths.locateAll(QStandardPaths.StandardLocation.GenericConfigLocation,
+                                         "plasmarc"):
+        found = config_value(path, "PlasmaToolTips", "Delay")
+        if found is not None:
+            return found or "700"
+    return "700"
+
+
+def config_value(path, group, key):
+    """One setting from a KDE settings file, None when the file does not have it."""
+    inside = False
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("["):
+                    inside = line == "[%s]" % group
+                elif inside and re.match(r"%s(\[[^\]]*\])*\s*=" % re.escape(key), line):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return None
 
 
 def set_plasma_balloons(on):
     """Switch Plasma's text balloons on (its own default) or off. Plasma only notices at
     once when it is told of the change, hence --notify."""
-    command = ["kwriteconfig6", "--file", "plasmarc", "--group", "PlasmaToolTips", "--key", "Delay",
-               "--notify"]
-    try:
-        subprocess.run(command + (["--delete"] if on else ["--", "-1"]), timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    process = QProcess()
+    process.start("kwriteconfig6", ["--file", "plasmarc", "--group", "PlasmaToolTips", "--key",
+                                    "Delay", "--notify"] + (["--delete"] if on else ["--", "-1"]))
+    process.waitForFinished(5000)
 
 
 def panel_widget_name(plugin):
@@ -139,25 +161,33 @@ class Plasma:
                                     "org.kde.PlasmaShell", QDBusConnection.sessionBus())
         # A Plasma that hangs must not make Tidy hang along for long.
         self.iface.setTimeout(3000)
+        self.reached = True  # did the last script get to Plasma?
 
     def run(self, script):
         reply = self.iface.call("evaluateScript", script)
+        self.reached = reply.type() != QDBusMessage.MessageType.ErrorMessage
         args = reply.arguments()
-        return args[0] if args else ""
+        return args[0] if self.reached and args else ""
+
+    def query(self, script, default):
+        """Run a script and take what it prints as data. `default` when Plasma did not
+        answer, or with something else than expected."""
+        try:
+            found = json.loads(self.run(script))
+        except ValueError:
+            return default
+        return found if isinstance(found, type(default)) else default
 
     def desktop_urls(self):
-        out = self.run("""
+        found = self.query("""
             var r = {};
             desktops().forEach(function (d) {
                 if (d.type != "org.kde.plasma.folder") return;
                 d.currentConfigGroup = ["General"];
                 r[d.id] = d.readConfig("url") || "desktop:/";
             });
-            print(JSON.stringify(r));""")
-        try:
-            return {int(k): v for k, v in json.loads(out).items()}
-        except ValueError:
-            return {}
+            print(JSON.stringify(r));""", {})
+        return {int(k): v for k, v in found.items()}
 
     def ensure_helpers(self, wanted):
         """Have a helper on every desktop that is on a screen, or none at all. Returns how
@@ -183,16 +213,13 @@ class Plasma:
 
     def desktop_widgets(self):
         """The widgets on the desktops, without our own helper: [{id, type}]."""
-        out = self.run("var own = %s;" % json.dumps(FADE_ID) + """
+        found = self.query("var own = %s;" % json.dumps(FADE_ID) + """
             var r = [];
             desktops().forEach(function (d) { d.widgets().forEach(function (w) {
                 if (w.type != own) r.push({id: w.id, type: w.type});
             }); });
-            print(JSON.stringify(r));""")
-        try:
-            return json.loads(out)
-        except ValueError:
-            return []
+            print(JSON.stringify(r));""", [])
+        return found
 
     def set_helper_debug(self, text):
         """For testing: the helpers' own switch for telling what they see."""
@@ -230,14 +257,11 @@ class Plasma:
             });""")
 
     def panel_modes(self):
-        out = self.run("""
+        found = self.query("""
             var r = {};
             panels().forEach(function (p) { r[p.id] = p.hiding; });
-            print(JSON.stringify(r));""")
-        try:
-            modes = {int(k): v for k, v in json.loads(out).items()}
-        except ValueError:
-            return {}
+            print(JSON.stringify(r));""", {})
+        modes = {int(k): v for k, v in found.items()}
         # Plasma reports "windows go below" as "none". Its own settings file knows better.
         if "none" in modes.values():
             below = panels_below_windows()
@@ -247,7 +271,7 @@ class Plasma:
 
     def tray_config(self):
         """System tray settings: its plasmoids and the shown/hidden lists."""
-        out = self.run("""
+        found = self.query("""
             var r = null;
             panels().forEach(function (p) { p.widgets().forEach(function (w) {
                 if (r || w.type != "org.kde.plasma.systemtray") return;
@@ -260,11 +284,8 @@ class Plasma:
                 r = {extra: get("extraItems"), known: get("knownItems"),
                      shown: get("shownItems"), hidden: get("hiddenItems")};
             }); });
-            print(JSON.stringify(r));""")
-        try:
-            return json.loads(out) or None
-        except ValueError:
-            return None
+            print(JSON.stringify(r));""", {})
+        return found or None
 
     def set_tray_config(self, extra, shown, hidden):
         self.run("var c = %s;" % json.dumps({"extra": extra, "shown": shown, "hidden": hidden}) + """
@@ -283,7 +304,7 @@ class Plasma:
 
     def panel_widgets(self):
         """The panels with their widgets, in the order they have in the panel."""
-        out = self.run("""
+        found = self.query("""
             var r = [];
             panels().forEach(function (p) {
                 // "fit": the panel is as long as its contents, and changes size with them
@@ -292,18 +313,14 @@ class Plasma:
                             return {id: w.id, type: w.type, index: w.index};
                         })});
             });
-            print(JSON.stringify(r));""")
-        try:
-            found = json.loads(out)
-        except ValueError:
-            return []
+            print(JSON.stringify(r));""", [])
         for panel in found:
             panel["widgets"].sort(key=lambda w: w["index"])
         return found
 
     def drawers(self):
         """Every Tidy drawer in the panels, with its settings."""
-        out = self.run("var keys = %s, type = %s;" % (json.dumps(list(DRAWER_DEFAULTS)),
+        found = self.query("var keys = %s, type = %s;" % (json.dumps(list(DRAWER_DEFAULTS)),
                                                       json.dumps(DRAWER_ID)) + """
             var r = [];
             panels().forEach(function (p) { p.widgets().forEach(function (w) {
@@ -313,11 +330,7 @@ class Plasma:
                 keys.forEach(function (k) { c[k] = w.readConfig(k); });
                 r.push({id: w.id, panel: p.id, config: c, shortcut: String(w.globalShortcut || "")});
             }); });
-            print(JSON.stringify(r));""")
-        try:
-            found = json.loads(out)
-        except ValueError:
-            return []
+            print(JSON.stringify(r));""", [])
         for drawer in found:
             drawer["config"] = {k: drawer_value(k, drawer["config"].get(k))
                                 for k in DRAWER_DEFAULTS}
@@ -398,18 +411,15 @@ class Plasma:
 
     def task_previews(self):
         """Does a task manager show a preview of the window in its pop-up? {widget id: bool}"""
-        out = self.run("var types = %s;" % json.dumps(TASK_PLUGINS) + """
+        found = self.query("var types = %s;" % json.dumps(TASK_PLUGINS) + """
             var r = {};
             panels().forEach(function (p) { p.widgets().forEach(function (w) {
                 if (types.indexOf(w.type) < 0) return;
                 w.currentConfigGroup = ["General"];
                 r[w.id] = String(w.readConfig("showToolTips")) != "false";
             }); });
-            print(JSON.stringify(r));""")
-        try:
-            return {int(k): bool(v) for k, v in json.loads(out).items()}
-        except ValueError:
-            return {}
+            print(JSON.stringify(r));""", {})
+        return {int(k): bool(v) for k, v in found.items()}
 
     def set_task_previews(self, previews):
         """Switch the preview in the task managers' pop-ups: {widget id: bool}."""
@@ -423,7 +433,7 @@ class Plasma:
 
     def task_launchers(self):
         """The pinned programs of every task manager in the panels: {widget id: [urls]}."""
-        out = self.run("var types = %s;" % json.dumps(TASK_PLUGINS) + """
+        found = self.query("var types = %s;" % json.dumps(TASK_PLUGINS) + """
             var r = {};
             panels().forEach(function (p) { p.widgets().forEach(function (w) {
                 if (types.indexOf(w.type) < 0) return;
@@ -431,11 +441,8 @@ class Plasma:
                 var v = w.readConfig("launchers");
                 r[w.id] = !v ? [] : (Array.isArray(v) ? v : String(v).split(","));
             }); });
-            print(JSON.stringify(r));""")
-        try:
-            return {int(k): [i for i in v if i] for k, v in json.loads(out).items()}
-        except ValueError:
-            return {}
+            print(JSON.stringify(r));""", {})
+        return {int(k): [i for i in v if i] for k, v in found.items()}
 
     def held_launchers(self):
         """Pinned programs that closed drawers are holding: {task manager id: [urls]}."""

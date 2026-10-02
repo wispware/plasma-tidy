@@ -514,10 +514,12 @@ class SettingsDialog(QDialog):
         self.mode.currentIndexChanged.connect(self.update_enabled)
         self.update_enabled()
 
-        self.ticker = QTimer(self, interval=100)
+        # The countdown on the Desktop tab: only kept up while that tab is in view. (It asks
+        # Plasma each time whether you are editing the desktop.)
+        self.ticker = QTimer(self, interval=200)
         self.ticker.timeout.connect(self.update_status)
-        self.ticker.start()
-        self.update_status()
+        self.tabs.currentChanged.connect(self.update_ticker)
+        self.update_ticker()
 
         self.drawer_tab.rebuilt = self.watch_changes
         self.watch_changes(self)
@@ -582,6 +584,13 @@ class SettingsDialog(QDialog):
             box.setEnabled(helper and self.hide_widgets.isChecked())
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
         self.apply_button.setEnabled(valid and self.changed)
+
+    def update_ticker(self, *_):
+        if self.tabs.currentIndex() == 0:
+            self.update_status()
+            self.ticker.start()
+        else:
+            self.ticker.stop()
 
     def update_status(self):
         a = self.autohide

@@ -21,6 +21,8 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     Peeking = pyqtSignal(bool)
     # The desktop came to the front: for the drawers that open then.
     DesktopActivated = pyqtSignal()
+    # A menu or pop-up opens somewhere, or the last one closes: a drawer stays open with it.
+    MenuOpen = pyqtSignal(bool)
 
     def __init__(self, autohide):
         super().__init__(autohide)
@@ -46,6 +48,7 @@ class DBusAdaptor(QDBusAbstractAdaptor):
     @pyqtSlot(bool)
     def PopupOpen(self, open_):
         self.autohide.popup_open = open_
+        self.MenuOpen.emit(open_)
 
     @pyqtSlot(str, bool)
     def ActiveWindow(self, name, fullscreen):

@@ -42,6 +42,7 @@ PlasmoidItem {
     property real level: 1        // 1: everything in view, 0: gone
     property bool iconsTaken: false
     property var taken: []        // widgets we made invisible
+    property bool widgetsTouched: false   // the widgets' see-throughness is ours right now
     property double lastPress: 0
 
     preferredRepresentation: fullRepresentation
@@ -141,7 +142,10 @@ PlasmoidItem {
                 iconsTaken = false;
             }
         }
-        if (!layout) return;
+        // The widgets: only gone through while they go along, and once more to put them
+        // back when they no longer do.
+        if (!layout || (!widgetsAlong && !widgetsTouched)) return;
+        widgetsTouched = widgetsAlong;
         var kids = layout.children, still = [];
         for (var i = 0; i < kids.length; i++) {
             var c = kids[i];

@@ -72,6 +72,16 @@ def drawer_texts():
             "uiTexts": json.dumps({text: tr(text) for text in DRAWER_PAGE_TEXTS})}
 
 
+def stored(settings, key, kind=dict):
+    """A setting that holds a table or a list, as that. Empty when it is not there or cannot
+    be read: a broken note must never stop Tidy."""
+    try:
+        found = json.loads(settings.value(key, "") or "null")
+    except (ValueError, TypeError):
+        return kind()
+    return found if isinstance(found, kind) else kind()
+
+
 def drawer_value(key, raw):
     """A drawer setting as read from Plasma (always text) in the type of its default."""
     default = DRAWER_DEFAULTS[key]

@@ -72,7 +72,7 @@ class FakeTidy:
         self.enabled_action = Switch()
         self.hide_timer, self.rules_timer, self.rules_clock = Clock(), Clock(), Clock()
         self.hidden = False
-        self.idle_since = self.still_since = None
+        self.idle_since = None
         self.shown_at = time.monotonic()
         self.desktop_active = True
         self.popup_open = self.showing_desktop = False
