@@ -423,7 +423,8 @@ on a timer while nothing changes.
   written to disk each time the icons go and come.
 - Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
 - The drawer and the helper on the desktop depend on how Plasma builds its panel, task
-  manager and desktop, which is not a public interface. They are tested with Plasma 6.7.
+  manager and desktop, which is not a public interface. They are tested with Plasma 6.7, with
+  the drawer in a panel at the bottom, at the top and on the right.
   Tidy keeps an eye on this itself: the widgets and the KWin script tell Tidy whether they
   find what they reach into. A part that is not there any more is switched off rather than
   half working (the icons are then hidden the safe way, without fading and the double-click),
