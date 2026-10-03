@@ -1061,7 +1061,10 @@ PlasmoidItem {
                         id: holder
                         required property var modelData
                         readonly property var hider: { root.hidersVersion; return root.hiderOf(modelData.id); }
-                        readonly property real along: hider ? hider.natural : 0
+                        // Its length in the panel, or what it asks for now, whichever is more:
+                        // in the pop-up it may be thicker than in the panel, and a clock, for
+                        // one, then needs more room for its text.
+                        readonly property real along: hider ? Math.max(hider.natural, hider.wanted) : 0
                         // The system tray gives only its icons; in a column they stand one above
                         // the other, otherwise in the row (or rows) they have in the panel.
                         readonly property var icons: hider ? hider.icons : null
