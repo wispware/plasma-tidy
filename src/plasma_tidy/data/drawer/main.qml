@@ -89,6 +89,7 @@ PlasmoidItem {
             // The panel this drawer is in slid out of view: it comes back tidy.
             tidyLink.panelGone.connect((screen, edge) => {
                 if (root.cfg.closeOnPanelHide && !root.cfg.closed && !root.cfg.paused && !root.peeking
+                        && !root.panelKept
                         && screen === Screen.name && edge === root.panelEdge)
                     root.cfg.closed = true;
             });
@@ -194,7 +195,7 @@ PlasmoidItem {
                     + (g ? "/grid count" + g.count + " rows" + g.rowsOrColumns + " cell" + Math.round(g.cellWidth) + "x" + Math.round(g.cellHeight) + " size" + Math.round(g.width) + "x" + Math.round(g.height) : "")); } } return r; })(),
             taskTips: cfg.taskTips + "/" + taskHiders.filter(h => { try { return h.item.active === true; } catch (e) { return false; } }).length
                 + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
-                + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length, tipShowing: tipShowing,
+                + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length, tipShowing: tipShowing, kept: panelKept,
             menus: taskMenuOpen + "/" + menuOpen, panel: Screen.name + "/" + panelEdge, check: lastCheck, closing: closeTimer.running,
             slim: slim + "/room " + room + (container && !container.visible ? "/out of the panel" : "")
                 + "/shortcut " + hasShortcut,
@@ -572,7 +573,40 @@ PlasmoidItem {
         try { return h.item.contextMenu !== null && Number(h.item.contextMenu.status) === 1; }
         catch (e) { return false; }
     })
-    readonly property bool busyAbove: tipShowing || taskMenuOpen || menuOpen
+    readonly property bool busyAbove: tipShowing || taskMenuOpen || menuOpen || panelKept
+
+    // A program closed from its own pop-up (its close button): the pop-up goes with it, and
+    // with the pointer above the panel nothing would hold the panel or the drawer any more.
+    // So both stay a moment, to choose something else. An auto-hiding panel stays in view
+    // while a window of its own is up: an empty one, that takes no clicks, holds it.
+    property bool panelKept: false
+    property double tipGoneAt: 0
+    // The program and its pop-up go at about the same moment, in either order.
+    onTipShowingChanged: {
+        if (!tipShowing) tipGoneAt = Date.now();
+        keepIfClosed();
+    }
+    onTipOwnerChanged: keepIfClosed()
+    function keepIfClosed() {
+        if (tipOwner !== null || tipShowing || Date.now() - tipGoneAt > 1000) return;
+        if (pointerInPanel || cfg.paused || leaving) return;
+        panelKept = true;
+        keepTimer.restart();
+    }
+    Timer { id: keepTimer; interval: 3000; onTriggered: root.panelKept = false }
+    PlasmaCore.Dialog {
+        id: panelKeeper
+        visualParent: root
+        location: Plasmoid.location
+        type: PlasmaCore.Dialog.Tooltip
+        flags: Qt.WindowDoesNotAcceptFocus
+        outputOnly: true
+        backgroundHints: PlasmaCore.Dialog.NoBackground
+        hideOnWindowDeactivate: false
+        // Never at no size: a window of 0 by 0 takes Plasma down.
+        mainItem: Item { width: 1; height: 1 }
+        visible: root.panelKept && !root.leaving
+    }
     // Is a program's pop-up up right now? (It stays a moment after the pointer leaves it.)
     function tipUp() {
         try { return tipWindow !== null && tipWindow.visible === true && tipOwner !== null; } catch (e) { return false; }
@@ -1697,6 +1731,7 @@ PlasmoidItem {
         function onDebugChanged() {
             // For testing: opens the widget's own settings.
             if (root.cfg.debug === "configure") Plasmoid.internalAction("configure").trigger();
+
             // For testing: as if the panel were clicked at this place, "tap:<pixels>".
             // As if a program in the pop-up were clicked: "use:<number>".
             var act = String(root.cfg.debug).split(":");

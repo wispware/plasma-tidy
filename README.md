@@ -438,6 +438,8 @@ on a timer while nothing changes.
   preview comes with an icon that is in the panel itself.
 - Closing by itself follows the pointer inside the panel. The pop-up of a program in the
   drawer counts as the drawer, and so does an open menu: the drawer stays until it is gone.
+  Close a program from its pop-up and the panel and the drawer stay three seconds, to choose
+  something else.
   Tidy tells the drawer of menus; without Tidy running only the menu of a program in the
   drawer is known.
 
