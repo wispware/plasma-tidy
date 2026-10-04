@@ -36,11 +36,12 @@ Requires:       kwin
 Requires:       kf6-kconfig
 
 %description
-Tidy keeps your KDE Plasma desktop, panel and system tray clean. It hides the desktop
-icons when you are not using them and brings them back when you need them; puts drawers
-in the panel that tuck programs and widgets away; trims the system tray; and has a focus
-mode, rules and profiles, a peek key, and settings for Plasma's balloons and the pop-ups of
-programs in the panel. It is light: about 24 MB of memory and no processor time at rest.
+Tidy keeps your KDE Plasma desktop, panel and system tray clean. It hides the
+desktop icons when you are not using them and brings them back when you need
+them; puts drawers in the panel that tuck programs and widgets away; trims the
+system tray; and has a focus mode, rules and profiles, a peek key, and settings
+for Plasma's balloons and the pop-ups of programs in the panel. It is light:
+about 24 MB of memory and no processor time at rest.
 
 Tidy is made for Plasma 6 on Wayland.
 
