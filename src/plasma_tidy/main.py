@@ -22,7 +22,8 @@ COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--setting
             "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
             "--drawer-toggle": "DrawerToggle", "--restore": "Restore", "--focus": "Focus"}
 USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --version]")
+         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --report | "
+         "--version]")
 
 
 def migrate_old_config():
@@ -62,6 +63,9 @@ def main():
             return 0
         if arg == "--check":
             return check()
+        if arg == "--report":
+            from .report import print_report
+            return print_report()
         if arg in COMMANDS:
             command = COMMANDS[arg]
         else:

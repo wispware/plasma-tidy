@@ -50,6 +50,10 @@ class Checks:
         elif kind == "helper":
             self.helpers[key] = found
 
+    def keep_only(self, drawers):
+        """Forget the drawers that are gone (removed from the panel, or a panel removed)."""
+        self.drawers = {k: v for k, v in self.drawers.items() if k in drawers}
+
     def problems(self):
         """The parts that do not work, each named once, in a fixed order."""
         found = []

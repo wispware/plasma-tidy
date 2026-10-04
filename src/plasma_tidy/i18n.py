@@ -435,9 +435,11 @@ TRANSLATIONS = {
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
         "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-        "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --version]":
+        "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --report | "
+        "--version]":
             "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-            "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --version]",
+            "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --report | "
+            "--version]",
         "the drawers": "de laden",
         "hiding programs in a drawer": "programma's in een la verbergen",
         "the system tray in a drawer": "het systeemvak in een la",

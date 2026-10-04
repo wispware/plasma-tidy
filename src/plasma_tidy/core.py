@@ -510,6 +510,7 @@ class Tidy(QObject):
     def review_checks(self):
         """Say once, per Plasma version, what does not work in it. Nothing when all is well."""
         version = self.plasma_version()
+        self.checks.keep_only({str(d["id"]) for d in self.plasma.drawers()})
         text = self.checks.notice(version)
         told = version + "|" + ",".join(self.checks.problems()) if text else ""
         if told == self.settings.value("checks_told", ""):
@@ -520,6 +521,7 @@ class Tidy(QObject):
 
     def check_report(self):
         names = {str(d["id"]): d["config"].get("name", "") for d in self.plasma.drawers()}
+        self.checks.keep_only(set(names))
         return self.checks.report(VERSION, self.plasma_version(), names)
 
     # --- focus mode -----------------------------------------------------------

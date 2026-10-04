@@ -338,6 +338,7 @@ plasma-tidy --drawer-close   close the panel drawers
 plasma-tidy --drawer-toggle  close them if one is open, otherwise open them
 plasma-tidy --restore   restore everything and switch Tidy off (does not touch the tray)
 plasma-tidy --check     tell which parts work in this Plasma (see Limitations)
+plasma-tidy --report    everything for a bug report in one block, without personal data
 plasma-tidy --version   print the version
 ```
 
@@ -476,6 +477,9 @@ script as files of their own in `data/`. `./build.py` packs it all into the sing
 ```sh
 PYTHONPATH=src python3 -m plasma_tidy
 ```
+
+`packaging/plasma-tidy.spec` makes the Fedora package (COPR): Tidy goes to
+`/usr/share/plasma-tidy`, with a small starter in `/usr/bin/plasma-tidy`.
 
 The tests need nothing but Python and PyQt6:
 

@@ -59,6 +59,7 @@ class Telling(unittest.TestCase):
         self.tidy.checks = Checks()
         self.tidy.check_timer = type("T", (), {"start": lambda self: None})()
         self.tidy.plasma_version = lambda: self.version
+        self.tidy.plasma = type("Plasma", (), {"drawers": lambda _: [{"id": 39, "config": {}}]})()
         self.told = []
         self.tidy.tray = type("Tray", (), {"showMessage": lambda _, *a: self.told.append(a[1])})()
         self.version = "6.7.5"
@@ -74,6 +75,12 @@ class Telling(unittest.TestCase):
         self.version = "6.8.0"
         self.report({"tasks": MISSING})
         self.assertEqual(len(self.told), 2)
+
+    def test_a_drawer_that_is_gone_is_forgotten(self):
+        Tidy.on_check(self.tidy, "drawer", "77", json.dumps({"tasks": MISSING}))
+        Tidy.review_checks(self.tidy)
+        self.assertEqual(self.told, [])
+        self.assertNotIn("77", self.tidy.checks.drawers)
 
     def test_nothing_when_all_is_well(self):
         self.report({"tasks": OK})
