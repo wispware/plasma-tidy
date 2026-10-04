@@ -32,6 +32,11 @@ The first version meant for others. Since 0.2.0:
 - Restore everything; switching Tidy off or quitting leaves Plasma as it is without Tidy.
 - A welcome window on the first start.
 
+**Look**
+- Tidy's own icon: three slanted bars on a green tile, for the menu, Discover and the windows,
+  and a one-colour version in the system tray that follows the theme, with its own look when
+  the icons are hidden.
+
 **Under the hood**
 - Lighter: about 24 MB of memory, no processor time at rest.
 - Tidy checks what it reaches into in Plasma and KWin and says once what does not work in a new

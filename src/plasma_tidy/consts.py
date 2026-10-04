@@ -29,6 +29,15 @@ CATCHER_PREFIX = "tidy-catcher:"
 IDLE_STEP = 1  # seconds of stillness before swayidle reports "idle"
 IDLE_LINK = os.path.join(DATA_DIR, "tidy-idle")
 DRAWER_ID = "io.github.wispware.plasmatidy.drawer"
+# Tidy's own icons: the application, and the two of the system tray (one colour, which
+# Plasma gives the theme's text colour).
+APP_ICON = "io.github.wispware.PlasmaTidy"
+# (A name like "plasma-tidy-symbolic" would not do: an icon theme also tries it shortened, and
+# Breeze has "plasma-symbolic", which would then be taken first.)
+TRAY_ICON = f"{APP_ICON}-symbolic"
+TRAY_ICON_HIDDEN = f"{APP_ICON}-hidden-symbolic"
+ICON_DIR = os.path.expanduser("~/.local/share/icons/hicolor")
+SYSTEM_ICON = f"/usr/share/icons/hicolor/scalable/apps/{APP_ICON}.svg"  # from the package
 DRAWER_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{DRAWER_ID}")
 FADE_ID = "io.github.wispware.plasmatidy.fade"
 FADE_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{FADE_ID}")

@@ -52,6 +52,24 @@ class Build(unittest.TestCase):
             self.assertEqual(wrong.returncode, 2)
 
 
+class Icons(unittest.TestCase):
+    def test_every_icon_ships_and_is_clean(self):
+        from plasma_tidy.widgets import icon_files
+        files = icon_files()
+        self.assertEqual(len(files), 5)
+        for name, svg in files.items():
+            xml.dom.minidom.parseString(svg)
+            for trace in ("c2pa", "<metadata", "inkscape", "sodipodi"):
+                self.assertNotIn(trace, svg, name)
+
+    def test_the_tray_icons_take_the_theme_colour(self):
+        from plasma_tidy.widgets import icon_files
+        for name, svg in icon_files().items():
+            if "symbolic" in name:
+                self.assertIn("ColorScheme-Text", svg, name)
+                self.assertNotRegex(svg, r'fill="#', name)
+
+
 class WidgetNames(unittest.TestCase):
     """A widget is only read by Plasma when it starts, and a name that is not there only
     fails at the moment it is used. So: everything a widget asks of itself must exist."""

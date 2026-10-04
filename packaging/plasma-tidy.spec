@@ -70,6 +70,14 @@ sys.exit(main())
 EOF
 chmod 0755 %{buildroot}%{_bindir}/%{name}
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications data/%{name}.desktop
+# The icons go in the system's icon theme; Tidy then does not put copies in your home.
+icons=src/plasma_tidy/data/icons
+hicolor=%{buildroot}%{_datadir}/icons/hicolor
+install -Dm644 $icons/io.github.wispware.PlasmaTidy.svg $hicolor/scalable/apps/io.github.wispware.PlasmaTidy.svg
+install -Dm644 $icons/io.github.wispware.PlasmaTidy-16.svg $hicolor/16x16/apps/io.github.wispware.PlasmaTidy.svg
+install -Dm644 $icons/io.github.wispware.PlasmaTidy-22.svg $hicolor/22x22/apps/io.github.wispware.PlasmaTidy.svg
+install -Dm644 $icons/io.github.wispware.PlasmaTidy-symbolic.svg $hicolor/scalable/apps/io.github.wispware.PlasmaTidy-symbolic.svg
+install -Dm644 $icons/io.github.wispware.PlasmaTidy-hidden-symbolic.svg $hicolor/scalable/apps/io.github.wispware.PlasmaTidy-hidden-symbolic.svg
 %py_byte_compile %{python3} %{buildroot}%{_datadir}/%{name}
 
 %check
@@ -85,6 +93,11 @@ QT_QPA_PLATFORM=offscreen dbus-run-session -- %{python3} -m unittest
 %{_bindir}/%{name}
 %{_datadir}/%{name}/
 %{_datadir}/applications/%{name}.desktop
+%{_datadir}/icons/hicolor/scalable/apps/io.github.wispware.PlasmaTidy.svg
+%{_datadir}/icons/hicolor/16x16/apps/io.github.wispware.PlasmaTidy.svg
+%{_datadir}/icons/hicolor/22x22/apps/io.github.wispware.PlasmaTidy.svg
+%{_datadir}/icons/hicolor/scalable/apps/io.github.wispware.PlasmaTidy-symbolic.svg
+%{_datadir}/icons/hicolor/scalable/apps/io.github.wispware.PlasmaTidy-hidden-symbolic.svg
 
 %changelog
 * Sun Oct 04 2026 Ivar <hallo@wispware.dev> - 0.3.0-1

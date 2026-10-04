@@ -7,7 +7,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                              QHBoxLayout, QLabel, QSpinBox, QVBoxLayout)
 
-from .consts import APP, APP_NAME, MODE_ACTIVITY, MODE_CLICK, TASK_PLUGINS
+from .consts import APP, APP_ICON, APP_NAME, MODE_ACTIVITY, MODE_CLICK, TASK_PLUGINS
 from .i18n import tr
 from .tray import remember_tray, tray_app_items, tray_minimal
 from .widgets import drawer_texts, install_drawer
@@ -21,12 +21,12 @@ class Welcome(QDialog):
         self.autohide = autohide
         settings = autohide.settings
         self.setWindowTitle(tr("Welcome to {app}").format(app=APP_NAME))
-        self.setWindowIcon(QIcon.fromTheme("view-visible"))
+        self.setWindowIcon(QIcon.fromTheme(APP_ICON, QIcon.fromTheme("view-visible")))
         layout = QVBoxLayout(self)
 
         head = QHBoxLayout()
         icon = QLabel()
-        icon.setPixmap(QIcon.fromTheme("view-visible").pixmap(48, 48))
+        icon.setPixmap(QIcon.fromTheme(APP_ICON, QIcon.fromTheme("view-visible")).pixmap(48, 48))
         head.addWidget(icon)
         title = QLabel(tr("Welcome to {app}").format(app=APP_NAME))
         font = title.font()

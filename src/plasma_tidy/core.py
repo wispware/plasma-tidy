@@ -15,11 +15,12 @@ from PyQt6.QtWidgets import QCheckBox, QMenu, QMessageBox, QSystemTrayIcon, QWid
 
 from .catcher import Catcher
 from .checks import Checks
-from .consts import (APP, APP_NAME, AUTOSTART, BUTTONS, CLICKS_DOUBLE, CLICKS_SINGLE, DATA_DIR,
+from .consts import (APP, APP_ICON, APP_NAME, AUTOSTART, BUTTONS, CLICKS_DOUBLE, CLICKS_SINGLE, DATA_DIR,
                      DONATE_URL, DRAWER_DEFAULTS, DRAWER_STATE, EMPTY_DIR, EMPTY_URL, IDLE_LINK,
                      IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PROFILE_SETTINGS,
                      TASK_POPUPS_PREVIEW,
-                     REHIDE_FIXED, REHIDE_IDLE, RULE_FOCUS, RULE_PROFILE, TRAY_HIDDEN, TRAY_SHOWN,
+                     REHIDE_FIXED, REHIDE_IDLE, RULE_FOCUS, RULE_PROFILE, TRAY_HIDDEN, TRAY_ICON,
+                     TRAY_ICON_HIDDEN, TRAY_SHOWN,
                      VERSION)
 from .i18n import set_language, tr
 from .kwin import KWin
@@ -709,18 +710,19 @@ class Tidy(QObject):
     # --- tray -------------------------------------------------------------
 
     def update_icon(self):
+        shown = QIcon.fromTheme(TRAY_ICON, QIcon.fromTheme("view-visible"))
+        hidden = QIcon.fromTheme(TRAY_ICON_HIDDEN, QIcon.fromTheme("view-hidden"))
         if self.focus:
-            self.tray.setIcon(QIcon.fromTheme("view-hidden"))
+            self.tray.setIcon(hidden)
             status = tr("{app} — focus mode")
         elif not self.enabled_action.isChecked():
-            pixmap = QIcon.fromTheme("view-visible").pixmap(64, QIcon.Mode.Disabled)
-            self.tray.setIcon(QIcon(pixmap))
+            self.tray.setIcon(QIcon(shown.pixmap(64, QIcon.Mode.Disabled)))
             status = tr("{app} — disabled")
         elif self.hidden:
-            self.tray.setIcon(QIcon.fromTheme("view-hidden"))
+            self.tray.setIcon(hidden)
             status = tr("{app} — icons hidden")
         else:
-            self.tray.setIcon(QIcon.fromTheme("view-visible"))
+            self.tray.setIcon(shown)
             status = tr("{app} — icons visible")
         self.tray.setToolTip(status.format(app=APP_NAME))
 
@@ -1289,7 +1291,7 @@ class Tidy(QObject):
             os.makedirs(os.path.dirname(AUTOSTART), exist_ok=True)
             with open(AUTOSTART, "w") as f:
                 f.write(f"[Desktop Entry]\nType=Application\nName={APP_NAME}\n"
-                        f"Exec={os.path.abspath(sys.argv[0])}\nIcon=view-visible\n"
+                        f"Exec={os.path.abspath(sys.argv[0])}\nIcon={APP_ICON}\n"
                         "X-KDE-autostart-after=panel\n")
         elif os.path.exists(AUTOSTART):
             os.remove(AUTOSTART)

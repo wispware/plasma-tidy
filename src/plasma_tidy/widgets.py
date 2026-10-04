@@ -6,11 +6,11 @@ import json
 import os
 import sys
 
-from .consts import (APP_NAME, DRAWER_DEFAULTS, DRAWER_DIR, DRAWER_ID, DRAWER_PAGE_TEXTS,
-                     FADE_DIR, FADE_ID, LICENSE, VERSION)
+from .consts import (APP_ICON, APP_NAME, DRAWER_DEFAULTS, DRAWER_DIR, DRAWER_ID, DRAWER_PAGE_TEXTS,
+                     FADE_DIR, FADE_ID, ICON_DIR, LICENSE, SYSTEM_ICON, TRAY_ICON, TRAY_ICON_HIDDEN,
+                     VERSION)
 from .i18n import tr
-from .resources import (DRAWER_CONFIG_MODEL, DRAWER_CONFIG_QML, DRAWER_CONFIG_XML, DRAWER_QML,
-                        FADE_CONFIG_XML, FADE_QML)
+from .resources import (DRAWER_CONFIG_MODEL, DRAWER_CONFIG_QML, DRAWER_CONFIG_XML, DRAWER_QML, FADE_CONFIG_XML, FADE_QML, text)
 
 
 def drawer_files():
@@ -34,7 +34,7 @@ def fade_files():
     """The fade helper as Plasma wants it on disk: {relative path: contents}."""
     metadata = {"KPlugin": {"Id": FADE_ID, "Name": f"{APP_NAME} desktop helper",
                             "Description": "Fades the desktop icons for Tidy; invisible",
-                            "Icon": "view-visible", "Category": "Utilities",
+                            "Icon": APP_ICON, "Category": "Utilities",
                             "Version": VERSION, "License": LICENSE},
                 "KPackageStructure": "Plasma/Applet",
                 "X-Plasma-API-Minimum-Version": "6.0",
@@ -44,11 +44,24 @@ def fade_files():
             "contents/ui/main.qml": FADE_QML.lstrip("\n")}
 
 
+def icon_files():
+    """Tidy's icons as the icon theme wants them on disk: {path below hicolor: contents}."""
+    return {f"scalable/apps/{APP_ICON}.svg": text(f"icons/{APP_ICON}.svg"),
+            f"16x16/apps/{APP_ICON}.svg": text(f"icons/{APP_ICON}-16.svg"),
+            f"22x22/apps/{APP_ICON}.svg": text(f"icons/{APP_ICON}-22.svg"),
+            f"scalable/apps/{TRAY_ICON}.svg": text(f"icons/{TRAY_ICON}.svg"),
+            f"scalable/apps/{TRAY_ICON_HIDDEN}.svg": text(f"icons/{TRAY_ICON_HIDDEN}.svg")}
+
+
 def install_drawer():
-    """Write Tidy's widgets (the drawer and the fade helper) where Plasma finds them. They
-    ship inside this file, so that installing Tidy stays a matter of copying one file. A
-    changed widget is picked up by Plasma at its next start."""
-    for folder, files in ((DRAWER_DIR, drawer_files()), (FADE_DIR, fade_files())):
+    """Write Tidy's widgets (the drawer and the fade helper) where Plasma finds them, and its
+    icons where the icon theme finds them (unless the package has put them in the system
+    already). They ship inside Tidy, so that installing it stays a matter of copying one
+    file. A changed widget is picked up by Plasma at its next start."""
+    places = [(DRAWER_DIR, drawer_files()), (FADE_DIR, fade_files())]
+    if not os.path.exists(SYSTEM_ICON):
+        places.append((ICON_DIR, icon_files()))
+    for folder, files in places:
         for name, text in files.items():
             path = os.path.join(folder, name)
             try:

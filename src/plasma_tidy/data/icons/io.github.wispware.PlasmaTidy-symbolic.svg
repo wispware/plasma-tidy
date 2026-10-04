@@ -1,0 +1,10 @@
+<!-- SPDX-FileCopyrightText: 2026 Ivar
+     SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <style type="text/css" id="current-color-scheme">.ColorScheme-Text { color:#232629; }</style>
+  <g class="ColorScheme-Text" fill="currentColor" transform="translate(8 8) skewX(-26.565)">
+    <rect x="-4" y="-6" width="8" height="3" rx="1.5"></rect>
+    <rect x="-4" y="-1" width="8" height="3" rx="1.5"></rect>
+    <rect x="-4" y="4" width="8" height="3" rx="1.5"></rect>
+  </g>
+</svg>

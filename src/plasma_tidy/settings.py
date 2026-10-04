@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialo
                              QMessageBox, QProgressBar, QPushButton, QSpinBox, QTabWidget,
                              QTimeEdit, QVBoxLayout, QWidget)
 
-from .consts import (APP, APP_NAME, AUTHOR, AUTOSTART, BRAND, BUGS_URL, CLICKS_DOUBLE,
+from .consts import (APP, APP_ICON, APP_NAME, AUTHOR, AUTOSTART, BRAND, BUGS_URL, CLICKS_DOUBLE,
                      CLICKS_SINGLE, CORNERS, DESCRIPTION, DONATE_URL, LICENSE, MODE_ACTIVITY,
                      MODE_CLICK, REHIDE_FIXED, REHIDE_IDLE, VERSION, WEBSITE_URL)
 from .drawer_ui import DrawerTab
@@ -127,7 +127,7 @@ class AboutTab(QWidget):
 
         head = QHBoxLayout()
         icon = QLabel()
-        icon.setPixmap(QIcon.fromTheme("view-visible").pixmap(64, 64))
+        icon.setPixmap(QIcon.fromTheme(APP_ICON, QIcon.fromTheme("view-visible")).pixmap(64, 64))
         head.addWidget(icon)
         title = QLabel(f"<span style='font-size:20pt; font-weight:600'>{APP_NAME}</span><br>"
                        + tr("Version {version}").format(version=VERSION))
@@ -197,7 +197,7 @@ class SettingsDialog(QDialog):
         self.autohide = autohide
         settings = autohide.settings
         self.setWindowTitle(tr("{app} — settings").format(app=APP_NAME))
-        self.setWindowIcon(QIcon.fromTheme("view-visible"))
+        self.setWindowIcon(QIcon.fromTheme(APP_ICON, QIcon.fromTheme("view-visible")))
         outer = QVBoxLayout(self)
         tabs = QTabWidget()
         # All tabs in view at once: the window is made wide enough rather than the tab bar
