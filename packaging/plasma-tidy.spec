@@ -8,7 +8,7 @@
 %bcond_without tests
 
 Name:           plasma-tidy
-Version:        0.2.0
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Keeps the KDE Plasma desktop, panel and system tray tidy
 
@@ -80,11 +80,11 @@ QT_QPA_PLATFORM=offscreen dbus-run-session -- %{python3} -m unittest
 
 %files
 %license LICENSE
-%doc README.md
+%doc README.md CHANGELOG.md
 %{_bindir}/%{name}
 %{_datadir}/%{name}/
 %{_datadir}/applications/%{name}.desktop
 
 %changelog
-* Sat Oct 03 2026 Ivar <hallo@wispware.dev> - 0.2.0-1
-- First package
+* Sun Oct 04 2026 Ivar <hallo@wispware.dev> - 0.3.0-1
+- First package; see CHANGELOG.md

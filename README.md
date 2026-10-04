@@ -470,6 +470,8 @@ rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.fade
 
 ## Development
 
+What changed in each version is in [`CHANGELOG.md`](CHANGELOG.md).
+
 The code is in `src/plasma_tidy/`: the program in Python, the two Plasma widgets and the KWin
 script as files of their own in `data/`. `./build.py` packs it all into the single file
 `plasma-tidy` (a Python zipapp). To run from the source without building:
