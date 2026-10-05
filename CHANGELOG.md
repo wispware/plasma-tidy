@@ -18,7 +18,8 @@ The first version meant for others. Since 0.2.0:
   in a row, column, grid or list, with or without a background.
 - Which programs go in a drawer, where open programs stand, animations (slide, grow, one by
   one, fade), a mark on a closed drawer, names, and an arrow that can take no room at all.
-- A drawer stays open under a program's pop-up or a menu.
+- A drawer stays open under a program's pop-up or a menu, and while you drag a program to
+  another place.
 - Close a program from its pop-up and the panel and the drawer stay three seconds, to choose
   something else.
 
