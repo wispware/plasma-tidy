@@ -88,6 +88,7 @@ change something.
 | Hide with a helper widget on the desktop (lighter) | An invisible widget on the desktop makes the icons go and come: at once, without extra memory and without writing to disk. Off: Tidy swaps the desktop's folder for an empty one instead, which needs nothing inside Plasma. See *How it works* | on |
 | A double-click on an empty spot of the desktop hides the icons | Hides them at once, without waiting for the timer; needs the helper widget | off |
 | Also hide the panel (taskbar) | Auto-hides the panel while the icons are hidden | off |
+| Show the panel | A panel that is hidden, by Tidy or by itself, comes into view after you minimise a window, or after you minimise or close one, so you can go straight to the next program. It goes again after the time the icons take to hide, and stays while the pointer is on it | never |
 | Also hide the widgets on the desktop | Clocks, notes and other widgets on the desktop go and come with the icons. With widgets on the desktop, a list below it lets you choose per widget: without a tick it stays in view. Needs the helper widget | off, all widgets |
 | Fade the icons in and out | The icons fade away and back instead of switching at once, in the time you set; needs the helper widget | off, 300 ms |
 | Hide the icons on | With more than one screen: the screens whose icons are hidden; the others keep theirs | every screen |

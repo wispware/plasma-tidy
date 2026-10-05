@@ -17,7 +17,9 @@ from .catcher import Catcher
 from .checks import Checks
 from .consts import (APP, APP_ICON, APP_NAME, AUTOSTART, BUTTONS, CLICKS_DOUBLE, CLICKS_SINGLE, DATA_DIR,
                      DONATE_URL, DRAWER_DEFAULTS, DRAWER_STATE, EMPTY_DIR, EMPTY_URL, IDLE_LINK,
-                     IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PROFILE_SETTINGS,
+                     IDLE_STEP, MODE_ACTIVITY, MODE_CLICK, PANEL_AFTER_CLOSE, PANEL_AFTER_NEVER,
+                     PANEL_SETTLE,
+                     PROFILE_SETTINGS,
                      TASK_POPUPS_PREVIEW,
                      REHIDE_FIXED, REHIDE_IDLE, RULE_FOCUS, RULE_PROFILE, TRAY_HIDDEN, TRAY_ICON,
                      TRAY_ICON_HIDDEN, TRAY_SHOWN,
@@ -53,6 +55,7 @@ class Tidy(QObject):
         self.kwin = KWin()
         self.hidden = False
         self.focus = False          # focus mode: everything away, and it stays away
+        self.pointer_on_panel = False
         self.hold_icons = False     # in focus mode, with the desktop icons part of it
         # The helpers on the desktops: how many there should be, and which have reported.
         self.adaptor = None         # set once Tidy is on the bus: its signals go through it
@@ -83,6 +86,7 @@ class Tidy(QObject):
         self.check_timer.timeout.connect(self.review_checks)
 
         self.restore_peek_panels()  # crashed while peeking: the panel back to how it was
+        self.restore_after_panels()
         self.recover_after_crash()
         self.restore_focus_state()  # crashed or logged out in focus mode: put things back
         self.showing_desktop = self.kwin.showing_desktop()
@@ -133,6 +137,9 @@ class Tidy(QObject):
         # Fires once, at the moment the icons are due to hide: nothing runs in between.
         self.hide_timer = QTimer(self, singleShot=True)
         self.hide_timer.timeout.connect(self.on_tick)
+        # The panel in view after a window was put away: until this fires.
+        self.after_timer = QTimer(self, singleShot=True)
+        self.after_timer.timeout.connect(self.on_after_timeout)
         self.schedule()
 
         QTimer.singleShot(5000, self.backup_launchers)
@@ -216,7 +223,8 @@ class Tidy(QObject):
                 self.settings.value("only_desktop", True, bool),
                 self.settings.value("panel_counts", True, bool),
                 # Does a rule look at the program in front?
-                any(r["when"] in ("app", "fullscreen") for r in self.rules()))
+                any(r["when"] in ("app", "fullscreen") for r in self.rules()),
+                self.settings.value("panel_after", PANEL_AFTER_NEVER) != PANEL_AFTER_NEVER)
 
     def load_kwin(self):
         self.kwin.load(*self.kwin_setup())
@@ -304,12 +312,24 @@ class Tidy(QObject):
             saved["urls"] = urls
         if self.settings.value("hide_panel", False, bool):
             saved["panels"] = self.plasma.panel_modes()
+            # A panel that is in view because a window was just put away: how it is set is
+            # what it was before that.
+            for panel, mode in stored(self.settings, "after_panels").items():
+                if int(panel) in saved["panels"]:
+                    saved["panels"][int(panel)] = mode
         if saved:
             # Save first, hide afterwards: that way a crash can never lose anything.
             self.settings.setValue("saved_state", json.dumps(saved))
             self.settings.sync()
         if saved.get("panels"):
-            self.plasma.set_panel_modes({k: "autohide" for k in saved["panels"]})
+            # Icons that fade keep their places until they are gone: a panel that starts
+            # hiding gives the desktop more room, and the icons would shift while they fade.
+            fading = by_helper and self.settings.value("fade_icons", False, bool)
+            wait = self.settings.value("fade_duration", 300, int) if fading else 0
+            if wait > 0:
+                QTimer.singleShot(wait, self.tuck_panels)
+            else:
+                self.tuck_panels(now=True)
         if not by_helper:
             self.plasma.set_desktop_urls({k: EMPTY_URL for k in saved["urls"]})
         self.hidden_by_helper = by_helper
@@ -321,6 +341,21 @@ class Tidy(QObject):
             self.send_state()  # the helper also catches the click that brings them back
         elif self.mode() == MODE_CLICK and not self.hold_icons:
             self.show_catchers()
+
+    def tuck_panels(self, now=False):
+        """The panels go with the icons: they hide by themselves from now on. A panel that
+        is in view because a window was just put away stays for its time, and hides after."""
+        panels = stored(self.settings, "saved_state").get("panels")
+        if not panels or not (now or self.hidden):
+            return  # shown again in the meantime
+        after = stored(self.settings, "after_panels")
+        if after:
+            after.update({k: "autohide" for k in panels if k in after})
+            self.settings.setValue("after_panels", json.dumps(after))
+            self.settings.sync()
+        modes = {int(k): "autohide" for k in panels if k not in after}
+        if modes:
+            self.plasma.set_panel_modes(modes)
 
     def urls_to_hide(self):
         """The other way of hiding: the desktops whose folder is swapped for an empty one,
@@ -346,6 +381,7 @@ class Tidy(QObject):
     def show(self):
         self.hide_catchers()
         raw = self.settings.value("saved_state", "")
+        panels_back = False
         if raw:
             state = stored(self.settings, "saved_state")
             reached = True
@@ -353,8 +389,19 @@ class Tidy(QObject):
                 self.plasma.set_desktop_urls({int(k): v for k, v in state["urls"].items()})
                 reached = self.plasma.reached
             if state.get("panels"):
+                # A panel that is in view because a window was just put away goes straight
+                # to how it is set, without hiding in between: its time is over.
+                after = stored(self.settings, "after_panels")
+                if any(k in after for k in state["panels"]):
+                    after = {k: v for k, v in after.items() if k not in state["panels"]}
+                    if after:
+                        self.settings.setValue("after_panels", json.dumps(after))
+                    else:
+                        self.settings.remove("after_panels")
+                        self.after_timer.stop()
                 self.plasma.set_panel_modes({int(k): v for k, v in state["panels"].items()})
                 reached = reached and self.plasma.reached
+                panels_back = True
             # Plasma not there right now (restarting): keep what was saved, it is put back
             # when Plasma is.
             if reached:
@@ -362,12 +409,19 @@ class Tidy(QObject):
                 self.settings.sync()
         if (self.hidden or raw) and self.settings.value("drawer_follow", False, bool):
             self.plasma.set_drawers_closed(False)
+        fading = (panels_back and self.hidden_by_helper
+                  and self.settings.value("fade_icons", False, bool))
         self.hidden = False
         self.hidden_by_helper = False
         self.restart_countdown()
         if hasattr(self, "tray"):
             self.update_icon()
-        self.send_state()
+        if fading:
+            # A panel that comes back takes room from the desktop, and the icons move over
+            # for it. They fade in once that is done, so they are not seen moving.
+            QTimer.singleShot(PANEL_SETTLE, self.send_state)
+        else:
+            self.send_state()
 
     # --- the helpers on the desktops ----------------------------------------------------
 
@@ -908,6 +962,7 @@ class Tidy(QObject):
         self.settings.setValue("rehide", dlg.rehide.currentData())
         self.settings.setValue("corner", dlg.corner.currentData())
         self.settings.setValue("hide_panel", dlg.panel.isChecked())
+        self.settings.setValue("panel_after", dlg.panel_after.currentData())
         self.settings.setValue("only_desktop", dlg.only_desktop.isChecked())
         self.settings.setValue("panel_counts", dlg.panel_counts.isChecked())
         self.settings.setValue("skip_screens", dlg.skipped_screens())
@@ -963,6 +1018,7 @@ class Tidy(QObject):
         self.peeking = on
         self.tell("Peeking", on)  # the drawers stay open for as long as it lasts
         if on:
+            self.restore_after_panels()
             self.peek_state = {"hidden": bool(self.hidden)}
             if self.hidden:
                 self.show()
@@ -987,6 +1043,56 @@ class Tidy(QObject):
                 if not self.counts_activity():
                     self.idle_since = time.monotonic()
         self.schedule()
+
+    # --- the panel in view after a window is put away --------------------------------------
+
+    def on_window_gone(self, how):
+        """Told by the KWin helper: a window was minimised ("minimized") or closed. A panel
+        that is out of view then comes up, on top of the windows, the way a peek shows it."""
+        wanted = self.settings.value("panel_after", PANEL_AFTER_NEVER)
+        if wanted == PANEL_AFTER_NEVER or (how == "closed" and wanted != PANEL_AFTER_CLOSE):
+            return
+        if self.peeking or self.focus or not self.enabled_action.isChecked():
+            return
+        if not self.settings.value("after_panels", ""):
+            tucked = {k: v for k, v in self.plasma.panel_modes().items()
+                      if v in ("autohide", "dodgewindows")}
+            if not tucked:
+                return
+            # Saved first: a crash must not leave the panel like this.
+            self.settings.setValue("after_panels", json.dumps(tucked))
+            self.settings.sync()
+            self.plasma.set_panel_modes({k: "windowsgobelow" for k in tucked})
+        self.after_timer.start(self.after_time())
+
+    def after_time(self):
+        return max(1, self.settings.value("timeout", 10, int)) * 1000
+
+    def on_panel_pointer(self, on):
+        """Told by the KWin helper: the pointer came onto a panel, or left it."""
+        self.pointer_on_panel = on
+        if not on and self.settings.value("after_panels", ""):
+            self.after_timer.start(self.after_time())  # the time starts when you leave it
+
+    def on_after_timeout(self):
+        if not self.pointer_on_panel:
+            self.restore_after_panels()
+
+    def restore_after_panels(self):
+        """Put the panels back as they were before a window was put away; also after a
+        crash, and before anything else changes how the panels are set."""
+        raw = self.settings.value("after_panels", "")
+        if not raw:
+            return
+        timer = self.__dict__.get("after_timer")
+        if timer is not None:
+            timer.stop()
+        try:
+            self.plasma.set_panel_modes({int(k): v for k, v in json.loads(raw).items()})
+        except (ValueError, AttributeError):
+            pass
+        self.settings.remove("after_panels")
+        self.settings.sync()
 
     def restore_peek_panels(self):
         """Put the panels back as they were before a peek; also after a crash while peeking."""

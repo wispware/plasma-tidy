@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialo
 
 from .consts import (APP, APP_ICON, APP_NAME, AUTHOR, AUTOSTART, BRAND, BUGS_URL, CLICKS_DOUBLE,
                      CLICKS_SINGLE, CORNERS, DESCRIPTION, DONATE_URL, LICENSE, MODE_ACTIVITY,
-                     MODE_CLICK, REHIDE_FIXED, REHIDE_IDLE, VERSION, WEBSITE_URL)
+                     MODE_CLICK, PANEL_AFTER_NEVER, PANEL_AFTERS, REHIDE_FIXED, REHIDE_IDLE, VERSION, WEBSITE_URL)
 from .drawer_ui import DrawerTab
 from .i18n import LANGUAGES, tr
 from .peek import bare_key
@@ -336,6 +336,17 @@ class SettingsDialog(QDialog):
         self.panel = QCheckBox(tr("Also hide the panel (taskbar)"))
         self.panel.setChecked(settings.value("hide_panel", False, bool))
         form.addRow(self.panel)
+
+        self.panel_after = QComboBox()
+        for key, label in PANEL_AFTERS:
+            self.panel_after.addItem(tr(label), key)
+        self.panel_after.setCurrentIndex(max(0, self.panel_after.findData(
+            settings.value("panel_after", PANEL_AFTER_NEVER))))
+        self.panel_after.setToolTip(tr(
+            "A panel that is hidden, by Tidy or by itself, comes into view when you put a "
+            "window away, so you can go straight to the next program. It goes again after "
+            "the time above, and stays while the pointer is on it."))
+        form.addRow(tr("Show the panel:"), self.panel_after)
 
         self.hide_widgets = QCheckBox(tr("Also hide the widgets on the desktop"))
         self.hide_widgets.setChecked(settings.value("hide_widgets", False, bool))

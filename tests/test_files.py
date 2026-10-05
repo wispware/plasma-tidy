@@ -35,7 +35,8 @@ class Widgets(unittest.TestCase):
     def test_the_kwin_scripts_take_their_names(self):
         names = {"app": "a", "prefix": "p", "name": "n", "panel": "true", "edge": "1"}
         for script in (resources.KWIN_JS, resources.KWIN_INFO_JS, resources.KWIN_RULES_JS,
-                       resources.KWIN_POINTER_JS, resources.KWIN_EDGE_JS):
+                       resources.KWIN_POINTER_JS, resources.KWIN_EDGE_JS,
+                       resources.KWIN_AFTER_JS):
             self.assertNotIn("%(", script % names)
 
 

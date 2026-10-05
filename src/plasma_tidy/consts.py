@@ -121,6 +121,16 @@ TRAY_ARROWS = [("open", "In the panel while the pop-up is open"),
                ("always", "Always in the panel"), ("never", "Never")]
 POPUP_STYLES = [("row", "A row of icons"), ("column", "A column of icons"),
                 ("grid", "A grid with names"), ("list", "A list with names")]
+# ms the desktop is given to lay out its icons after a panel changes, before they fade in.
+# Short: the fade starts from nothing, so what is left of the moving is not seen, and the
+# panel and the icons come in together.
+PANEL_SETTLE = 100
+# The panel comes into view by itself, for the time it takes the icons to hide.
+PANEL_AFTER_NEVER = "never"
+PANEL_AFTER_MINIMIZE = "minimize"
+PANEL_AFTER_CLOSE = "close"
+PANEL_AFTERS = [(PANEL_AFTER_NEVER, "Never"), (PANEL_AFTER_MINIMIZE, "After minimising a window"),
+                (PANEL_AFTER_CLOSE, "After minimising or closing a window")]
 POPUP_PLACES = [("arrow", "Above the arrow"), ("start", "At the start of the panel"),
                 ("middle", "In the middle of the panel"), ("end", "At the end of the panel")]
 ACTIVE_PLACES = [("fixed", "On their pinned spot"), ("start", "All in front"),
@@ -167,7 +177,8 @@ PROFILE_SETTINGS = {"timeout": 10, "mode": "activity", "buttons": "left,right,mi
                     "rehide": "idle", "corner": "none", "only_desktop": True,
                     "panel_counts": True, "clicks": "single", "double_hides": False,
                     "hide_widgets": False, "widgets_keep": "", "use_helper": True,
-                    "hide_panel": False, "skip_screens": "", "fade_icons": False,
+                    "hide_panel": False, "panel_after": "never", "skip_screens": "",
+                    "fade_icons": False,
                     "fade_duration": 300, "drawer_follow": False,
                     "focus_icons": True, "focus_drawers": True, "focus_tray": True,
                     "focus_panel": False, "tray_hide_new": False, "tray_rules": "",

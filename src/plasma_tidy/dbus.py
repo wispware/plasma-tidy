@@ -52,6 +52,14 @@ class DBusAdaptor(QDBusAbstractAdaptor):
         self.autohide.popup_open = open_
         self.MenuOpen.emit(open_)
 
+    @pyqtSlot(str)
+    def WindowGone(self, how):
+        self.autohide.on_window_gone(how)
+
+    @pyqtSlot(bool)
+    def PanelPointer(self, on):
+        self.autohide.on_panel_pointer(on)
+
     @pyqtSlot(str, str)
     def PanelHidden(self, screen, edge):
         self.PanelGone.emit(screen, edge)

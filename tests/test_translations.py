@@ -12,7 +12,7 @@ from plasma_tidy.i18n import TRANSLATIONS
 
 # Lists of texts that are translated where they are used, not where they are written.
 LISTS = ["RULE_WHEN", "ANIMATIONS", "ACTIVE_PLACES", "ICON_STYLES", "TRAY_MODES", "CORNERS",
-         "DRAWER_PAGE_TEXTS", "DISPLAYS", "POPUP_STYLES", "POPUP_PLACES",
+         "DRAWER_PAGE_TEXTS", "DISPLAYS", "POPUP_STYLES", "POPUP_PLACES", "PANEL_AFTERS",
          "TRAY_ARROWS", "TASK_POPUPS"]
 # Texts that are the same in a language, and so need no entry in its table.
 UNCHANGED = {"nl": {"Bluetooth", "Discover (updates)", "KDE Connect", "Printers", "Spotify",

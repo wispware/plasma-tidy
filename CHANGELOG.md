@@ -5,6 +5,7 @@
 The first version meant for others. Since 0.2.0:
 
 **Desktop icons**
+- Icons that fade stay where they are: a panel that hides with them waits until they are gone.
 - Fading, hiding the desktop widgets along with the icons (each widget can stay), a double-click
   on an empty spot hides them, and moving over the panel can count as activity.
 - Hiding is done by a small helper on the desktop: instant, without reloading the desktop.
@@ -20,6 +21,8 @@ The first version meant for others. Since 0.2.0:
   of the screen a pointer pushed against that edge is on the icons.
 - A row or a column in a pop-up is as thick as the panel, with icons as large as the panel's.
 - Drag a program in a pop-up to another place, as in the panel.
+- With open programs sent to the front or the back, a pinned program is back on its own spot
+  when you close it, and dragging no longer moves the spot of a program that is open.
 - An arrow without room stays out of the panel while its pop-up is open (the panel no longer
   shifts a little), and the pop-up lines up with the widget beside it.
 - Which programs go in a drawer, where open programs stand, animations (slide, grow, one by
@@ -30,6 +33,7 @@ The first version meant for others. Since 0.2.0:
   something else. Start a program from a drawer and the panel can stay a time you set.
 
 **More**
+- The panel can come into view by itself after you minimise (or close) a window.
 - Focus mode: everything away until you switch it off.
 - Rules and profiles: switch settings by power, screen, time, program, virtual desktop or
   activity; export and import.

@@ -340,6 +340,15 @@ TRANSLATIONS = {
             "in beeld, net als bewegen boven het bureaublad.\n"
             "Uit: alleen het bureaublad zelf telt.",
         "Also hide the panel (taskbar)": "Paneel (taakbalk) ook verbergen",
+        "Show the panel:": "Paneel tonen:",
+        "After minimising a window": "Na het minimaliseren van een venster",
+        "After minimising or closing a window": "Na het minimaliseren of sluiten van een venster",
+        "A panel that is hidden, by Tidy or by itself, comes into view when you put a window "
+        "away, so you can go straight to the next program. It goes again after the time above, "
+        "and stays while the pointer is on it.":
+            "Een paneel dat verborgen is, door Tidy of uit zichzelf, komt in beeld als je een "
+            "venster wegzet, zodat je meteen door kunt naar het volgende programma. Het "
+            "verdwijnt weer na de tijd hierboven, en blijft zolang de muis erop staat.",
         "Start at login": "Starten bij inloggen",
         "Language:": "Taal:",
         "System language": "Systeemtaal",

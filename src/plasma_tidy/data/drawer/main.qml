@@ -227,7 +227,7 @@ PlasmoidItem {
                                         + (isTasks(s.plugin) ? "/L" + Array.from(s.item.applet.plasmoid.configuration.launchers).length : "")),
             whole: wholeTargets.map(s => s.id),
             tasks: taskHiders.slice().sort((a, b) => (vertical ? a.item.y - b.item.y : a.item.x - b.item.x)).map(h => {
-                var m = h.item.model;
+                var m = h.item.model || {};
                 return (m.IsLauncher ? "L" : "W") + ":" + String(m.AppName || m.display).slice(0, 10)
                     + "#" + m.AppId + (h.hider.kept ? "/kept" : "")
                     + "@" + Math.round(vertical ? h.item.y : h.item.x)
@@ -1168,7 +1168,14 @@ PlasmoidItem {
     }
     // Once it lies where it should: the order of the pinned programs is written down.
     function moveDone(entry) {
-        try { entry.applet.tasksModel.syncLaunchers(); } catch (e) {}
+        for (var i = 0; i < managers.count; i++) {
+            var tm = managers.objectAt(i);
+            if (!tm || tm.applet !== entry.applet) continue;
+            // (The task manager's own way writes an open program where its window stands.)
+            if (tm.ordering) tm.listFromRows();
+            else try { entry.applet.tasksModel.syncLaunchers(); } catch (e) {}
+            tm.arrange.restart();
+        }
     }
 
     PlasmaCore.Dialog {
@@ -1898,25 +1905,124 @@ PlasmoidItem {
             function isOpen(model, row) {
                 return !model.data(model.makeModelIndex(row), TaskManager.AbstractTasksModel.IsLauncher);
             }
+            // The pinned programs keep the order you gave them. The task manager keeps that
+            // order in a list, but moves a pinned program's place along with its window: sent
+            // to the front or the back while open, it would come back there when closed. So
+            // the pinned ones are put back in the order of the list, and the list itself is
+            // looked after: the task manager writes it anew from what stands where whenever
+            // a program was dragged, and would write an open program at the place it was
+            // sent to.
+            property var pinPlaces: ({})      // a program's address -> its place in the list
+            property var pinList: []          // the list as it should be
+            property bool writing: false
+            function pinPlace(model, row) {
+                var url = model.data(model.makeModelIndex(row), TaskManager.AbstractTasksModel.LauncherUrlWithoutIcon);
+                var key = String(url);
+                if (!(key in pinPlaces)) pinPlaces[key] = model.launcherPosition(url);
+                return pinPlaces[key];
+            }
+            function listNow() {
+                try { return Array.from(tm.tasksModel.launcherList).map(String); } catch (e) { return []; }
+            }
+            function sameList(a, b) {
+                return a.length === b.length && a.every((v, i) => v === b[i]);
+            }
+            function writeList(list) {
+                pinList = list;
+                pinPlaces = ({});
+                if (sameList(list, listNow())) return;
+                writing = true;
+                try { tm.tasksModel.launcherList = list; } catch (e) {}
+                writing = false;
+            }
+            // The list was written by the task manager (a program was dragged, pinned or
+            // unpinned). The pinned programs that are open were written where their windows
+            // stand; they go back to where they were in the list before.
+            function listChanged() {
+                if (writing) return;
+                var now = listNow(), model = tm.tasksModel;
+                pinPlaces = ({});
+                if (!ordering || !model || pinList.length === 0) { pinList = now; return; }
+                var sent = [];
+                for (var row = 0; row < model.count; row++) {
+                    if (!isOpen(model, row)) continue;
+                    var place = pinPlace(model, row);
+                    if (place >= 0 && place < now.length && pinList.indexOf(now[place]) >= 0
+                            && sent.indexOf(now[place]) < 0)
+                        sent.push(now[place]);
+                }
+                var list = now.filter(e => sent.indexOf(e) < 0);
+                pinList.forEach((e, i) => {
+                    if (sent.indexOf(e) < 0) return;
+                    // After the nearest one before it that is still in the list.
+                    var at = -1;
+                    for (var b = i - 1; b >= 0 && at < 0; b--) at = list.indexOf(pinList[b]);
+                    list.splice(at + 1, 0, e);
+                });
+                writeList(list);
+                arrange.restart();
+            }
+            // After a drag in the drawer's own pop-up: the pinned programs that are in view
+            // take, in the order they stand in now, the places in the list that they had
+            // between them. The others (open, or not shown here) keep theirs.
+            function listFromRows() {
+                var model = tm.tasksModel, list = listNow(), places = [];
+                if (!model || !list.length) return;
+                pinPlaces = ({});
+                for (var row = 0; row < model.count; row++) {
+                    if (isOpen(model, row)) continue;
+                    var place = pinPlace(model, row);
+                    if (place >= 0 && place < list.length && places.indexOf(place) < 0) places.push(place);
+                }
+                var names = places.map(place => list[place]);
+                places.slice().sort((a, b) => a - b).forEach((place, i) => { list[place] = names[i]; });
+                writeList(list);
+            }
+            // While you drag a program, nothing is put back: it is on its way.
+            readonly property bool dragging: {
+                try { return !!tm.applet.dragSource; } catch (e) { return false; }
+            }
+            onDraggingChanged: if (!dragging) arrange.restart()
             function arrangeOpen() {
                 var model = tm.tasksModel;
-                if (!ordering || !model) return;
-                var row, spot;
+                if (!ordering || !model || dragging || root.popupMoving) return;
+                var row, spot, first = 0, count = 0;
                 if (root.cfg.activePlace === "start") {
                     for (row = 0, spot = 0; row < model.count; row++) {
                         if (!isOpen(model, row)) continue;
                         if (row !== spot) model.move(row, spot);
                         spot++;
                     }
+                    first = spot;
+                    count = model.count - spot;
                 } else {
                     for (row = model.count - 1, spot = model.count - 1; row >= 0; row--) {
                         if (!isOpen(model, row)) continue;
                         if (row !== spot) model.move(row, spot);
                         spot--;
                     }
+                    count = spot + 1;
+                }
+                // The pinned ones, now all together: in the order of the list.
+                for (spot = first; spot < first + count; spot++) {
+                    var best = spot, least = pinPlace(model, spot);
+                    for (row = spot + 1; row < first + count; row++) {
+                        var place = pinPlace(model, row);
+                        if (place >= 0 && (least < 0 || place < least)) { best = row; least = place; }
+                    }
+                    if (best !== spot) model.move(best, spot);
                 }
             }
             property Timer arrange: Timer { interval: 60; onTriggered: tm.arrangeOpen() }
+            property Connections pins: Connections {
+                target: tm.tasksModel
+                function onLauncherListChanged() { tm.listChanged(); }
+                // The pop-up shows the programs in the order they stand in.
+                function onRowsMoved() { listPopup.restart(); }
+                function onModelReset() { listPopup.restart(); }
+            }
+            onTasksModelChanged: pinList = listNow()
+            Component.onCompleted: pinList = listNow()
             property Connections rows: Connections {
                 target: tm.ordering ? tm.tasksModel : null
                 function onRowsInserted() { tm.arrange.restart(); }
