@@ -196,7 +196,7 @@ PlasmoidItem {
             taskTips: cfg.taskTips + "/" + taskHiders.filter(h => { try { return h.item.active === true; } catch (e) { return false; } }).length
                 + " of " + taskHiders.length + " tasks with a pop-up", arrowTip: cfg.arrowTip, balloons: cfg.balloons, taskBare: cfg.taskBare + "/" + tipsTrimmed + " trimmed", taskClose: cfg.taskClose, taskGap: cfg.taskGap + "/" + tipGap() + "px/now "
                 + (tipWindow ? tipWindow.margin : "?"), tipGap: cfg.tipGap + "/listening to " + tipAreas.length, tipShowing: tipShowing, kept: panelKept,
-            menus: taskMenuOpen + "/" + menuOpen, panel: Screen.name + "/" + panelEdge, check: lastCheck, closing: closeTimer.running,
+            menus: taskMenuOpen + "/" + menuOpen, dragging: taskDragging, panel: Screen.name + "/" + panelEdge, check: lastCheck, closing: closeTimer.running,
             slim: slim + "/room " + room + (container && !container.visible ? "/out of the panel" : "")
                 + "/shortcut " + hasShortcut,
             tipTexts: cfg.debug === "on" ? tipFind().map(a => String(a.mainText)).filter(t => t !== "") : [],
@@ -573,7 +573,12 @@ PlasmoidItem {
         try { return h.item.contextMenu !== null && Number(h.item.contextMenu.status) === 1; }
         catch (e) { return false; }
     })
-    readonly property bool busyAbove: tipShowing || taskMenuOpen || menuOpen || panelKept
+    // Dragging a program to another place: while a drag is under way nothing is told about
+    // where the pointer is, so it would look as if it had left the drawer.
+    readonly property bool taskDragging: taskManagers.some(s => {
+        try { return !!s.item.applet.dragSource; } catch (e) { return false; }
+    })
+    readonly property bool busyAbove: tipShowing || taskMenuOpen || menuOpen || panelKept || taskDragging
 
     // A program closed from its own pop-up (its close button): the pop-up goes with it, and
     // with the pointer above the panel nothing would hold the panel or the drawer any more.
