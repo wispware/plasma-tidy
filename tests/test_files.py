@@ -75,7 +75,7 @@ class WidgetNames(unittest.TestCase):
     fails at the moment it is used. So: everything a widget asks of itself must exist."""
 
     # What every widget has without saying so.
-    BUILT_IN = {"parent", "width", "height", "Window"}
+    BUILT_IN = {"parent", "width", "height", "Window", "mapToItem", "mapToGlobal"}
 
     def own_names(self, source):
         names = set(re.findall(

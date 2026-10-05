@@ -25,6 +25,7 @@ KCM.SimpleKCM {
     property bool cfg_autoClose
     property string cfg_closeScope
     property int cfg_closeDelay
+    property int cfg_keepPanel
     property bool cfg_closeOnPanelClick
     property bool cfg_openOnPanelClick
     property bool cfg_closeAfterUse
@@ -35,6 +36,7 @@ KCM.SimpleKCM {
     property string cfg_animation
     property string cfg_display
     property string cfg_popupStyle
+    property string cfg_popupPlace
     property bool cfg_popupBackground
     property bool cfg_popupGap
     property string cfg_trayArrow
@@ -184,6 +186,14 @@ KCM.SimpleKCM {
             checked: page.cfg_closeAfterUse
             onToggled: page.cfg_closeAfterUse = checked
         }
+        QQC2.SpinBox {
+            Kirigami.FormData.label: page.t("Panel stays after starting a program:")
+            from: 0; to: 600; stepSize: 5     // tenths of a second
+            value: Math.round(page.cfg_keepPanel / 100)
+            textFromValue: value => (value / 10).toFixed(1) + " s"
+            valueFromText: text => Math.round((parseFloat(text.replace(",", ".")) || 0) * 10)
+            onValueModified: page.cfg_keepPanel = value * 100
+        }
         QQC2.CheckBox {
             text: page.t("Close when a window that fills the screen comes to the front")
             checked: page.cfg_closeOnMaximized
@@ -251,6 +261,14 @@ KCM.SimpleKCM {
                       ["grid", "A grid with names"], ["list", "A list with names"]]
             value: page.cfg_popupStyle
             onChosen: value => page.cfg_popupStyle = value
+        }
+        Choice {
+            Kirigami.FormData.label: page.t("Place of the pop-up:")
+            enabled: page.cfg_display === "popup"
+            choices: [["arrow", "Above the arrow"], ["start", "At the start of the panel"],
+                      ["middle", "In the middle of the panel"], ["end", "At the end of the panel"]]
+            value: page.cfg_popupPlace
+            onChosen: value => page.cfg_popupPlace = value
         }
         QQC2.CheckBox {
             text: page.t("Pop-up has a background, like the panel")

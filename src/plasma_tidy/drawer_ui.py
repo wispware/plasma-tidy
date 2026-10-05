@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, 
                              QSpinBox, QStackedWidget, QTabWidget, QVBoxLayout, QWidget)
 
 from .consts import (ACTIVE_PLACES, ANIMATIONS, APP_NAME, DISPLAY_POPUP, DISPLAYS, DRAWER_SKIP,
-                     ICON_STYLES, POPUP_STYLES, TASK_POPUPS, TRAY_ARROWS,
+                     ICON_STYLES, POPUP_PLACES, POPUP_STYLES, TASK_POPUPS, TRAY_ARROWS,
                      MARK_ATTENTION, MARK_COUNT, MARK_NONE, MARK_OPEN, OPEN_CLICK, OPEN_HOVER,
                      PANEL_PLACES, PLACE_AFTER, PLACE_BEFORE, PLACE_MANUAL, SCOPE_DRAWER,
                      SCOPE_PANEL, TASKS_ALL, TASKS_PINNED, TASK_PLUGINS)
@@ -199,6 +199,15 @@ class DrawerPage(QWidget):
         self.after_use.setChecked(config["closeAfterUse"])
         form.addRow(self.after_use)
 
+        self.keep_panel = QDoubleSpinBox(suffix=" s", minimum=0, maximum=60, singleStep=0.5,
+                                         decimals=1)
+        self.keep_panel.setValue(config["keepPanel"] / 1000)
+        self.keep_panel.setToolTip(tr(
+            "A panel that hides itself or dodges windows goes the moment the window of a "
+            "program you start from the drawer opens. With a time here it stays that long, "
+            "so you can go on in the panel. 0: it goes at once."))
+        form.addRow(tr("Panel stays after starting a program:"), self.keep_panel)
+
         self.on_maximized = QCheckBox(tr("Close when a window that fills the screen comes to "
                                          "the front"))
         self.on_maximized.setChecked(config["closeOnMaximized"])
@@ -296,6 +305,16 @@ class DrawerPage(QWidget):
         self.popup_style.setCurrentIndex(max(0, self.popup_style.findData(config["popupStyle"])))
         form.addRow(tr("Pop-up:"), self.popup_style)
 
+        self.popup_place = QComboBox()
+        for key, label in POPUP_PLACES:
+            self.popup_place.addItem(tr(label), key)
+        self.popup_place.setCurrentIndex(max(0, self.popup_place.findData(config["popupPlace"])))
+        self.popup_place.setToolTip(tr(
+            "Above the arrow, or at a fixed spot of the panel, wherever the arrow is. The "
+            "pop-up ends where the panel ends. Is that at the edge of the screen, then a "
+            "pointer pushed against that edge is on the icons."))
+        form.addRow(tr("Place of the pop-up:"), self.popup_place)
+
         self.popup_background = QCheckBox(tr("Pop-up has a background, like the panel"))
         self.popup_background.setChecked(config["popupBackground"])
         self.popup_background.setToolTip(tr("On: the pop-up looks like a piece of your panel. "
@@ -379,6 +398,7 @@ class DrawerPage(QWidget):
         self.programs_box.setEnabled(tasks)
         popup = self.display.currentData() == DISPLAY_POPUP
         self.popup_style.setEnabled(popup)
+        self.popup_place.setEnabled(popup)
         self.popup_background.setEnabled(popup)
         self.popup_gap.setEnabled(popup)
         self.tray_arrow.setEnabled(popup and any(
@@ -420,6 +440,7 @@ class DrawerPage(QWidget):
                 "autoClose": bool(self.auto_close.currentData()),
                 "closeScope": self.auto_close.currentData() or self.drawer["config"]["closeScope"],
                 "closeDelay": round(self.close_delay.value() * 1000),
+                "keepPanel": round(self.keep_panel.value() * 1000),
                 "closeOnPanelClick": self.panel_click.isChecked(),
                 "openOnPanelClick": self.panel_open.isChecked(),
                 "closeAfterUse": self.after_use.isChecked(),
@@ -432,6 +453,7 @@ class DrawerPage(QWidget):
                 "reverseArrow": self.reverse.isChecked(),
                 "display": self.display.currentData(),
                 "popupStyle": self.popup_style.currentData(),
+                "popupPlace": self.popup_place.currentData(),
                 "popupBackground": self.popup_background.isChecked(),
                 "popupGap": self.popup_gap.isChecked(),
                 "trayArrow": self.tray_arrow.currentData(),

@@ -201,7 +201,10 @@ PlasmoidItem {
                 + "/shortcut " + hasShortcut,
             tipTexts: cfg.debug === "on" ? tipFind().map(a => String(a.mainText)).filter(t => t !== "") : [],
             display: cfg.display, shelf: popupMode ? (popup.visible ? "open" : "closed") + "/" + popupItems.length
-                + "/" + Math.round(popup.width) + "x" + Math.round(popup.height) : "",
+                + "/" + Math.round(popup.width) + "x" + Math.round(popup.height)
+                + "@" + Math.round(popup.x) + "," + Math.round(popup.y) + "/" + placed
+                + "/order " + popupItems.map(h => { try { return String(h.item.model.AppName).slice(0, 8); } catch (e) { return "?"; } }).join(",")
+                + "/icon " + shelf.iconSize + "/bar " + Math.round(barThick) + "/thick " + Math.round(shelf.thick) : "",
             animation: animation, fitPanel: cfg.fitPanel,
             hover: panelHover !== null,
             width: Math.round(root.width), stretching: stretching, savedFill: cfg.savedFill,
@@ -579,6 +582,7 @@ PlasmoidItem {
         try { return !!s.item.applet.dragSource; } catch (e) { return false; }
     })
     readonly property bool busyAbove: tipShowing || taskMenuOpen || menuOpen || panelKept || taskDragging
+                                      || popupMoving
 
     // A program closed from its own pop-up (its close button): the pop-up goes with it, and
     // with the pointer above the panel nothing would hold the panel or the drawer any more.
@@ -594,7 +598,14 @@ PlasmoidItem {
     onTipOwnerChanged: keepIfClosed()
     function keepIfClosed() {
         if (tipOwner !== null || tipShowing || Date.now() - tipGoneAt > 1000) return;
-        if (pointerInPanel || cfg.paused || leaving) return;
+        if (pointerInPanel) return;
+        keepPanel(3000);
+    }
+    // The same after a program is started from the drawer, for as long as is set: its window
+    // would send a panel that dodges windows away at once, before you can get to the panel.
+    function keepPanel(time) {
+        if (time <= 0 || cfg.paused || leaving) return;
+        keepTimer.interval = time;
         panelKept = true;
         keepTimer.restart();
     }
@@ -795,7 +806,8 @@ PlasmoidItem {
         interval: 0
         onTriggered: {
             // Only a pop-up has use for it; in the panel nothing is made for these.
-            var along = t => root.vertical ? t.y : t.x;
+            // (By their number in the task manager: icons without width have no place to go by.)
+            var along = t => (typeof t.index === "number") ? t.index : (root.vertical ? t.y : t.x);
             var list = !root.popupMode ? [] : root.taskHiders
                 .filter(h => h.hider && h.hider.takesPart && h.item)
                 .sort((a, b) => along(a.item) - along(b.item));
@@ -928,10 +940,106 @@ PlasmoidItem {
         });
         panelBar = best;
     }
+    // An arrow that has given up its room is out of the panel's row and keeps the place it
+    // had when it left. Where it would stand now is told by the widget beside it: the one
+    // after it, or else the one before.
+    function neighbour() {
+        if (!container || !container.parent || container.visible) return null;
+        var kids = container.parent.children, at = -1;
+        for (var i = 0; i < kids.length; i++) if (kids[i] === container) { at = i; break; }
+        if (at < 0) return null;
+        var shown = k => k && k.isAppletContainer && k.visible;
+        for (var n = at + 1; n < kids.length; n++) if (shown(kids[n])) return {item: kids[n], after: true};
+        for (var b = at - 1; b >= 0; b--) if (shown(kids[b])) return {item: kids[b], after: false};
+        return null;
+    }
+    // How far the arrow's old place is from where it would stand now.
+    function awayFromPlace(beside) {
+        if (!beside) return 0;
+        var k = beside.item;
+        var mirrored = !vertical && Qt.application.layoutDirection === Qt.RightToLeft;
+        // The side of the neighbour that the arrow would touch.
+        var far = beside.after === mirrored;
+        var place = vertical ? (far ? k.y + k.height : k.y) : (far ? k.x + k.width : k.x);
+        return place - (vertical ? container.y : container.x);
+    }
+    // What the pop-up stands above, along the panel: the arrow. An arrow without room has no
+    // place to show for itself, so there it is the widget beside it, or for a task manager
+    // the program nearest to the arrow, and the pop-up lines up with something you can see.
+    function standsOn(beside, away) {
+        if (!beside) return {from: 0, to: thickness};
+        var k = beside.item, layout = container.parent;
+        var along = p => vertical ? p.y : p.x;
+        var from = along(k), to = from + (vertical ? k.height : k.width);
+        var mirrored = !vertical && Qt.application.layoutDirection === Qt.RightToLeft;
+        var first = beside.after !== mirrored;      // the arrow is at the neighbour's start
+        var icons = [];
+        try {
+            if (isTasks(k.applet.plasmoid.pluginName)) {
+                var list = k.applet.taskList.children;
+                for (var i = 0; i < list.length; i++) {
+                    var c = list[i];
+                    if (c && c.visible && c.opacity > 0 && c.width > 1 && c.height > 1) icons.push(c);
+                }
+            }
+        } catch (e) {}
+        if (icons.length) {
+            var best = null, bestAt = 0;
+            icons.forEach(c => {
+                var at = along(c.mapToItem(layout, 0, 0));
+                if (!best || (first ? at < bestAt : at > bestAt)) { best = c; bestAt = at; }
+            });
+            from = bestAt;
+            to = bestAt + (vertical ? best.height : best.width);
+        } else {
+            // A widget that fills the panel is mostly empty: only its contents count.
+            var extent = contentExtent(k);
+            if (first) to = from + extent; else from = to - extent;
+        }
+        var origin = along(root.mapToItem(layout, 0, 0)) + away;
+        return {from: from - origin, to: to - origin};
+    }
+    // Where the screen begins and ends along the panel, seen from the arrow.
+    function screenEnds(away) {
+        var here = root.mapToGlobal(0, 0);
+        var low = (vertical ? Screen.virtualY - here.y : Screen.virtualX - here.x) - away;
+        return {low: low, high: low + (vertical ? Screen.height : Screen.width)};
+    }
+    // How thick the panel is, and how large it draws the icon of a program: a row or a column
+    // in the pop-up takes both over. The icon is measured on a program in the panel; with none
+    // in view it is the size the panel's thickness gives.
+    readonly property real barThick: panelBar ? (vertical ? panelBar.width : panelBar.height)
+                                              : shelf.thick + 2 * Kirigami.Units.smallSpacing
+    property int panelIcon: Kirigami.Units.iconSizes.medium
+    function measureIcon() {
+        var size = 0;
+        taskManagers.forEach(s => {
+            try {
+                var list = s.item.applet.taskList.children;
+                for (var i = 0; i < list.length && size === 0; i++) {
+                    var c = list[i];
+                    if (!c || !c.visible || c.width < 2 || c.height < 2) continue;
+                    findItems(c, 4, item => item.source !== undefined && item.isMask !== undefined
+                              && item.visible && item.width > 1).forEach(icon => {
+                        size = Math.max(size, Math.round(Math.min(icon.width, icon.height)));
+                    });
+                }
+            } catch (e) {}
+        });
+        if (size === 0) {
+            try { size = Kirigami.Units.iconSizes.roundedIconSize(shelf.thick); } catch (e) {}
+        }
+        if (size > 0 && size !== panelIcon) panelIcon = size;
+    }
+    property string placed: ""       // for the diagnostics: what the last placing went by
     function placeAnchor() {
         if (!panelBar) findBar();
+        measureIcon();
         var x = 0, y = 0, w = root.width, h = root.height;
+        var top = topItem(), away = 0, lead = 0, trail = 0;
         try {
+            var beside = neighbour();
+            away = awayFromPlace(beside);
             // Across the panel. Standing on it: from the panel's own background. Floating
             // above it, the way Plasma's own pop-ups do: from the edge of the panel's window,
             // which for a floating panel lies a little outside what you see of it.
@@ -944,41 +1052,83 @@ PlasmoidItem {
                 if (vertical) { x = at.x + inset; w = edge.width - 2 * inset; }
                 else { y = at.y + inset; h = edge.height - 2 * inset; }
             }
-            // Along the panel: in the middle of the arrow, but never past the panel's ends,
-            // so the pop-up's edge lines up with the panel's when the arrow is near an end.
-            // A pop-up is centred on what it belongs to, so that is made a thin line where
-            // the pop-up's middle must come.
-            var size = vertical ? shelf.safeHeight : shelf.safeWidth;
-            var start = thickness / 2 - size / 2;
+            // Along the panel: where the setting says. At the arrow: above its middle, but
+            // never past the panel's ends, so the pop-up's edge lines up with the panel's when
+            // the arrow is near an end. A pop-up is centred on what it belongs to, so that is
+            // made a thin line where the pop-up's middle must come.
+            var size = vertical ? shelf.bodyHeight : shelf.bodyWidth;
+            var on = standsOn(beside, away);
+            var middle = (on.from + on.to) / 2;
+            var start = middle - size / 2;
+            placed = cfg.popupPlace + "/on " + Math.round(on.from) + ".." + Math.round(on.to) + "/away " + Math.round(away);
             if (panelBar) {
                 var bar = panelBar.mapToItem(root, 0, 0);
-                var low = vertical ? bar.y : bar.x;
+                var low = (vertical ? bar.y : bar.x) - away;
                 var high = low + (vertical ? panelBar.height : panelBar.width);
-                if (high - low >= size) {
+                var near = vertical ? panelBar.width : panelBar.height;
+                placed += "/bar " + Math.round(low) + ".." + Math.round(high);
+                var mirrored = !vertical && Qt.application.layoutDirection === Qt.RightToLeft;
+                var place = cfg.popupPlace;
+                if (mirrored && place === "start") place = "end";
+                else if (mirrored && place === "end") place = "start";
+                if (high - low < size) {
+                    // Longer than the panel: nothing to line up with.
+                } else if (place === "start") {
+                    start = low;
+                } else if (place === "end") {
+                    start = high - size;
+                } else if (place === "middle") {
+                    start = (low + high) / 2 - size / 2;
+                } else {
                     start = Math.max(low, Math.min(start, high - size));
-                    // A pop-up that lies along the panel (a column beside a side panel, a row
-                    // above a bottom one) and is nearly at an end goes all the way, rather
-                    // than a small step short of it. A narrow one stays over its arrow.
-                    var near = vertical ? panelBar.width : panelBar.height;
-                    if (size > 2 * near) {
-                        if (start - low < near) start = low;
-                        else if (high - (start + size) < near) start = high - size;
-                    }
+                    // Nearly at an end it goes all the way, rather than a small step short of
+                    // it: a pop-up that lies along the panel (a column beside a side panel, a
+                    // row above a bottom one) always, a narrow one as long as it then still
+                    // stands above what it belongs to.
+                    var wide = size > 2 * near;
+                    if (start - low < near && (wide || middle <= low + size)) start = low;
+                    else if (high - (start + size) < near && (wide || middle >= high - size))
+                        start = high - size;
                 }
+                // What you see of the pop-up ends where the panel ends. A panel that floats
+                // stops a little short of the screen's edge, and so does the pop-up; but like
+                // the panel it is there for the pointer all the way: its window goes on,
+                // unseen, to the edge of the screen, so that a pointer pushed against that
+                // edge is on the first or the last icon.
+                var screen = screenEnds(away);
+                var before = Math.round(start - screen.low), after = Math.round(screen.high - (start + size));
+                lead = (before > 0 && before < near / 2) ? before : 0;
+                trail = (after > 0 && after < near / 2) ? after : 0;
+                placed += "/lead " + lead + "/trail " + trail;
             }
-            if (vertical) { y = start + size / 2 - 1; h = 2; }
-            else { x = start + size / 2 - 1; w = 2; }
-        } catch (e) {}
+            shelf.lead = lead;
+            shelf.trail = trail;
+            var middleOfWindow = start - lead + (size + lead + trail) / 2;
+            if (vertical) { y = middleOfWindow - 1; h = 2; }
+            else { x = middleOfWindow - 1; w = 2; }
+        } catch (e) {
+            placed = "failed: " + e;
+        }
+        // The anchor lies in the panel as a whole, not in the arrow: an arrow without room
+        // is not in view, and what a pop-up belongs to has to be.
+        if (top && top !== root) {
+            var p = root.mapToItem(top, x, y);
+            x = p.x + (vertical ? 0 : away);
+            y = p.y + (vertical ? away : 0);
+            if (popupAnchor.parent !== top) popupAnchor.parent = top;
+        }
         popupAnchor.x = x;
         popupAnchor.y = y;
         popupAnchor.width = w;
         popupAnchor.height = h;
     }
+    readonly property string popupPlace: cfg.popupPlace
+    onPopupPlaceChanged: if (popupWanted) placeAnchor()
     // The pop-up's size changes with what is in it: keep it in place.
     Connections {
         target: shelf
-        function onSafeWidthChanged() { if (root.popupWanted) root.placeAnchor(); }
-        function onSafeHeightChanged() { if (root.popupWanted) root.placeAnchor(); }
+        function onBodyWidthChanged() { if (root.popupWanted) root.placeAnchor(); }
+        function onBodyHeightChanged() { if (root.popupWanted) root.placeAnchor(); }
     }
 
     onPointerHereChanged: if (pointerHere && popupWanted) popupVisited = true
@@ -995,7 +1145,30 @@ PlasmoidItem {
         } catch (e) {
             console.warn("TIDYDRAWER cannot use this program: " + e);
         }
+        keepPanel(cfg.keepPanel);
         if (!peeking) cfg.closed = true;
+    }
+    // Drag a program in the pop-up to another place: the task manager moves it, the way it
+    // does when you drag an icon in the panel, and remembers the order. Only when its
+    // programs are sorted by hand, and within one task manager.
+    property bool popupMoving: false
+    function moveTask(entry, onto) {
+        try {
+            if (!entry || !onto || entry === onto || entry.applet !== onto.applet) return false;
+            var model = entry.applet.tasksModel;
+            var from = entry.item.index, to = onto.item.index;
+            if (Number(model.sortMode) !== 1 || from === to || from < 0 || to < 0) return false;
+            model.move(from, to);
+            listPopup.restart();
+            return true;
+        } catch (e) {
+            console.warn("TIDYDRAWER cannot move this program: " + e);
+        }
+        return false;
+    }
+    // Once it lies where it should: the order of the pinned programs is written down.
+    function moveDone(entry) {
+        try { entry.applet.tasksModel.syncLaunchers(); } catch (e) {}
     }
 
     PlasmaCore.Dialog {
@@ -1021,12 +1194,18 @@ PlasmoidItem {
                 : (look === "grid" ? Math.min(4, Math.max(1, count)) : Math.max(1, count))
             // A column stands on the panel: the first program is the one nearest to the arrow.
             readonly property bool upwards: look === "column" && Plasmoid.location === PlasmaCore.Types.BottomEdge
-            readonly property int iconSize: look === "list" ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large
+            // A row or a column without names is a piece of panel: as thick as the panel, with
+            // icons as large as the panel's. With names there is more to read, and more room.
+            readonly property bool bare: look === "row" || look === "column"
+            readonly property int iconSize: bare ? root.panelIcon
+                : (look === "list" ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large)
             readonly property int pad: Kirigami.Units.smallSpacing
+            readonly property int across: Math.max(iconSize, Math.round(root.barThick) - 2 * edge)
             readonly property int cellWidth: look === "list" ? Kirigami.Units.gridUnit * 12
-                : (look === "grid" ? Kirigami.Units.gridUnit * 5 : iconSize + pad * 4)
-            readonly property int cellHeight: look === "grid"
-                ? iconSize + pad * 5 + Kirigami.Units.gridUnit : iconSize + pad * 3
+                : (look === "grid" ? Kirigami.Units.gridUnit * 5
+                   : (look === "column" ? across : iconSize + pad * 4))
+            readonly property int cellHeight: look === "grid" ? iconSize + pad * 5 + Kirigami.Units.gridUnit
+                : (look === "row" ? across : iconSize + pad * 3)
             // The programs, and next to (or under) them the widgets that were lifted in.
             readonly property bool stacked: look === "column" || look === "list"
             readonly property real thick: root.container && root.container.parent
@@ -1036,7 +1215,11 @@ PlasmoidItem {
             readonly property real programsHeight: count > 0 ? Math.ceil(count / columns) * cellHeight : 0
             // With a background: the panel's own, so the pop-up looks like a piece of panel.
             // Without: only the icons, on whatever is behind them.
-            readonly property int edge: root.cfg.popupBackground ? Kirigami.Units.smallSpacing * 2 : 0
+            // (Around a piece of panel only as much as leaves the icons their room.)
+            readonly property int edge: !root.cfg.popupBackground ? 0
+                : (bare ? Math.max(0, Math.min(Kirigami.Units.smallSpacing,
+                                               Math.floor((root.barThick - iconSize) / 2)))
+                        : Kirigami.Units.smallSpacing * 2)
             // The window gives this item its size, so the size we want is told through the
             // layout hints below; a binding on width and height would be lost at the first show.
             // How much room the lifted widgets take, worked out from their holders: the grid
@@ -1055,19 +1238,59 @@ PlasmoidItem {
                                                          : programsWidth + widgetsWidth) + 2 * edge
             readonly property real wantedHeight: (stacked ? programsHeight + widgetsHeight
                                                           : Math.max(programsHeight, widgetsHeight)) + 2 * edge
-            implicitWidth: Math.max(Kirigami.Units.gridUnit, wantedWidth)
-            implicitHeight: Math.max(Kirigami.Units.gridUnit, wantedHeight)
+            implicitWidth: safeWidth
+            implicitHeight: safeHeight
             width: implicitWidth      // a first size; the window sets it from then on
             height: implicitHeight
+            // Never smaller than something: a window without size is an error that takes all
+            // of Plasma down with it.
+            readonly property real bodyWidth: Math.max(Kirigami.Units.gridUnit, wantedWidth)
+            readonly property real bodyHeight: Math.max(Kirigami.Units.gridUnit, wantedHeight)
+            // Unseen room before and after what you see, along the panel: up to the edge of
+            // the screen when that is near (placeAnchor). A pointer there is on the nearest icon.
+            property int lead: 0
+            property int trail: 0
+            readonly property int leadX: root.vertical ? 0 : lead
+            readonly property int leadY: root.vertical ? lead : 0
+            readonly property real safeWidth: bodyWidth + (root.vertical ? 0 : lead + trail)
+            readonly property real safeHeight: bodyHeight + (root.vertical ? lead + trail : 0)
+            property var edgeCell: null
             KSvg.FrameSvgItem {
-                anchors.fill: parent
+                x: shelf.leadX
+                y: shelf.leadY
+                width: shelf.bodyWidth
+                height: shelf.bodyHeight
                 visible: root.cfg.popupBackground
                 imagePath: "widgets/panel-background"
             }
-            // Never smaller than something: a window without size is an error that takes all
-            // of Plasma down with it.
-            readonly property real safeWidth: Math.max(Kirigami.Units.gridUnit, wantedWidth)
-            readonly property real safeHeight: Math.max(Kirigami.Units.gridUnit, wantedHeight)
+            Repeater {
+                model: 2
+                delegate: MouseArea {
+                    required property int index
+                    readonly property bool first: index === 0
+                    readonly property int room: first ? shelf.lead : shelf.trail
+                    visible: room > 0
+                    x: (root.vertical || first) ? 0 : shelf.width - room
+                    y: (!root.vertical || first) ? 0 : shelf.height - room
+                    width: root.vertical ? shelf.width : room
+                    height: root.vertical ? room : shelf.height
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                    function cellAt(mouse) {
+                        var p = mapToItem(programs, mouse.x, mouse.y);
+                        var found = root.vertical ? programs.childAt(p.x, first ? 1 : programs.height - 2)
+                                                  : programs.childAt(first ? 1 : programs.width - 2, p.y);
+                        return (found && found.modelData !== undefined) ? found : null;
+                    }
+                    onPositionChanged: mouse => shelf.edgeCell = cellAt(mouse)
+                    onExited: shelf.edgeCell = null
+                    onVisibleChanged: if (!visible) shelf.edgeCell = null
+                    onClicked: mouse => {
+                        var cell = cellAt(mouse);
+                        if (cell) root.useTask(cell.modelData, mouse.button);
+                    }
+                }
+            }
             Layout.minimumWidth: safeWidth
             Layout.preferredWidth: safeWidth
             Layout.maximumWidth: safeWidth
@@ -1076,6 +1299,31 @@ PlasmoidItem {
             Layout.maximumHeight: safeHeight
 
             HoverHandler { onHoveredChanged: root.popupHovered = hovered }
+
+            // Moving a program by dragging it. The handler is here and not in the icon: the
+            // icons are made anew whenever their order changes.
+            property var moving: null
+            function cellUnder(point) {
+                var p = shelf.mapToItem(programs, point.x, point.y);
+                var found = programs.childAt(p.x, p.y);
+                return (found && found.modelData !== undefined) ? found : null;
+            }
+            DragHandler {
+                id: mover
+                target: null
+                acceptedButtons: Qt.LeftButton
+                onActiveChanged: {
+                    var cell = active ? shelf.cellUnder(centroid.pressPosition) : null;
+                    if (!active && shelf.moving) root.moveDone(shelf.moving);
+                    shelf.moving = cell ? cell.modelData : null;
+                    root.popupMoving = shelf.moving !== null;
+                }
+                onCentroidChanged: {
+                    if (!active || !shelf.moving) return;
+                    var cell = shelf.cellUnder(centroid.position);
+                    if (cell && cell.modelData !== shelf.moving) root.moveTask(shelf.moving, cell.modelData);
+                }
+            }
 
             // Coming up out of the panel.
             property real shift: 0
@@ -1091,8 +1339,8 @@ PlasmoidItem {
 
             Grid {
                 id: widgets
-                x: shelf.edge + (shelf.stacked ? 0 : shelf.programsWidth)
-                y: shelf.edge + (shelf.stacked ? shelf.programsHeight : 0)
+                x: shelf.leadX + shelf.edge + (shelf.stacked ? 0 : shelf.programsWidth)
+                y: shelf.leadY + shelf.edge + (shelf.stacked ? shelf.programsHeight : 0)
                 columns: shelf.stacked ? 1 : Math.max(1, root.wholeTargets.length)
                 Repeater {
                     model: root.wholeTargets
@@ -1146,8 +1394,9 @@ PlasmoidItem {
             }
 
             Grid {
-                x: shelf.edge
-                y: shelf.edge
+                id: programs
+                x: shelf.leadX + shelf.edge
+                y: shelf.leadY + shelf.edge
                 columns: shelf.columns
                 Repeater {
                     model: shelf.upwards ? root.popupItems.slice().reverse() : root.popupItems
@@ -1158,6 +1407,8 @@ PlasmoidItem {
                         readonly property var info: {
                             try { return modelData.item.model; } catch (e) { return null; }
                         }
+                        readonly property bool lit: shelf.moving ? shelf.moving === modelData
+                                                                 : (containsMouse || shelf.edgeCell === cell)
                         readonly property bool running: info ? info.IsLauncher !== true : false
                         readonly property string name: info ? String((running ? info.display : info.AppName)
                                                                      || info.AppName || info.display || "") : ""
@@ -1169,7 +1420,7 @@ PlasmoidItem {
                         onClicked: mouse => root.useTask(modelData, mouse.button)
                         // Its name in a balloon, unless Plasma's balloons or the programs'
                         // pop-ups are switched off.
-                        QQC2.ToolTip.visible: containsMouse && !shelf.named && name !== ""
+                        QQC2.ToolTip.visible: containsMouse && !shelf.moving && !shelf.named && name !== ""
                                               && root.cfg.balloons && root.cfg.taskTips
                                               && !root.cfg.taskBare
                         QQC2.ToolTip.text: name
@@ -1180,16 +1431,16 @@ PlasmoidItem {
                             anchors.margins: 1
                             radius: Kirigami.Units.smallSpacing
                             color: Kirigami.Theme.highlightColor
-                            opacity: cell.containsMouse ? 0.25 : 0
+                            opacity: cell.lit ? 0.25 : 0
                         }
                         Kirigami.Icon {
                             id: picture
                             width: shelf.iconSize
                             height: shelf.iconSize
                             source: cell.info ? cell.info.decoration : ""
-                            active: cell.containsMouse
+                            active: cell.lit
                             x: shelf.look === "list" ? shelf.pad : Math.round((parent.width - width) / 2)
-                            y: shelf.pad
+                            y: shelf.look === "row" ? Math.round((parent.height - height) / 2) : shelf.pad
                         }
                         // A program that is open: a small bar under its icon, as in the panel.
                         Rectangle {
@@ -1200,8 +1451,7 @@ PlasmoidItem {
                             color: (cell.info && cell.info.IsDemandingAttention === true)
                                 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.highlightColor
                             anchors.horizontalCenter: picture.horizontalCenter
-                            anchors.top: picture.bottom
-                            anchors.topMargin: 1
+                            y: Math.min(picture.y + picture.height + 1, cell.height - height)
                         }
                         Text {
                             visible: shelf.named
@@ -1219,6 +1469,15 @@ PlasmoidItem {
                         }
                     }
                 }
+            }
+            // While a program is being dragged: a closed hand, wherever the pointer is in
+            // the pop-up. It lies over everything and takes no clicks.
+            MouseArea {
+                anchors.fill: parent
+                z: 10
+                visible: shelf.moving !== null
+                acceptedButtons: Qt.NoButton
+                cursorShape: Qt.ClosedHandCursor
             }
         }
     }
@@ -1765,6 +2024,9 @@ PlasmoidItem {
                 tipItem.updateMainItemBindings();
                 tipItem.showToolTip();
             }
+            if (act[0] === "move" && root.popupItems[Number(act[1])] && root.popupItems[Number(act[2])])
+                if (root.moveTask(root.popupItems[Number(act[1])], root.popupItems[Number(act[2])]))
+                    root.moveDone(root.popupItems[Number(act[1])]);
             if (act[0] === "use" && root.popupItems[Number(act[1])])
                 root.useTask(root.popupItems[Number(act[1])], Qt.LeftButton);
             if (String(root.cfg.debug).indexOf("tap:") === 0) {
@@ -1947,6 +2209,7 @@ PlasmoidItem {
     // Both listen on the panel itself, so they are only there while a setting needs them.
     readonly property bool hoverNeeded: cfg.closeScope === "panel" && (cfg.autoClose || popupMode)
     readonly property bool tapNeeded: cfg.openOnPanelClick || cfg.closeOnPanelClick || cfg.closeAfterUse
+                                      || cfg.keepPanel > 0
     function listenToPanel() {
         var panel = (container && container.parent && !leaving) ? container.parent : null;
         // The old one may be gone already, together with the panel it was watching.
@@ -1999,6 +2262,7 @@ PlasmoidItem {
     }
     function panelTapped(pos) {
         if (cfg.paused) return;
+        if (!cfg.closed && inDrawerItem(pos)) keepPanel(cfg.keepPanel);
         if (cfg.closed) {
             if (cfg.openOnPanelClick && isEmptySpot(pos))
                 Qt.callLater(() => { root.cfg.closed = false; });
@@ -2171,12 +2435,13 @@ PlasmoidItem {
     readonly property int room: slim ? 0 : thickness
     // No width alone leaves the space the panel keeps between two widgets, twice. So the
     // drawer's place in the panel is taken out altogether, the way it does that for a widget
-    // it hides. Not while a pop-up is up: that needs to know where the arrow stands.
+    // it hides. Also while a pop-up is up, or the panel would shift a little each time it
+    // opens: the pop-up works out where the arrow would stand (awayFromPlace).
     Binding {
         target: root.container
         property: "visible"
         value: false
-        when: root.slim && !(root.popupMode && (root.peeking || !root.cfg.closed))
+        when: root.slim
         restoreMode: Binding.RestoreBindingOrValue
     }
     Layout.fillWidth: !vertical && stretching

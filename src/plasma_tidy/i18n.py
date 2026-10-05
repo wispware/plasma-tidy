@@ -162,6 +162,13 @@ TRANSLATIONS = {
         "Open when the desktop is shown": "Openen als het bureaublad wordt getoond",
         "Works while Tidy is running.": "Werkt zolang Tidy draait.",
         "Close after a click on something in the drawer": "Sluiten na een klik op iets in de la",
+        "Panel stays after starting a program:": "Paneel blijft na het starten van een programma:",
+        "A panel that hides itself or dodges windows goes the moment the window of a program "
+        "you start from the drawer opens. With a time here it stays that long, so you can go "
+        "on in the panel. 0: it goes at once.":
+            "Een paneel dat zichzelf verbergt of vensters ontwijkt, verdwijnt zodra het venster "
+            "opent van een programma dat je vanuit de la start. Met een tijd hier blijft het zo "
+            "lang staan, zodat je verder kunt in het paneel. 0: het verdwijnt meteen.",
         "Close when a window that fills the screen comes to the front":
             "Sluiten als een schermvullend venster naar voren komt",
         "Icon:": "Pictogram:",
@@ -632,6 +639,17 @@ TRANSLATIONS = {
         "Pop-up:": "Pop-up:",
         "A row of icons": "Een rij pictogrammen",
         "A column of icons": "Een kolom pictogrammen",
+        "Place of the pop-up:": "Plek van de pop-up:",
+        "Above the arrow": "Boven de pijl",
+        "At the start of the panel": "Aan het begin van het paneel",
+        "In the middle of the panel": "In het midden van het paneel",
+        "At the end of the panel": "Aan het eind van het paneel",
+        "Above the arrow, or at a fixed spot of the panel, wherever the arrow is. The pop-up "
+        "ends where the panel ends. Is that at the edge of the screen, then a pointer pushed "
+        "against that edge is on the icons.":
+            "Boven de pijl, of op een vaste plek van het paneel, waar de pijl ook staat. De "
+            "pop-up eindigt waar het paneel eindigt. Is dat aan de schermrand, dan staat een "
+            "muis die je tegen die rand duwt op de pictogrammen.",
         "Pop-up has a background, like the panel": "Pop-up heeft een achtergrond, zoals het paneel",
         "Pop-up floats above the panel, like Plasma's own pop-ups":
             "Pop-up zweeft boven het paneel, zoals Plasma's eigen pop-ups",

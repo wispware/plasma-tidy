@@ -15,13 +15,19 @@ The first version meant for others. Since 0.2.0:
 - Open with a click on an empty spot of the panel; close when the pointer leaves, after use,
   when a window fills the screen, or when the panel slides out of view.
 - A pop-up drawer that leaves the panel as it is (also for panels as long as their contents),
-  in a row, column, grid or list, with or without a background.
+  in a row, column, grid or list, with or without a background, above the arrow or at the
+  start, in the middle or at the end of the panel. It ends where the panel ends; at the edge
+  of the screen a pointer pushed against that edge is on the icons.
+- A row or a column in a pop-up is as thick as the panel, with icons as large as the panel's.
+- Drag a program in a pop-up to another place, as in the panel.
+- An arrow without room stays out of the panel while its pop-up is open (the panel no longer
+  shifts a little), and the pop-up lines up with the widget beside it.
 - Which programs go in a drawer, where open programs stand, animations (slide, grow, one by
   one, fade), a mark on a closed drawer, names, and an arrow that can take no room at all.
 - A drawer stays open under a program's pop-up or a menu, and while you drag a program to
   another place.
 - Close a program from its pop-up and the panel and the drawer stay three seconds, to choose
-  something else.
+  something else. Start a program from a drawer and the panel can stay a time you set.
 
 **More**
 - Focus mode: everything away until you switch it off.

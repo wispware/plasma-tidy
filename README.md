@@ -136,6 +136,7 @@ The settings of a drawer come in three parts.
 | Closes after | How long after the pointer left | 2 s |
 | Close with a click on an empty spot in the panel | A left click where the panel is empty closes the drawer; a click on a widget does what it always did | off |
 | Close after a click on something in the drawer | Closes once you have started or picked something; a pop-up it opened is waited for | off |
+| Panel stays after starting a program | A panel that hides itself or dodges windows goes the moment the window of a program you start from the drawer opens. With a time here it stays that long, so you can go on in the panel | 0 s (it goes at once) |
 | Close when a window that fills the screen comes to the front | Closes each time a maximized or full-screen window becomes the active one | off |
 | Close when the panel slides out of view | When the panel hides (auto-hide, dodging a window, or hidden together with the desktop icons) the drawer closes, so the panel comes back tidy. It does not open again by itself. Tidy tells the drawer, so Tidy has to be running | on |
 
@@ -150,7 +151,8 @@ The settings of a drawer come in three parts.
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
 | Shows its contents | In the panel: what is in the drawer slides out next to the arrow. In a pop-up above the arrow: it stays out of the panel and comes up in a small window, so the panel never changes size | in the panel |
-| Pop-up | For programs: a row of icons, a column of icons standing on the arrow, a grid with names, or a list with names. Other widgets keep their own shape | a row |
+| Pop-up | For programs: a row of icons, a column of icons standing on the arrow, a grid with names, or a list with names. A row or a column is as thick as the panel, with icons as large as the panel's. Drag a program to another place to change the order, as in the panel Other widgets keep their own shape | a row |
+| Place of the pop-up | Above the arrow, or at the start, in the middle or at the end of the panel, wherever the arrow is. The pop-up ends where the panel ends; at the edge of the screen a pointer pushed against that edge is on the icons | above the arrow |
 | Pop-up has a background, like the panel | On: the pop-up looks like a piece of your panel. Off: only the icons, on whatever is behind them | on |
 | Pop-up floats above the panel, like Plasma's own pop-ups | On: the same distance from the panel as the start menu and the system tray's own pop-up, so they line up. Off: it stands on the panel's edge. Only a floating panel shows the difference | on |
 | The system tray's own arrow (^) | With the system tray in a pop-up only its icons go there. Its own arrow, for the icons it keeps hidden, shows in the panel while the pop-up is open, always, or never | while the pop-up is open |
