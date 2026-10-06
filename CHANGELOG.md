@@ -2,6 +2,8 @@
 
 ## 0.3.2 — not released yet
 
+- When Plasma starts, a closed drawer is closed from the first moment the panel shows. The
+  panel used to come up with everything in view and tidy itself a third of a second later.
 - Tidy's widgets no longer fill Plasma's log with "No signal handler" lines.
 
 ## 0.3.1 — 2026-10-06

@@ -152,9 +152,15 @@ PlasmoidItem {
     // How long the task manager takes to move an icon aside.
     readonly property int moveTime: Kirigami.Units.longDuration
     function scan() {
-        var c = root.parent, hops = 0;
-        while (c && !c.isAppletContainer && hops < 8) { c = c.parent; hops++; }
+        var c = root.parent, hops = 0, last = root;
+        while (c && !c.isAppletContainer && hops < 8) { last = c; c = c.parent; hops++; }
         if (!c || !c.isAppletContainer || !c.parent) {
+            // Not in the panel yet: whatever is at the loose end tells when it is put there.
+            var loose = c ? c : last;
+            if (starting && loose !== root && awaited.indexOf(loose) < 0) {
+                awaited.push(loose);
+                try { loose.parentChanged.connect(root.scanWhileStarting); } catch (e) {}
+            }
             container = null;
             siblings = [];
             return;
@@ -164,6 +170,12 @@ PlasmoidItem {
         var list = [], kids = c.parent.children;
         for (var i = 0; i < kids.length; i++) {
             var k = kids[i];
+            // A place whose widget is still to come: look again the moment it is there.
+            if (starting && k && k !== c && k.isAppletContainer && !k.applet
+                    && awaited.indexOf(k) < 0) {
+                awaited.push(k);
+                try { k.appletChanged.connect(root.scanWhileStarting); } catch (e) {}
+            }
             if (!k || k === c || !k.isAppletContainer || !k.applet) continue;
             var applet = null;
             try { applet = k.applet.plasmoid; } catch (e) {}
@@ -267,6 +279,26 @@ PlasmoidItem {
     }
 
     Timer { id: rescan; interval: 300; onTriggered: root.scan() }
+    // Just started (Plasma starts, or the drawer was added): look at once and not a moment
+    // later, so that a closed drawer is closed in the first picture of the panel. Without
+    // this the panel came up with everything in view and tidied itself 0.3 s later.
+    property bool starting: true
+    Timer { interval: 3000; running: true; onTriggered: root.starting = false }
+    // While Plasma starts it is busy for some tenths of a second at a stretch, in which no
+    // timer goes off but the panel is drawn all the same. So in these first seconds the
+    // drawer does its looking in the very moment it is told of a change, and besides that
+    // keeps looking: a neighbour's place in the panel is there before the widget in it is,
+    // and nothing tells when that one arrives.
+    Timer {
+        interval: 25; repeat: true; running: root.starting
+        onTriggered: { root.scan(); root.syncTaskHiders(); }
+    }
+    property var awaited: []   // places in the panel that had no widget yet
+    function scanWhileStarting() { if (starting) scan(); }
+    function rescanSoon() {
+        if (starting) scan();   // now, not after a turn of the event loop: see below
+        rescan.restart();
+    }
     Timer { id: trayRetry; interval: 2500; onTriggered: root.scan() }
     property int trayTries: 0
     // The system tray shows a pop-up of its own; whether it is open is kept in an object
@@ -285,20 +317,20 @@ PlasmoidItem {
         }
         return null;
     }
-    onParentChanged: rescan.restart()
+    onParentChanged: rescanSoon()
     Component.onCompleted: {
         // A pop-up is never left open over a restart.
         if (cfg.display === "popup" && !cfg.closed) cfg.closed = true;
-        rescan.restart();
+        rescanSoon();
         linkTidy();
     }
     Connections {
         target: root.container ? root.container.parent : null
-        function onChildrenChanged() { rescan.restart(); }
+        function onChildrenChanged() { root.rescanSoon(); }
     }
     Connections {
         target: root.container
-        function onIndexChanged() { rescan.restart(); }
+        function onIndexChanged() { root.rescanSoon(); }
     }
 
     // --- hiding whole widgets ------------------------------------------------
@@ -727,7 +759,7 @@ PlasmoidItem {
     readonly property bool tasksMoving: tasksMovingCount > 0 || settle.running
     Timer { id: settle; interval: 60 }   // bridges the gap between two icons of a cascade
     Timer { id: taskSync; interval: 30; onTriggered: root.syncTaskHiders() }
-    onTaskManagersChanged: taskSync.restart()
+    onTaskManagersChanged: starting ? syncTaskHiders() : taskSync.restart()
 
     function taskItems() {
         var found = [];
@@ -1857,6 +1889,7 @@ PlasmoidItem {
             property Binding b8: Binding {
                 target: th.task; property: "completed"; value: false
                 when: (root.tasksMoving && root.shrinks) || root.slideActive || root.slideBusy
+                      || root.starting   // what stays simply stands in its place at once
                       || (!root.shrinks && th.holding)
                 restoreMode: Binding.RestoreBindingOrValue
             }
@@ -1879,7 +1912,9 @@ PlasmoidItem {
             readonly property bool arranging: live && !root.leaving && !root.cfg.paused
             property Connections icons: Connections {
                 target: tm.applet && tm.applet.taskList !== undefined ? tm.applet.taskList : null
-                function onChildrenChanged() { taskSync.restart(); }
+                function onChildrenChanged() {
+                    if (root.starting) root.syncTaskHiders(); else taskSync.restart();
+                }
             }
             // Icons that slide out go out of sight at the edge of the row.
             property Binding clip: Binding {
