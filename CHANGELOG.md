@@ -4,6 +4,9 @@
 
 - When Plasma starts, a closed drawer is closed from the first moment the panel shows. The
   panel used to come up with everything in view and tidy itself a third of a second later.
+- Two drawers that open on a click on the panel stay together: a drawer that was open
+  already no longer closes a moment after the click that opened the other, so they no longer
+  take turns.
 - Tidy's widgets no longer fill Plasma's log with "No signal handler" lines.
 
 ## 0.3.1 — 2026-10-06

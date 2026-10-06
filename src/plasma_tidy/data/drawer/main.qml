@@ -2386,6 +2386,7 @@ PlasmoidItem {
         }
     }
     property var panelTap: null
+    property bool tapHold: false   // for a moment after such a click: restarts closeTimer
     // Every drawer in the panel hears the same click. Together they do one thing: as long
     // as a drawer that opens on such a click is closed, the click opens (one drawer may
     // have closed by itself while you were busy in another); only when all of those are
@@ -2413,7 +2414,15 @@ PlasmoidItem {
                 Qt.callLater(() => { root.cfg.closed = false; });
             return;
         }
-        if (cfg.closeOnPanelClick && isEmptySpot(pos) && !anyOpensOnClick())
+        var empty = isEmptySpot(pos), opening = empty && anyOpensOnClick();
+        // Another drawer opens on this click: this one stays as long as that one. Its time
+        // for closing by itself starts anew, or it would close a moment later (the pointer
+        // left it a while ago) and the two would take turns from then on.
+        if (opening) {
+            tapHold = true;
+            Qt.callLater(() => { root.tapHold = false; });
+        }
+        if (cfg.closeOnPanelClick && empty && !opening)
             Qt.callLater(() => { root.cfg.closed = true; });
         else if (cfg.closeAfterUse && inDrawerItem(pos))
             useTimer.restart();
@@ -2537,6 +2546,7 @@ PlasmoidItem {
                  && !root.cfg.closed && !root.cfg.paused && !root.editing
                  && !root.pointerHere && !root.popupOpen && !root.busyAbove
                  && (root.cfg.closeScope !== "panel" || root.panelHover !== null)
+                 && !root.tapHold
         onTriggered: root.cfg.closed = true
     }
     Timer {
