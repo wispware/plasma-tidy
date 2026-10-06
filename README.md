@@ -60,9 +60,9 @@ Tested on Fedora 44 with Plasma 6.7. Other distributions should work with the eq
 packages but have not been tested.
 
 **This is a first release, made and tested by one person on one laptop, so expect bugs.** Not
-tried yet, or only a little: more than one screen, a panel on the left, a right-to-left
-language, rules that switch by themselves (the charger, the clock), and the very first start
-on a fresh account. If something goes wrong, *Restore everything* puts your desktop back (see
+tried yet, or only a little: a panel on the left, a right-to-left language, and rules that
+switch by themselves (the charger, the clock). A second screen has been tried once, with one
+television. If something goes wrong, *Restore everything* puts your desktop back (see
 *Troubleshooting*), and a report in the
 [issue tracker](https://github.com/wispware/plasma-tidy/issues) helps: `plasma-tidy --report`
 gives what is needed for one.
@@ -472,7 +472,9 @@ on a timer while nothing changes.
 - Tidy postpones hiding while a menu is open or the desktop is in edit mode.
 - With *Also hide the panel*, the panel's visibility is a Plasma setting, so that is still
   written to disk each time the icons go and come.
-- Connecting or disconnecting a monitor while the icons are hidden has not been tested yet.
+- A second screen has been tried with one television only: hiding and showing on both
+  screens, a screen of its own choice (*Hide the icons on*), and unplugging and plugging it
+  in while the icons were hidden.
 - The drawer and the helper on the desktop depend on how Plasma builds its panel, task
   manager and desktop, which is not a public interface. They are tested with Plasma 6.7, with
   the drawer in a panel at the bottom, at the top and on the right.
