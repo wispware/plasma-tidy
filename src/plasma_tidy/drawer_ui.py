@@ -114,11 +114,10 @@ class DrawerPage(QWidget):
                 check.setChecked(program["id"] not in config["taskKeep"])
                 self.programs[program["id"]] = check
                 grid.addWidget(check, index // 2, index % 2)
-            area = QScrollArea(widgetResizable=True)
-            area.setFrameShape(QFrame.Shape.NoFrame)
-            area.setWidget(inner)
-            area.setMaximumHeight(min(inner.sizeHint().height() + 8, 150))
-            box_layout.addWidget(area)
+            # The whole list where there is room for it; in less, three rows and scrolling.
+            rows = max(1, grid.rowCount())
+            tall = inner.sizeHint().height()
+            box_layout.addWidget(TallArea(inner, least=min(tall, tall * 3 // rows + 4)))
         else:
             note = QLabel(tr("The programs of the task manager appear here a moment after the "
                              "drawer has one in it. Open this window again to see them."))
@@ -482,8 +481,9 @@ class DrawerPage(QWidget):
 class TallArea(QScrollArea):
     """Asks for the room its contents take, and scrolls them in a window that has less."""
 
-    def __init__(self, inside):
+    def __init__(self, inside, least=240):
         super().__init__(widgetResizable=True)
+        self.least = least
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setWidget(inside)
@@ -495,7 +495,7 @@ class TallArea(QScrollArea):
 
     def minimumSizeHint(self):
         bar = self.verticalScrollBar().sizeHint().width()
-        return QSize(self.widget().minimumSizeHint().width() + bar, 240)
+        return QSize(self.widget().minimumSizeHint().width() + bar, self.least)
 
 
 class DrawerTab(QWidget):
