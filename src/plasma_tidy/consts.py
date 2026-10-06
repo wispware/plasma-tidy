@@ -13,10 +13,10 @@ VERSION = "0.3.0"
 AUTHOR = "Ivar"
 BRAND = "Wispware"
 DESCRIPTION = "Keeps your KDE Plasma desktop, panel and system tray clean."
-# To be filled in at the first release; while empty, the About tab shows a placeholder.
+# Where one of these is empty, the About tab shows a placeholder.
 LICENSE = "GPL-3.0-or-later"
-WEBSITE_URL = ""    # planned: the project's GitHub page
-BUGS_URL = ""       # planned: <website>/issues
+WEBSITE_URL = "https://github.com/wispware/plasma-tidy"
+BUGS_URL = WEBSITE_URL + "/issues"
 DONATE_URL = "https://ko-fi.com/wispware"
 DBUS_NAME = "io.github.wispware.PlasmaTidy"
 DATA_DIR = os.path.expanduser(f"~/.local/share/{APP}")

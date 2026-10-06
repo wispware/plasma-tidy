@@ -1,6 +1,6 @@
 # Changes
 
-## 0.3.0 — not released yet
+## 0.3.0 — 2026-10-06
 
 The first version meant for others. Since 0.2.0:
 
