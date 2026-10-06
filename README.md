@@ -54,10 +54,17 @@ packages but have not been tested.
 
 ## Install
 
-There is no package yet; a Fedora COPR package is planned. Until then, install from source:
+On Fedora, from [COPR](https://copr.fedorainfracloud.org/coprs/wispware/plasma-tidy/):
 
 ```sh
-sudo dnf install python3-pyqt6 swayidle
+sudo dnf copr enable wispware/plasma-tidy
+sudo dnf install plasma-tidy
+```
+
+On another distribution, or to try the latest code, install from source:
+
+```sh
+sudo dnf install python3-pyqt6 swayidle   # or your distribution's packages
 
 git clone https://github.com/wispware/plasma-tidy.git
 cd plasma-tidy
@@ -68,7 +75,8 @@ install -Dm644 data/plasma-tidy.desktop ~/.local/share/applications/plasma-tidy.
 
 `./build.py` packs the code in `src/` into the single file `plasma-tidy`; that file is all
 there is to install. `~/.local/bin` must be on your `PATH` (it is by default on Fedora).
-Start **Tidy** from the application menu, or run `plasma-tidy`. To have it start when you log
+
+Either way, start **Tidy** from the application menu, or run `plasma-tidy`. To have it start when you log
 in, leave *Start at login* ticked in the welcome window, or tick it in the settings.
 
 ## Using it
@@ -484,11 +492,17 @@ or run `plasma-tidy --restore`.
 
 Remove your drawers in the *Panel* tab, switch off *Hide with a helper widget on the
 desktop*, clear the peek key, and quit Tidy from the tray menu, so your panel and desktop are
-as they were. Then:
+as they were. Then remove the program: the package with `sudo dnf remove plasma-tidy`, or
+the files of an install from source:
 
 ```sh
 rm ~/.local/bin/plasma-tidy
 rm ~/.local/share/applications/plasma-tidy.desktop
+```
+
+And what Tidy keeps in your home folder, with either:
+
+```sh
 rm -f ~/.config/autostart/plasma-tidy.desktop
 rm -rf ~/.config/plasma-tidy ~/.local/share/plasma-tidy
 rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.drawer
