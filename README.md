@@ -59,6 +59,14 @@ The same drawer as a pop-up above the panel:
 Tested on Fedora 44 with Plasma 6.7. Other distributions should work with the equivalent
 packages but have not been tested.
 
+**This is a first release, made and tested by one person on one laptop, so expect bugs.** Not
+tried yet, or only a little: more than one screen, a panel on the left, a right-to-left
+language, rules that switch by themselves (the charger, the clock), and the very first start
+on a fresh account. If something goes wrong, *Restore everything* puts your desktop back (see
+*Troubleshooting*), and a report in the
+[issue tracker](https://github.com/wispware/plasma-tidy/issues) helps: `plasma-tidy --report`
+gives what is needed for one.
+
 ## Install
 
 On Fedora, from [COPR](https://copr.fedorainfracloud.org/coprs/wispware/plasma-tidy/):
