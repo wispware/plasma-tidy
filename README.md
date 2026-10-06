@@ -25,6 +25,13 @@ it never steals focus, and it waits while you have a menu open or are editing yo
 The interface is available in English and Dutch. It follows your system language unless you
 pick one in the settings.
 
+## Why
+
+I like a calm screen: a clean desktop that shows things when I reach for them and is empty
+when I don't. On Windows a small tool hid my desktop icons until I needed them, and I missed
+it on Plasma, which can hide a panel but not the icons. So I built that. The panel drawers,
+the system tray settings and focus mode grew out of the same wish.
+
 ## What it looks like
 
 | Icons hidden | Back on a click |
