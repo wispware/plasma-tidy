@@ -53,7 +53,9 @@ The first version meant for others. Since 0.2.0:
 - Tidy checks what it reaches into in Plasma and KWin and says once what does not work in a new
   Plasma version; `plasma-tidy --check` lists it all.
 - `plasma-tidy --report` for bug reports, without personal data.
-- A package specification for Fedora (COPR), and 99 tests.
+- A package specification for Fedora (COPR), and 102 tests.
+- A page for software centres such as Discover (AppStream), with screenshots; the README
+  shows Tidy at work.
 
 ## 0.2.0 — 2026-10-01
 

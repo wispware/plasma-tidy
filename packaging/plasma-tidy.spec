@@ -21,6 +21,7 @@ Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 BuildArch:      noarch
 BuildRequires:  python3-devel
 BuildRequires:  desktop-file-utils
+BuildRequires:  libappstream-glib
 %if %{with tests}
 BuildRequires:  python3-pyqt6
 BuildRequires:  dbus-daemon
@@ -70,6 +71,7 @@ sys.exit(main())
 EOF
 chmod 0755 %{buildroot}%{_bindir}/%{name}
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications data/%{name}.desktop
+install -Dm644 data/io.github.wispware.PlasmaTidy.metainfo.xml %{buildroot}%{_metainfodir}/io.github.wispware.PlasmaTidy.metainfo.xml
 # The icons go in the system's icon theme; Tidy then does not put copies in your home.
 icons=src/plasma_tidy/data/icons
 hicolor=%{buildroot}%{_datadir}/icons/hicolor
@@ -82,6 +84,7 @@ install -Dm644 $icons/io.github.wispware.PlasmaTidy-hidden-symbolic.svg $hicolor
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
+appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/io.github.wispware.PlasmaTidy.metainfo.xml
 %if %{with tests}
 # The tests need a session bus and no screen.
 QT_QPA_PLATFORM=offscreen dbus-run-session -- %{python3} -m unittest
@@ -93,6 +96,7 @@ QT_QPA_PLATFORM=offscreen dbus-run-session -- %{python3} -m unittest
 %{_bindir}/%{name}
 %{_datadir}/%{name}/
 %{_datadir}/applications/%{name}.desktop
+%{_metainfodir}/io.github.wispware.PlasmaTidy.metainfo.xml
 %{_datadir}/icons/hicolor/scalable/apps/io.github.wispware.PlasmaTidy.svg
 %{_datadir}/icons/hicolor/16x16/apps/io.github.wispware.PlasmaTidy.svg
 %{_datadir}/icons/hicolor/22x22/apps/io.github.wispware.PlasmaTidy.svg

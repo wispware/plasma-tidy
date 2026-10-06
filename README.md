@@ -2,6 +2,8 @@
 
 Tidy keeps your KDE Plasma desktop, panel and system tray clean.
 
+![The desktop icons come back on a click and hide again](docs/screenshots/icons-click.gif)
+
 - **Desktop:** hides your desktop icons when you're not using them, and brings them back on
   mouse movement, a click on the desktop, a screen corner or a shortcut.
 - **Panel:** a drawer, an arrow in the panel, tucks the programs and widgets you choose away
@@ -22,6 +24,24 @@ focus, and it waits while you have a menu open or are editing your desktop.
 
 The interface is available in English and Dutch. It follows your system language unless you
 pick one in the settings.
+
+## What it looks like
+
+| Icons hidden | Back on a click |
+|---|---|
+| ![The desktop with its icons hidden](docs/screenshots/desktop-hidden.png) | ![The desktop with its icons and the panel](docs/screenshots/desktop-icons.png) |
+
+A drawer in the panel opens on a click on an empty spot and closes when the pointer leaves:
+
+![A drawer in the panel opening and closing](docs/screenshots/drawers-click.gif)
+
+The same drawer as a pop-up above the panel:
+
+![A pop-up drawer above the panel](docs/screenshots/popup-drawer.gif)
+
+| Desktop settings | Panel settings |
+|---|---|
+| <img src="docs/screenshots/settings-desktop.png" alt="The settings for the desktop icons" width="380"> | <img src="docs/screenshots/settings-panel.png" alt="The settings for the panel drawers" width="380"> |
 
 ## Requirements
 
@@ -487,6 +507,8 @@ PYTHONPATH=src python3 -m plasma_tidy
 
 `packaging/plasma-tidy.spec` makes the Fedora package (COPR): Tidy goes to
 `/usr/share/plasma-tidy`, with a small starter in `/usr/bin/plasma-tidy`.
+`data/io.github.wispware.PlasmaTidy.metainfo.xml` is what software centres such as Discover
+show of Tidy; its screenshots are in `docs/screenshots/`.
 
 The tests need nothing but Python and PyQt6:
 

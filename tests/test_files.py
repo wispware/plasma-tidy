@@ -53,6 +53,19 @@ class Build(unittest.TestCase):
             self.assertEqual(wrong.returncode, 2)
 
 
+class Metainfo(unittest.TestCase):
+    def test_the_software_centre_page_matches_the_program(self):
+        page = xml.dom.minidom.parse(
+            str(ROOT / "data" / "io.github.wispware.PlasmaTidy.metainfo.xml"))
+        releases = [r.getAttribute("version") for r in page.getElementsByTagName("release")]
+        self.assertEqual(releases[0], VERSION)
+        launch = page.getElementsByTagName("launchable")[0].firstChild.data
+        self.assertTrue((ROOT / "data" / launch).exists())
+        for image in page.getElementsByTagName("image"):
+            name = image.firstChild.data.rsplit("/", 1)[1]
+            self.assertTrue((ROOT / "docs" / "screenshots" / name).exists(), name)
+
+
 class Icons(unittest.TestCase):
     def test_every_icon_ships_and_is_clean(self):
         from plasma_tidy.widgets import icon_files

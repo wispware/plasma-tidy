@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Ivar
+SPDX-License-Identifier: CC0-1.0
+-->
+<component type="desktop-application">
+  <id>io.github.wispware.PlasmaTidy</id>
+  <name>Tidy</name>
+  <summary>Keeps your Plasma desktop, panel and system tray clean</summary>
+  <summary xml:lang="nl">Houdt je bureaublad, paneel en systeemvak opgeruimd</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="dev.wispware">
+    <name>Wispware</name>
+  </developer>
+  <description>
+    <p>
+      Tidy hides your desktop icons when you are not using them and brings them back when you
+      need them: on a click on the desktop, on mouse movement, in a screen corner or with a
+      shortcut.
+    </p>
+    <p>It tidies the rest of the desktop too:</p>
+    <ul>
+      <li>Drawers in the panel tuck programs and widgets away, in the panel or in a pop-up</li>
+      <li>Choose per system tray icon whether it is shown, hidden or automatic</li>
+      <li>Focus mode hides the icons, closes the drawers and trims the tray with one shortcut</li>
+      <li>Profiles and rules switch settings by themselves: on battery, at certain hours, per program</li>
+      <li>Hold a key to peek at everything for a moment</li>
+    </ul>
+    <p>
+      Tidy is made for Plasma 6 on Wayland. It is light: about 24 MB of memory and no
+      processor time at rest.
+    </p>
+  </description>
+  <launchable type="desktop-id">plasma-tidy.desktop</launchable>
+  <url type="homepage">https://github.com/wispware/plasma-tidy</url>
+  <url type="bugtracker">https://github.com/wispware/plasma-tidy/issues</url>
+  <url type="vcs-browser">https://github.com/wispware/plasma-tidy</url>
+  <url type="donation">https://ko-fi.com/wispware</url>
+  <categories>
+    <category>Settings</category>
+    <category>DesktopSettings</category>
+  </categories>
+  <keywords>
+    <keyword>plasma</keyword>
+    <keyword>clean</keyword>
+    <keyword>declutter</keyword>
+    <keyword>autohide</keyword>
+    <keyword>icons</keyword>
+    <keyword>panel</keyword>
+    <keyword>drawer</keyword>
+    <keyword>tray</keyword>
+  </keywords>
+  <provides>
+    <binary>plasma-tidy</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The desktop with its icons hidden</caption>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/desktop-hidden.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A click on the desktop brings the icons and the panel back</caption>
+      <image type="source" width="1600" height="1000">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/desktop-icons.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A drawer in the panel, open</caption>
+      <image type="source" width="1600" height="500">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/panel-drawer-open.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A drawer as a pop-up above the panel</caption>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/popup-drawer.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Settings for the desktop icons</caption>
+      <image type="source" width="1180" height="1745">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/settings-desktop.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Settings for the panel drawers</caption>
+      <image type="source" width="1180" height="1745">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/settings-panel.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.3.0" date="2026-10-06" type="development">
+      <description>
+        <p>The first version meant for others.</p>
+      </description>
+    </release>
+  </releases>
+</component>
