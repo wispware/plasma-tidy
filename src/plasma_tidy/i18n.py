@@ -450,12 +450,12 @@ TRANSLATIONS = {
         "{app} — icons hidden": "{app} — pictogrammen verborgen",
         "{app} — icons visible": "{app} — pictogrammen zichtbaar",
         # command line
-        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-        "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --report | "
-        "--version]":
-            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-            "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --report | "
-            "--version]",
+        "Usage: plasma-tidy [--show | --hide | --toggle | --settings | --welcome | --focus | "
+        "--peek | --drawer-open | --drawer-close | --drawer-toggle | --restore | --check | "
+        "--report | --version]":
+            "Gebruik: plasma-tidy [--show | --hide | --toggle | --settings | --welcome | "
+            "--focus | --peek | --drawer-open | --drawer-close | --drawer-toggle | --restore | "
+            "--check | --report | --version]",
         "the drawers": "de laden",
         "hiding programs in a drawer": "programma's in een la verbergen",
         "the system tray in a drawer": "het systeemvak in een la",
@@ -595,9 +595,9 @@ TRANSLATIONS = {
             "Alleen netwerk, volume en batterij blijven in beeld, en Tidy's eigen pictogram; "
             "de rest gaat onder het pijltje ^.",
         "There is more in the settings: focus mode, rules, profiles and a key to peek. {app} "
-        "lives in the system tray: click its eye icon to open the settings.":
+        "lives in the system tray: click its icon to open the settings.":
             "In de instellingen zit meer: focusmodus, regels, profielen en een toets om te "
-            "gluren. {app} staat in het systeemvak: klik op het oog-pictogram om de "
+            "gluren. {app} staat in het systeemvak: klik op het pictogram om de "
             "instellingen te openen.",
         "Welcome window…": "Welkomstscherm…",
         "Balloons and previews": "Ballonnen en voorbeelden",

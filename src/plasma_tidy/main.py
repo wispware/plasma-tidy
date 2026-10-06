@@ -21,9 +21,9 @@ COMMANDS = {"--show": "Show", "--hide": "Hide", "--toggle": "Toggle", "--setting
             "--peek": "Peek", "--welcome": "Welcome",
             "--drawer-open": "DrawerOpen", "--drawer-close": "DrawerClose",
             "--drawer-toggle": "DrawerToggle", "--restore": "Restore", "--focus": "Focus"}
-USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --focus | --peek | "
-         "--drawer-open | --drawer-close | --drawer-toggle | --restore | --check | --report | "
-         "--version]")
+USAGE = ("Usage: plasma-tidy [--show | --hide | --toggle | --settings | --welcome | --focus | "
+         "--peek | --drawer-open | --drawer-close | --drawer-toggle | --restore | --check | "
+         "--report | --version]")
 
 
 def migrate_old_config():

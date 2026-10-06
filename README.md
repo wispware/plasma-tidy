@@ -19,8 +19,8 @@ Tidy keeps your KDE Plasma desktop, panel and system tray clean.
   the panel shows when you point at it: a preview with or without its title, text only, or
   nothing.
 
-It lives in the system tray as a small eye icon and stays out of the way: it never steals
-focus, and it waits while you have a menu open or are editing your desktop.
+It lives in the system tray as a small icon of three slanted bars and stays out of the way:
+it never steals focus, and it waits while you have a menu open or are editing your desktop.
 
 The interface is available in English and Dutch. It follows your system language unless you
 pick one in the settings.
@@ -67,15 +67,15 @@ install -Dm644 data/plasma-tidy.desktop ~/.local/share/applications/plasma-tidy.
 ```
 
 `./build.py` packs the code in `src/` into the single file `plasma-tidy`; that file is all
-there is to install. `~/.local/bin` must be on your `PATH` (it is by default on Fedora). Start **Tidy** from the
-application menu, or run `plasma-tidy`. To have it start when you log in, tick
-*Start at login* in the settings.
+there is to install. `~/.local/bin` must be on your `PATH` (it is by default on Fedora).
+Start **Tidy** from the application menu, or run `plasma-tidy`. To have it start when you log
+in, leave *Start at login* ticked in the welcome window, or tick it in the settings.
 
 ## Using it
 
-Tidy shows an eye in the system tray: open when your icons are visible, crossed out when they
-are hidden, grey when Tidy is switched off. Click it to open the settings; right-click for
-the menu.
+Tidy shows its icon in the system tray, three slanted bars: plain when your icons are
+visible, dimmed with a stroke through it when they are hidden or focus mode is on, grey when
+Tidy is switched off. Click it to open the settings; right-click for the menu.
 
 Switching Tidy off (*Enabled* in the menu) or choosing *Quit* leaves your desktop as it is
 without Tidy: the icons are shown, the drawers are paused with everything in them in view,
@@ -172,7 +172,7 @@ The settings of a drawer come in three parts.
 | Arrow points the other way | Closed, the arrow points the way the drawer opens: away from the nearest end of the panel. This flips it | off |
 | Place of the arrow | Just before the items it hides, just after them, or where you put it yourself | just before |
 | Shows its contents | In the panel: what is in the drawer slides out next to the arrow. In a pop-up above the arrow: it stays out of the panel and comes up in a small window, so the panel never changes size | in the panel |
-| Pop-up | For programs: a row of icons, a column of icons standing on the arrow, a grid with names, or a list with names. A row or a column is as thick as the panel, with icons as large as the panel's. Drag a program to another place to change the order, as in the panel Other widgets keep their own shape | a row |
+| Pop-up | For programs: a row of icons, a column of icons standing on the arrow, a grid with names, or a list with names. A row or a column is as thick as the panel, with icons as large as the panel's. Drag a program to another place to change the order, as in the panel. Other widgets keep their own shape | a row |
 | Place of the pop-up | Above the arrow, or at the start, in the middle or at the end of the panel, wherever the arrow is. The pop-up ends where the panel ends; at the edge of the screen a pointer pushed against that edge is on the icons | above the arrow |
 | Pop-up has a background, like the panel | On: the pop-up looks like a piece of your panel. Off: only the icons, on whatever is behind them | on |
 | Pop-up floats above the panel, like Plasma's own pop-ups | On: the same distance from the panel as the start menu and the system tray's own pop-up, so they line up. Off: it stands on the panel's edge. Only a floating panel shows the difference | on |
@@ -212,8 +212,9 @@ window you are working in, and it closes when the pointer leaves it. Any other w
 a drawer, the system tray for instance, is itself moved into the pop-up while the drawer works
 this way and does what it does in the panel. Of the system tray only the icons move: they stand
 one above the other in the *column* and *list* styles. The tray's own `^` arrow, for the icons
-it keeps hidden, shows in the panel while the pop-up is open, or always, or never, as you set it. Without the pop-up, Tidy lets the icons fade in such a panel instead
-of slide, and switches off the two options for a click on an empty spot: there is none.
+it keeps hidden, shows in the panel while the pop-up is open, or always, or never, as you set
+it. Without the pop-up, Tidy lets the icons fade in such a panel instead of slide, and
+switches off the two options for a click on an empty spot: there is none.
 
 With *Open programs* in front or at the back, the open programs stand together and the pinned
 ones slide out next to them, instead of appearing in between.
@@ -267,7 +268,7 @@ choice above. The first rule that fits counts.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| Start at login | Adds or removes the autostart entry | off |
+| Start at login | Adds or removes the autostart entry | off; the welcome window has it ticked |
 | Language | System language, English or Nederlands; takes effect at once | system language |
 | Hold to peek | A key that shows the desktop icons and everything in the drawers for as long as you hold it; also in focus mode. Choose a combination with Ctrl, Alt or Meta: a key on its own would stop working in every program, and Tidy warns you about that | none |
 | A peek also shows the panel, on top of your windows | A panel that hides by itself or sits behind a window comes into view during a peek; your windows keep their size. A program in full screen stays on top of the panel | on |
@@ -322,8 +323,8 @@ everything back as it was.
 | Auto-hide the panel | The panel slides away until you move to the screen edge | off |
 
 Changing a setting in the settings window (OK or Apply), switching Tidy off, and *Restore
-everything* end focus mode; a rule that still applies switches it on again. After a crash or a logout in focus mode, Tidy puts everything back the next time it
-starts.
+everything* end focus mode; a rule that still applies switches it on again. After a crash or
+a logout in focus mode, Tidy puts everything back the next time it starts.
 
 ### Restore everything
 
@@ -354,6 +355,7 @@ plasma-tidy --show      show the icons now
 plasma-tidy --hide      hide the icons now
 plasma-tidy --toggle    switch Tidy on or off
 plasma-tidy --settings  open the settings
+plasma-tidy --welcome   show the welcome window again
 plasma-tidy --focus     switch focus mode on or off
 plasma-tidy --peek      show everything; run it again to tidy up again
 plasma-tidy --drawer-open    open the panel drawers
@@ -383,13 +385,13 @@ plasma-tidy --version   print the version
   hidden. Fading, hiding desktop widgets and the double-click are not available this way.
 - **Idle time** comes from `swayidle`, which uses the Wayland idle-notify protocol. It only
   runs while it is needed: with the icons in view, or when movement is what brings them
-  back, and not while you work in another window and that does not count. Tidy does not poll: it sleeps until something happens, or until the moment the icons
-  are due to hide.
+  back, and not while you work in another window and that does not count. Tidy does not
+  poll: it sleeps until something happens, or until the moment the icons are due to hide.
 - **A small KWin script**, loaded while Tidy runs, tells Tidy whether the desktop is the
   active window, and when the pointer moves over the desktop while another window is the
   active one (it looks at most twice a second). It also tells when a menu opens or the
-  last one closes and when a panel slides out of view, and handles the screen corner. It only tells changes, and it never sees
-  what you type or click.
+  last one closes and when a panel slides out of view, and handles the screen corner. It
+  only tells changes, and it never sees what you type or click.
 - **The drawer** is a small Plasma widget that ships inside Tidy and is written to
   `~/.local/share/plasma/plasmoids/` when Tidy starts. Plasma offers no way to hide another
   widget, so the drawer reaches into the panel's layout and makes its neighbours invisible; in
@@ -398,15 +400,16 @@ plasma-tidy --version   print the version
   free space on panel*, and puts that back when the arrow moves or the drawer is removed. The
   drawer does its work by itself, also should Tidy stop unexpectedly; Tidy is only needed to
   change its settings, for a peek, for opening when the desktop is shown, to stay open under
-  any menu, and to close when the panel hides. Quitting Tidy or switching it off pauses the drawers.
+  any menu, and to close when the panel hides. Quitting Tidy or switching it off pauses the
+  drawers.
 - **Balloons and previews**: Plasma's text balloons are switched with Plasma's own setting
   (`plasmarc`), and the preview in a program's pop-up with the task manager's own. Plasma has
   no setting for the rest, so a drawer that holds the task manager does it, in the same way
   it hides icons: it asks for the pop-up itself when Plasma's balloons are off, keeps it away
   for *None*, and gives the title and the text no room for *Only the preview*. The distance
   to the panel is set on the one window Plasma shows all its balloons in, each time that
-  window is about to show something of a panel with a drawer. How Plasma had its settings is remembered the
-  first time Tidy changes them.
+  window is about to show something of a panel with a drawer. How Plasma had its settings is
+  remembered the first time Tidy changes them.
 - **Rules** look at the power supply (UPower), the screens, the clock, the active window and
   virtual desktop (the KWin script) and the activity (KDE's activity manager). Tidy is told
   when one of these changes; it does not keep checking.
@@ -422,12 +425,12 @@ Measured on Fedora 44 with Plasma 6.7 (memory is PSS, what Tidy really adds to t
 | | |
 |---|---|
 | Memory, running in the background | about 24 MB |
-| Memory with the settings window open | about 62 MB |
+| Memory with the settings window open | about 57 MB |
 | Memory after the settings window was open | about 36 MB, until Tidy is started again |
 | Processor at rest (icons hidden, or you are working in another window) | none: no processor time and not a single wake-up in a minute |
 | Hiding and showing the icons once | less than a hundredth of a second of processor time |
 | Start-up | well under a second |
-| Size | one file of 0.8 MB, plus Python and PyQt6 from your distribution |
+| Size | one file of 0.9 MB, plus Python and PyQt6 from your distribution |
 
 Tidy does not poll. It sleeps until something happens (a signal from KWin, Plasma or the idle
 watcher) or until the moment the icons are due to hide. `swayidle` only runs while its answer
@@ -454,9 +457,8 @@ on a timer while nothing changes.
   half working (the icons are then hidden the safe way, without fading and the double-click),
   and Tidy says once, in a notification, which parts that are in this Plasma version.
   `plasma-tidy --check` lists every part and whether it works.
-- A new version of the helper, like the drawer, is picked up when Plasma starts.
-- A new version of the drawer is picked up when Plasma starts, so after updating Tidy, log out
-  and in once.
+- A new version of the drawer or of the helper on the desktop is picked up when Plasma
+  starts, so after updating Tidy, log out and in once.
 - In a pop-up drawer a program shows its name at most, not a preview of its window: the
   preview comes with an icon that is in the panel itself.
 - Closing by itself follows the pointer inside the panel. The pop-up of a program in the
@@ -491,15 +493,17 @@ rm -f ~/.config/autostart/plasma-tidy.desktop
 rm -rf ~/.config/plasma-tidy ~/.local/share/plasma-tidy
 rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.drawer
 rm -rf ~/.local/share/plasma/plasmoids/io.github.wispware.plasmatidy.fade
+find ~/.local/share/icons/hicolor -name 'io.github.wispware.PlasmaTidy*' -delete
 ```
 
 ## Development
 
 What changed in each version is in [`CHANGELOG.md`](CHANGELOG.md).
 
-The code is in `src/plasma_tidy/`: the program in Python, the two Plasma widgets and the KWin
-script as files of their own in `data/`. `./build.py` packs it all into the single file
-`plasma-tidy` (a Python zipapp). To run from the source without building:
+The code is in `src/plasma_tidy/`: the program in Python, and in its `data/` folder the two
+Plasma widgets, the KWin scripts and the icons as files of their own. `./build.py` packs it
+all into the single file `plasma-tidy` (a Python zipapp). To run from the source without
+building:
 
 ```sh
 PYTHONPATH=src python3 -m plasma_tidy

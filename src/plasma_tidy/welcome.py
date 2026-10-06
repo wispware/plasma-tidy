@@ -75,7 +75,7 @@ class Welcome(QDialog):
         layout.addWidget(self.tray)
 
         more = QLabel(tr("There is more in the settings: focus mode, rules, profiles and a key "
-                         "to peek. {app} lives in the system tray: click its eye icon to open "
+                         "to peek. {app} lives in the system tray: click its icon to open "
                          "the settings.")
                       .format(app=APP_NAME))
         more.setWordWrap(True)
