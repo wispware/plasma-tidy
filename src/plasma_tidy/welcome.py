@@ -112,7 +112,8 @@ class Welcome(QDialog):
             panel, targets = self.drawer_spot
             a.backup_launchers()  # before a drawer may start holding them
             install_drawer()
-            a.plasma.add_drawer(panel, dict(drawer_texts(), targets=targets))
+            # Closed from the start: tidying the panel is what was asked for.
+            a.plasma.add_drawer(panel, dict(drawer_texts(), targets=targets, closed=True))
         tray = a.plasma.tray_config() if self.tray.isChecked() else None
         if tray:
             remember_tray(a.settings, tray)

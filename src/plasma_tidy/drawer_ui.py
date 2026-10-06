@@ -10,7 +10,8 @@ from PyQt6.QtGui import QIcon, QKeySequence
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout, QKeySequenceEdit,
                              QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea,
-                             QSpinBox, QStackedWidget, QTabWidget, QVBoxLayout, QWidget)
+                             QSizePolicy, QSpinBox, QStackedWidget, QTabWidget, QVBoxLayout,
+                             QWidget)
 
 from .consts import (ACTIVE_PLACES, ANIMATIONS, APP_NAME, DISPLAY_POPUP, DISPLAYS, DRAWER_SKIP,
                      ICON_STYLES, POPUP_PLACES, POPUP_STYLES, TASK_POPUPS, TRAY_ARROWS,
@@ -115,8 +116,10 @@ class DrawerPage(QWidget):
                 self.programs[program["id"]] = check
                 grid.addWidget(check, index // 2, index % 2)
             # The whole list where there is room for it; in less, three rows and scrolling.
+            # The rows stay together at the top: room to spare is not spread between them.
             rows = max(1, grid.rowCount())
             tall = inner.sizeHint().height()
+            grid.setRowStretch(rows, 1)
             box_layout.addWidget(TallArea(inner, least=min(tall, tall * 3 // rows + 4)))
         else:
             note = QLabel(tr("The programs of the task manager appear here a moment after the "
@@ -124,6 +127,8 @@ class DrawerPage(QWidget):
             note.setWordWrap(True)
             note.setEnabled(False)
             box_layout.addWidget(note)
+        # As tall as its list and no taller: what the page has to spare stays below it.
+        self.programs_box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         form.addRow(self.programs_box)
         parts.addTab(page, tr("Contents"))
 
