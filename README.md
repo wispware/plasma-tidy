@@ -76,8 +76,9 @@ install -Dm644 data/plasma-tidy.desktop ~/.local/share/applications/plasma-tidy.
 `./build.py` packs the code in `src/` into the single file `plasma-tidy`; that file is all
 there is to install. `~/.local/bin` must be on your `PATH` (it is by default on Fedora).
 
-Either way, start **Tidy** from the application menu, or run `plasma-tidy`. To have it start when you log
-in, leave *Start at login* ticked in the welcome window, or tick it in the settings.
+Either way, start **Tidy** from the application menu, or run `plasma-tidy`. To have it start
+when you log in, leave *Start at login* ticked in the welcome window, or tick it in the
+settings.
 
 ## Using it
 
