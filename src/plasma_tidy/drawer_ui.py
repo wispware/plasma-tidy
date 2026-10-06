@@ -5,6 +5,7 @@
 import json
 import os
 
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QIcon, QKeySequence
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout, QKeySequenceEdit,
@@ -478,6 +479,25 @@ class DrawerPage(QWidget):
             self.drawer["shortcut"] = shortcut
 
 
+class TallArea(QScrollArea):
+    """Asks for the room its contents take, and scrolls them in a window that has less."""
+
+    def __init__(self, inside):
+        super().__init__(widgetResizable=True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWidget(inside)
+        self.viewport().setAutoFillBackground(False)
+        inside.setAutoFillBackground(False)
+
+    def sizeHint(self):
+        return self.widget().sizeHint()
+
+    def minimumSizeHint(self):
+        bar = self.verticalScrollBar().sizeHint().width()
+        return QSize(self.widget().minimumSizeHint().width() + bar, 240)
+
+
 class DrawerTab(QWidget):
     """Tab for the panel drawers: arrows that tuck panel widgets away."""
 
@@ -486,7 +506,13 @@ class DrawerTab(QWidget):
         self.plasma = autohide.plasma
         self.pages = []
         self.panels = []
-        layout = QVBoxLayout(self)
+        # The tab is the tallest of all: on a low screen it scrolls rather than pushing the
+        # window's buttons out of view.
+        inside = QWidget()
+        layout = QVBoxLayout(inside)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(TallArea(inside))
 
         intro = QLabel(tr("A drawer is an arrow in the panel. It tucks the widgets you choose "
                           "away and brings them back when you click or point at the arrow."))

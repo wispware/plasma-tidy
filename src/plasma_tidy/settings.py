@@ -536,6 +536,13 @@ class SettingsDialog(QDialog):
         self.watch_changes(self)
         self.update_enabled()
 
+        # As tall as the tallest tab asks for, as far as the screen has room: in less the
+        # Panel tab scrolls. (Left to itself Qt opens a window at two thirds of the screen.)
+        wanted = self.sizeHint()
+        screen = QApplication.primaryScreen()
+        room = screen.availableGeometry().height() - 80 if screen else wanted.height()
+        self.resize(wanted.width(), min(wanted.height(), room))
+
     def watch_changes(self, root):
         """Notice every change to a setting below this widget; called again for the drawer
         pages when they are rebuilt."""

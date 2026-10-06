@@ -85,7 +85,7 @@ SPDX-License-Identifier: CC0-1.0
     </screenshot>
     <screenshot>
       <caption>Settings for the panel drawers</caption>
-      <image type="source" width="1180" height="1745">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/settings-panel.png</image>
+      <image type="source" width="1180" height="1245">https://raw.githubusercontent.com/wispware/plasma-tidy/main/docs/screenshots/settings-panel.png</image>
     </screenshot>
   </screenshots>
   <releases>

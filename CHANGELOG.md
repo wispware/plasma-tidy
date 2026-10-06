@@ -47,6 +47,7 @@ The first version meant for others. Since 0.2.0:
 - Tidy's own icon: three slanted bars on a green tile, for the menu, Discover and the windows,
   and a one-colour version in the system tray that follows the theme, with its own look when
   the icons are hidden.
+- The settings window fits a low screen: the Panel tab scrolls where it has no room.
 
 **Under the hood**
 - Lighter: about 24 MB of memory, no processor time at rest.
