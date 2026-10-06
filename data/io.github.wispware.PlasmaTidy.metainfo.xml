@@ -89,6 +89,11 @@ SPDX-License-Identifier: CC0-1.0
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.2" date="2026-10-06">
+      <description>
+        <p>Drawers are closed from the first moment the panel shows, and two drawers that open on a click on the panel stay open together.</p>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-10-06">
       <description>
         <p>The drawer that the welcome window adds starts closed, and the list of programs in a drawer's settings is tidier.</p>

@@ -1,6 +1,6 @@
 # Changes
 
-## 0.3.2 — not released yet
+## 0.3.2 — 2026-10-06
 
 - When Plasma starts, a closed drawer is closed from the first moment the panel shows. The
   panel used to come up with everything in view and tidy itself a third of a second later.
