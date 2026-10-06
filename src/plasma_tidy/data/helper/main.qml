@@ -92,7 +92,11 @@ PlasmoidItem {
                 + 'property var listen: DBus.SignalWatcher { busType: DBus.BusType.Session; '
                 + 'service: link.name; path: "/"; iface: link.name; '
                 + 'function dbusDesktopState(text) { link.told(String(text)); } '
-                + 'function dbusStarted() { link.started(); } } }',
+                + 'function dbusStarted() { link.started(); } '
+                // Tidy's other signals are for the drawers. A signal without a function here
+                // makes Plasma write a line in the log each time it comes.
+                + 'function dbusPeeking(on) {} function dbusMenuOpen(on) {} '
+                + 'function dbusPanelGone(screen, edge) {} function dbusDesktopActivated() {} } }',
                 root, "tidyLink");
             bus.name = tidy;
             bus.told.connect(told);

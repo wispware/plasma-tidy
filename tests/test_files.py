@@ -32,6 +32,18 @@ class Widgets(unittest.TestCase):
         known = {entry.getAttribute("name") for entry in schema.getElementsByTagName("entry")}
         self.assertEqual(sorted(set(DRAWER_DEFAULTS) - known), [])
 
+    def test_a_widget_has_a_function_for_every_signal(self):
+        # Plasma writes a line in the log for each signal that comes without one.
+        from PyQt6.QtCore import pyqtSignal
+
+        from plasma_tidy.dbus import DBusAdaptor
+        signals = [name for name, value in vars(DBusAdaptor).items()
+                   if isinstance(value, pyqtSignal)]
+        self.assertGreaterEqual(len(signals), 6)
+        for files in (drawer_files(), fade_files()):
+            for name in signals:
+                self.assertIn(f"function dbus{name}(", files["contents/ui/main.qml"])
+
     def test_the_kwin_scripts_take_their_names(self):
         names = {"app": "a", "prefix": "p", "name": "n", "panel": "true", "edge": "1"}
         for script in (resources.KWIN_JS, resources.KWIN_INFO_JS, resources.KWIN_RULES_JS,

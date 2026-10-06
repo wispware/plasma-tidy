@@ -83,7 +83,11 @@ PlasmoidItem {
                 + 'function dbusPeeking(on) { link.peek(on === true || String(on) === "true"); } '
                 + 'function dbusMenuOpen(on) { link.menu(on === true || String(on) === "true"); } '
                 + 'function dbusPanelGone(screen, edge) { link.panelGone(String(screen), String(edge)); } '
-                + 'function dbusDesktopActivated() { link.desktop(); } } }', root, "tidyLink");
+                + 'function dbusDesktopActivated() { link.desktop(); } '
+                // The other two are for the helper on the desktop. A signal without a
+                // function here makes Plasma write a line in the log each time it comes.
+                + 'function dbusDesktopState(text) {} function dbusStarted() {} } }',
+                root, "tidyLink");
             tidyLink.peek.connect(on => { root.peeking = on; });
             tidyLink.menu.connect(on => { root.menuOpen = on; });
             // The panel this drawer is in slid out of view: it comes back tidy.

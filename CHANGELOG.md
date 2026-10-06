@@ -1,5 +1,9 @@
 # Changes
 
+## 0.3.2 — not released yet
+
+- Tidy's widgets no longer fill Plasma's log with "No signal handler" lines.
+
 ## 0.3.1 — 2026-10-06
 
 - The drawer that the welcome window adds starts closed: the programs are tucked away at once.
