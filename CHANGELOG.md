@@ -1,6 +1,6 @@
 # Changes
 
-## 0.3.1 — not released yet
+## 0.3.1 — 2026-10-06
 
 - The drawer that the welcome window adds starts closed: the programs are tucked away at once.
 - In a drawer's settings the list of programs keeps its rows together; room to spare stays

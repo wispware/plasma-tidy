@@ -89,6 +89,11 @@ SPDX-License-Identifier: CC0-1.0
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.1" date="2026-10-06">
+      <description>
+        <p>The drawer that the welcome window adds starts closed, and the list of programs in a drawer's settings is tidier.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-06">
       <description>
         <p>The first version meant for others.</p>
