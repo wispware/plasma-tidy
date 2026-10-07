@@ -82,21 +82,21 @@ sudo dnf install plasma-tidy
 On another distribution, or to try the latest code, install from source:
 
 ```sh
-sudo dnf install python3-pyqt6 swayidle   # or your distribution's packages
+sudo dnf install python3-pyqt6 swayidle   # Fedora
+sudo pacman -S python-pyqt6 swayidle      # Arch; elsewhere, your distribution's packages
 
 git clone https://github.com/wispware/plasma-tidy.git
 cd plasma-tidy
-./build.py
-install -Dm755 plasma-tidy ~/.local/bin/plasma-tidy
-install -Dm644 data/plasma-tidy.desktop ~/.local/share/applications/plasma-tidy.desktop
+./build.py --install
 ```
 
-`./build.py` packs the code in `src/` into the single file `plasma-tidy`; that file is all
-there is to install. `~/.local/bin` must be on your `PATH` (it is by default on Fedora).
+That packs the code in `src/` into the single file `~/.local/bin/plasma-tidy` and adds Tidy to
+the application menu. The menu entry names the program by its full path, so it also works
+where `~/.local/bin` is not on the `PATH` of the desktop session (Arch, for one).
 
-Either way, start **Tidy** from the application menu, or run `plasma-tidy`. To have it start
-when you log in, leave *Start at login* ticked in the welcome window, or tick it in the
-settings.
+Either way, start **Tidy** from the application menu. To have it start when you log in, leave
+*Start at login* ticked in the welcome window, or tick it in the settings. Started from a
+terminal with `plasma-tidy`, it stops when you close that terminal, like any program.
 
 ## Using it
 

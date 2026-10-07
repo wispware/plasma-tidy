@@ -65,6 +65,23 @@ class Build(unittest.TestCase):
             self.assertEqual(wrong.returncode, 2)
 
 
+class Install(unittest.TestCase):
+    def test_the_menu_entry_names_the_program_by_its_full_path(self):
+        # ~/.local/bin is not on the PATH of every desktop session (Arch): a bare
+        # "plasma-tidy" in the menu entry is then not found.
+        with tempfile.TemporaryDirectory() as home:
+            subprocess.run([sys.executable, str(ROOT / "build.py"), "--install"], check=True,
+                           capture_output=True, env={"HOME": home, "PATH": "/usr/bin:/bin"})
+            program = pathlib.Path(home) / ".local" / "bin" / "plasma-tidy"
+            entry = (pathlib.Path(home) / ".local" / "share" / "applications"
+                     / "plasma-tidy.desktop").read_text()
+            runs = re.findall(r"^Exec=(\S+)", entry, re.M)
+            self.assertGreater(len(runs), 3)
+            self.assertEqual(set(runs), {str(program)})
+            answer = subprocess.run([str(program), "--version"], capture_output=True, text=True)
+            self.assertIn(VERSION, answer.stdout)
+
+
 class Metainfo(unittest.TestCase):
     def test_the_software_centre_page_matches_the_program(self):
         page = xml.dom.minidom.parse(

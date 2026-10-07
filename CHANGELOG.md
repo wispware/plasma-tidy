@@ -5,6 +5,9 @@
 - A new drawer leaves open programs in the panel: only the pinned programs that are not open
   go into it. (It used to take all programs, open ones too; that is still a choice, and the
   drawers you have keep their setting.)
+- Installing from source is one step, `./build.py --install`, and its menu entry names the
+  program by its full path: on Arch the entry and the shortcuts did not find `plasma-tidy`,
+  because `~/.local/bin` is not on the desktop session's PATH there.
 
 ## 0.3.3 — 2026-10-07
 
