@@ -1,6 +1,6 @@
 # Changes
 
-## 0.3.4 — not released yet
+## 0.3.4 — 2026-10-07
 
 - A new drawer leaves open programs in the panel: only the pinned programs that are not open
   go into it. (It used to take all programs, open ones too; that is still a choice, and the

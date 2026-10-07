@@ -89,6 +89,11 @@ SPDX-License-Identifier: CC0-1.0
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.4" date="2026-10-07">
+      <description>
+        <p>A new drawer leaves open programs in the panel, and installing from source is one step that also works on Arch.</p>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-10-07">
       <description>
         <p>The one-by-one animation of a drawer is quick and in order, and unplugging a second screen no longer gives a false warning.</p>

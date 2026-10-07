@@ -8,7 +8,7 @@
 %bcond_without tests
 
 Name:           plasma-tidy
-Version:        0.3.3
+Version:        0.3.4
 Release:        1%{?dist}
 Summary:        Keeps the KDE Plasma desktop, panel and system tray tidy
 
@@ -104,6 +104,9 @@ QT_QPA_PLATFORM=offscreen dbus-run-session -- %{python3} -m unittest
 %{_datadir}/icons/hicolor/scalable/apps/io.github.wispware.PlasmaTidy-hidden-symbolic.svg
 
 %changelog
+* Wed Oct 07 2026 Ivar <hallo@wispware.dev> - 0.3.4-1
+- A new drawer leaves open programs in the panel; see CHANGELOG.md
+
 * Wed Oct 07 2026 Ivar <hallo@wispware.dev> - 0.3.3-1
 - One by one is quick; no false alarm for an unplugged screen; see CHANGELOG.md
 
