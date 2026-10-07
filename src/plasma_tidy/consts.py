@@ -42,6 +42,7 @@ DRAWER_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{DRAWER_ID}")
 FADE_ID = "io.github.wispware.plasmatidy.fade"
 FADE_DIR = os.path.expanduser(f"~/.local/share/plasma/plasmoids/{FADE_ID}")
 TASK_PLUGINS = ("org.kde.plasma.icontasks", "org.kde.plasma.taskmanager")
+FOLDER_PLUGIN = "org.kde.plasma.folder"   # Plasma's Folder View, for a folder in a drawer
 # Widgets that never go into a drawer: separators, spacers and the drawers themselves.
 DRAWER_SKIP = ("org.kde.plasma.marginsseparator", "org.kde.plasma.panelspacer", DRAWER_ID)
 TASKS_ALL = "all"
@@ -106,6 +107,7 @@ PANEL_NAMES = {
     "org.kde.plasma.quicklaunch": "Quick launch",
     "org.kde.plasma.icon": "Program icon",
     "org.kde.plasma.trash": "Trash",
+    "org.kde.plasma.folder": "Folder",
     "org.kde.plasma.appmenu": "Global menu",
     "org.kde.plasma.mediacontroller": "Media controls",
     "org.kde.plasma.keyboardlayout": "Keyboard layout",

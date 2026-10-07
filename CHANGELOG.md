@@ -1,5 +1,11 @@
 # Changes
 
+## 0.3.5 — not released yet
+
+- *Add a folder…* in a drawer's settings puts a folder in the panel, in that drawer, for quick
+  access. It is Plasma's own Folder View widget. A folder in the list is called after its
+  folder and can be taken out of the panel there.
+
 ## 0.3.4 — 2026-10-07
 
 - A new drawer leaves open programs in the panel: only the pinned programs that are not open

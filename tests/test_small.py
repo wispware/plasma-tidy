@@ -12,7 +12,8 @@ from PyQt6.QtGui import QKeySequence
 
 from plasma_tidy.consts import TRAY_HIDDEN, TRAY_SHOWN
 from plasma_tidy.peek import bare_key
-from plasma_tidy.plasma import config_value, plasma_balloons, set_plasma_balloons
+from plasma_tidy.plasma import (config_value, panel_widget_name, plasma_balloons,
+                                set_plasma_balloons)
 from plasma_tidy.tray import tray_minimal, tray_rule_mode
 from plasma_tidy.widgets import drawer_value
 
@@ -61,6 +62,18 @@ class DrawerSettings(unittest.TestCase):
         self.assertEqual(drawer_value("hoverDelay", ""), 200)
         self.assertEqual(drawer_value("targets", None), [])
         self.assertEqual(drawer_value("hoverDelay", "nonsense"), 200)
+
+
+class Folders(unittest.TestCase):
+    def test_a_folder_in_the_panel_is_called_after_its_folder(self):
+        folder = "org.kde.plasma.folder"
+        self.assertTrue(panel_widget_name(folder, "file:///home/someone/Documents/")
+                        .endswith("Documents"))
+        self.assertTrue(panel_widget_name(folder, "file:///home/someone/My%20files")
+                        .endswith("My files"))
+        # Without a folder set, and for any other widget, the plain name.
+        self.assertEqual(panel_widget_name(folder), panel_widget_name(folder, ""))
+        self.assertNotIn("Documents", panel_widget_name("org.kde.plasma.digitalclock", "x"))
 
 
 class Balloons(unittest.TestCase):

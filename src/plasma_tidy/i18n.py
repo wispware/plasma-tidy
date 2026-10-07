@@ -90,6 +90,17 @@ TRANSLATIONS = {
         "A name of your own for this drawer. Without one it is called after what is in it.":
             "Een eigen naam voor deze la. Zonder naam heet hij naar wat erin zit.",
         "Add a drawer": "La toevoegen",
+        "Add a folder…": "Map toevoegen…",
+        "Puts a folder in the panel, in this drawer: a click on it shows what is in the "
+        "folder. It is Plasma's own Folder View widget.":
+            "Zet een map in het paneel, in deze la: een klik erop laat zien wat er in de map "
+            "zit. Het is Plasma's eigen widget Mapweergave.",
+        "Take this folder out of the panel": "Deze map uit het paneel halen",
+        "Choose a folder for the drawer": "Kies een map voor de la",
+        "The folder could not be added to the panel.":
+            "De map kon niet aan het paneel worden toegevoegd.",
+        "Folder: {name}": "Map: {name}",
+        "Folder": "Map",
         "Remove": "Verwijderen",
         "No drawer yet. Add one to hide panel icons behind an arrow.":
             "Nog geen la. Voeg er een toe om paneelpictogrammen achter een pijltje te verbergen.",

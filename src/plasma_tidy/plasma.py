@@ -6,12 +6,12 @@ import json
 import os
 import re
 
-from PyQt6.QtCore import QLibraryInfo, QProcess, QStandardPaths
+from PyQt6.QtCore import QLibraryInfo, QProcess, QStandardPaths, QUrl
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
 from PyQt6.QtGui import QIcon
 
-from .consts import (DRAWER_DEFAULTS, DRAWER_ID, FADE_ID, PANEL_NAMES, PLACE_AFTER, PLACE_BEFORE,
-                     TASK_PLUGINS, TRAY_NAMES)
+from .consts import (DRAWER_DEFAULTS, DRAWER_ID, FADE_ID, FOLDER_PLUGIN, PANEL_NAMES, PLACE_AFTER,
+                     PLACE_BEFORE, TASK_PLUGINS, TRAY_NAMES)
 from .i18n import speaks_dutch, tr
 from .widgets import drawer_value
 
@@ -145,7 +145,11 @@ def set_plasma_balloons(on):
     process.waitForFinished(5000)
 
 
-def panel_widget_name(plugin):
+def panel_widget_name(plugin, url=""):
+    if plugin == FOLDER_PLUGIN and url:
+        # A folder in the panel is called after its folder: there may be several.
+        path = QUrl(url).toLocalFile() or url
+        return tr("Folder: {name}").format(name=os.path.basename(path.rstrip("/")) or path)
     if plugin in PANEL_NAMES:
         return tr(PANEL_NAMES[plugin])
     if plugin in TRAY_NAMES:
@@ -313,19 +317,61 @@ class Plasma:
 
     def panel_widgets(self):
         """The panels with their widgets, in the order they have in the panel."""
-        found = self.query("""
+        found = self.query("var folder = %s;" % json.dumps(FOLDER_PLUGIN) + """
             var r = [];
             panels().forEach(function (p) {
                 // "fit": the panel is as long as its contents, and changes size with them
                 r.push({panel: p.id, location: p.location, fit: p.lengthMode == "fit",
                         widgets: p.widgets().map(function (w) {
-                            return {id: w.id, type: w.type, index: w.index};
+                            var entry = {id: w.id, type: w.type, index: w.index};
+                            if (w.type == folder) {   // which folder it shows
+                                w.currentConfigGroup = ["General"];
+                                entry.url = String(w.readConfig("url") || "");
+                            }
+                            return entry;
                         })});
             });
             print(JSON.stringify(r));""", [])
         for panel in found:
             panel["widgets"].sort(key=lambda w: w["index"])
         return found
+
+    def add_folder(self, drawer_id, url):
+        """Put a folder in the panel, next to a drawer's arrow on the side where the drawer
+        keeps its contents: Plasma's own Folder View widget, showing `url`. Returns the
+        widget's id, or None."""
+        out = self.run("var drawer = %d, url = %s, type = %s;" % (
+            drawer_id, json.dumps(url), json.dumps(FOLDER_PLUGIN)) + """
+            var id = -1;
+            panels().forEach(function (p) {
+                var arrow = null;
+                p.widgets().forEach(function (w) { if (w.id == drawer) arrow = w; });
+                if (!arrow) return;
+                arrow.currentConfigGroup = ["General"];
+                var after = String(arrow.readConfig("place")) == "after";
+                var w = p.addWidget(type);
+                if (!w || !w.id) return;
+                w.currentConfigGroup = ["General"];
+                w.writeConfig("url", url);
+                w.reloadConfig();
+                // New widgets come at the end of the panel. Contents before the arrow: take
+                // the arrow's place, which pushes it along. Otherwise: right behind it.
+                w.index = after ? arrow.index : arrow.index + 1;
+                id = w.id;
+            });
+            print(id);""")
+        try:
+            new_id = int(out)
+        except ValueError:
+            return None
+        return new_id if new_id >= 0 else None
+
+    def remove_folder(self, widget_id):
+        """Take a folder out of the panel again. Only ever a Folder View widget."""
+        self.run("var id = %d, type = %s;" % (widget_id, json.dumps(FOLDER_PLUGIN)) + """
+            panels().forEach(function (p) { p.widgets().forEach(function (w) {
+                if (w.type == type && w.id == id) w.remove();
+            }); });""")
 
     def drawers(self):
         """Every Tidy drawer in the panels, with its settings."""

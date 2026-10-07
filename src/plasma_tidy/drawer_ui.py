@@ -5,7 +5,7 @@
 import json
 import os
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSize, Qt, QUrl
 from PyQt6.QtGui import QIcon, QKeySequence
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout, QKeySequenceEdit,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, 
                              QWidget)
 
 from .consts import (ACTIVE_PLACES, ANIMATIONS, APP_NAME, DISPLAY_POPUP, DISPLAYS, DRAWER_SKIP,
+                     FOLDER_PLUGIN,
                      ICON_STYLES, POPUP_PLACES, POPUP_STYLES, TASK_POPUPS, TRAY_ARROWS,
                      MARK_ATTENTION, MARK_COUNT, MARK_NONE, MARK_OPEN, OPEN_CLICK, OPEN_HOVER,
                      PANEL_PLACES, PLACE_AFTER, PLACE_BEFORE, PLACE_MANUAL, SCOPE_DRAWER,
@@ -27,7 +28,7 @@ class DrawerPage(QWidget):
     """The settings of one drawer, in three parts: what is in it, how it opens and closes,
     and what its arrow looks like."""
 
-    def __init__(self, drawer, widgets, number, on_label=None, fit=False):
+    def __init__(self, drawer, widgets, number, on_label=None, fit=False, folders=None):
         super().__init__()
         self.drawer = drawer
         self.fit = fit            # its panel is as long as its contents
@@ -67,12 +68,32 @@ class DrawerPage(QWidget):
         for widget in widgets:
             if widget["type"] in DRAWER_SKIP:
                 continue
-            check = QCheckBox(panel_widget_name(widget["type"]))
+            check = QCheckBox(panel_widget_name(widget["type"], widget.get("url", "")))
             check.setChecked(str(widget["id"]) in config["targets"])
             check.toggled.connect(self.update_enabled)
             check.toggled.connect(self.relabel)
             self.targets[widget["id"]] = (check, widget["type"])
-            box_layout.addWidget(check)
+            if widget["type"] == FOLDER_PLUGIN and folders:
+                # A folder was put in the panel for a drawer: it can go from here as well.
+                line = QHBoxLayout()
+                line.addWidget(check, 1)
+                gone = QPushButton(QIcon.fromTheme("list-remove"), "")
+                gone.setFlat(True)
+                gone.setToolTip(tr("Take this folder out of the panel"))
+                gone.clicked.connect(lambda _=False, i=widget["id"]: folders.remove_folder(self, i))
+                line.addWidget(gone)
+                box_layout.addLayout(line)
+            else:
+                box_layout.addWidget(check)
+        if folders:
+            add = QPushButton(QIcon.fromTheme("folder-new"), tr("Add a folder…"))
+            add.setToolTip(tr("Puts a folder in the panel, in this drawer: a click on it shows "
+                              "what is in the folder. It is Plasma's own Folder View widget."))
+            add.clicked.connect(lambda: folders.add_folder(self))
+            line = QHBoxLayout()
+            line.addWidget(add)
+            line.addStretch()
+            box_layout.addLayout(line)
         form.addRow(box)
 
         self.task_mode = QComboBox()
@@ -629,7 +650,7 @@ class DrawerTab(QWidget):
             if not panel:
                 continue
             page = DrawerPage(drawer, panel["widgets"], number, self.relabel,
-                              fit=bool(panel.get("fit")))
+                              fit=bool(panel.get("fit")), folders=self)
             # Which panel only matters when there is more than one.
             page.panel_name = (tr(PANEL_PLACES.get(panel["location"], "Panel"))
                                if len(self.panels) > 1 else "")
@@ -689,6 +710,33 @@ class DrawerTab(QWidget):
         if new_id is None:
             QMessageBox.warning(self, APP_NAME, tr("The drawer could not be added to the panel."))
         self.rebuild(select=new_id)
+
+    def add_folder(self, page):
+        """A folder for quick access, in this drawer: asked for, put in the panel next to the
+        drawer's arrow, and ticked."""
+        path = QFileDialog.getExistingDirectory(self, tr("Choose a folder for the drawer"),
+                                                os.path.expanduser("~"))
+        if not path:
+            return
+        self.apply()   # what was changed in the window is not lost when the pages are rebuilt
+        drawer = page.drawer
+        new_id = self.plasma.add_folder(drawer["id"], QUrl.fromLocalFile(path).toString())
+        if new_id is None:
+            QMessageBox.warning(self, APP_NAME, tr("The folder could not be added to the panel."))
+            return
+        targets = list(drawer["config"]["targets"]) + [str(new_id)]
+        self.plasma.set_drawer_config(drawer["id"], {"targets": targets})
+        self.plasma.place_drawer(drawer["id"], targets, drawer["config"]["place"])
+        self.rebuild(select=drawer["id"])
+
+    def remove_folder(self, page, widget_id):
+        self.apply()
+        drawer = page.drawer
+        targets = [t for t in drawer["config"]["targets"] if t != str(widget_id)]
+        if targets != list(drawer["config"]["targets"]):
+            self.plasma.set_drawer_config(drawer["id"], {"targets": targets})
+        self.plasma.remove_folder(widget_id)
+        self.rebuild(select=drawer["id"])
 
     def remove(self):
         drawer_id = self.selector.currentData()
