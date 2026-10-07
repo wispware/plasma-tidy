@@ -151,6 +151,8 @@ PlasmoidItem {
     readonly property bool widgetsShrink: animation !== "fade"
     // How long the task manager takes to move an icon aside.
     readonly property int moveTime: Kirigami.Units.longDuration
+    // One by one: how long an icon waits for its neighbours to make room, before it fades in.
+    readonly property int roomTime: Math.min(moveTime, Math.round(cfg.animationDuration * 0.5))
     function scan() {
         var c = root.parent, hops = 0, last = root;
         while (c && !c.isAppletContainer && hops < 8) { last = c; c = c.parent; hops++; }
@@ -1553,14 +1555,26 @@ PlasmoidItem {
     // arrow first; opening, the nearest first.
     function cascadeDelay(hider) {
         if (animation !== "cascade" || !hider.task) return 0;
-        var along = t => vertical ? t.y : t.x;
-        var mine = along(hider.task), before = 0;
+        // By their place in the row and not by where they are drawn: icons that are hidden
+        // have no place on the panel (all at 0), and would all come at once.
+        var along = t => {
+            if (t.index !== undefined && t.index >= 0) return t.index;
+            return t.parent ? Array.prototype.indexOf.call(t.parent.children, t) : 0;
+        };
+        var mine = along(hider.task), before = 0, others = 0;
         taskHiders.forEach(h => {
             if (h.hider === hider || !h.hider.takesPart || !h.item) return;
+            others++;
             var nearer = hider.after ? along(h.item) < mine : along(h.item) > mine;
             if (hider.hideMe ? !nearer : nearer) before++;
         });
-        return Math.round(before * (moveTime + cfg.animationDuration * 0.4));
+        // The next icon starts when this one is well on its way, not when it is done, and
+        // a long row is not kept waiting: the last icon starts within 1.2 s. (It used to be
+        // a fixed 0.2 s and more for each icon, which took seconds for a dozen icons, at any
+        // speed.)
+        var step = cfg.animationDuration * 0.4;
+        if (others > 0) step = Math.min(step, 1200 / others);
+        return Math.round(before * step);
     }
     readonly property real someTaskSize: {
         for (var i = 0; i < taskHiders.length; i++)
@@ -1815,7 +1829,7 @@ PlasmoidItem {
             property SequentialAnimation appear: SequentialAnimation {
                 PauseAnimation { duration: th.delay }
                 ScriptAction { script: th.present = true }
-                PauseAnimation { duration: root.moveTime }   // the neighbours make room
+                PauseAnimation { duration: root.roomTime }   // the neighbours make room
                 NumberAnimation {
                     target: th; property: "factor"; to: 1
                     duration: root.cfg.animationDuration; easing.type: Easing.InOutQuad
@@ -2546,7 +2560,7 @@ PlasmoidItem {
                  && !root.cfg.closed && !root.cfg.paused && !root.editing
                  && !root.pointerHere && !root.popupOpen && !root.busyAbove
                  && (root.cfg.closeScope !== "panel" || root.panelHover !== null)
-                 && !root.tapHold
+                 && !root.tapHold && !root.tasksMoving   // not while its icons still come or go
         onTriggered: root.cfg.closed = true
     }
     Timer {

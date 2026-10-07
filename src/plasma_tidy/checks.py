@@ -50,9 +50,14 @@ class Checks:
         elif kind == "helper":
             self.helpers[key] = found
 
-    def keep_only(self, drawers):
-        """Forget the drawers that are gone (removed from the panel, or a panel removed)."""
+    def keep_only(self, drawers, desktops=None):
+        """Forget the drawers that are gone (removed from the panel, or a panel removed), and
+        the helpers on a desktop without a screen: unplug a screen and Plasma keeps its
+        desktop, but builds nothing in it, so its helper finds nothing to reach into.
+        `desktops`: the desktops on a screen, or None when Plasma did not say."""
         self.drawers = {k: v for k, v in self.drawers.items() if k in drawers}
+        if desktops is not None:
+            self.helpers = {k: v for k, v in self.helpers.items() if k in desktops}
 
     def problems(self):
         """The parts that do not work, each named once, in a fixed order."""

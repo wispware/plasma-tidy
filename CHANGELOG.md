@@ -1,5 +1,14 @@
 # Changes
 
+## 0.3.3 — not released yet
+
+- *One by one* is no longer slow: the next icon starts while the one before it is still coming,
+  and the last icon of a long row starts within 1.2 s. It took 0.2 s and more for each icon,
+  at any speed. Opening also goes one by one where the icons used to come all at once.
+- A drawer does not close by itself while its icons are still coming.
+- After unplugging a second screen Tidy no longer says that a part does not work in this
+  Plasma version: the desktop of that screen is left out of its look at itself.
+
 ## 0.3.2 — 2026-10-06
 
 - When Plasma starts, a closed drawer is closed from the first moment the panel shows. The

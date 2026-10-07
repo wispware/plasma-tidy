@@ -565,7 +565,8 @@ class Tidy(QObject):
     def review_checks(self):
         """Say once, per Plasma version, what does not work in it. Nothing when all is well."""
         version = self.plasma_version()
-        self.checks.keep_only({str(d["id"]) for d in self.plasma.drawers()})
+        self.checks.keep_only({str(d["id"]) for d in self.plasma.drawers()},
+                              self.plasma.desktops_on_screen())
         text = self.checks.notice(version)
         told = version + "|" + ",".join(self.checks.problems()) if text else ""
         if told == self.settings.value("checks_told", ""):

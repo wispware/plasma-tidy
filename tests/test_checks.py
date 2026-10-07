@@ -59,7 +59,8 @@ class Telling(unittest.TestCase):
         self.tidy.checks = Checks()
         self.tidy.check_timer = type("T", (), {"start": lambda self: None})()
         self.tidy.plasma_version = lambda: self.version
-        self.tidy.plasma = type("Plasma", (), {"drawers": lambda _: [{"id": 39, "config": {}}]})()
+        self.tidy.plasma = type("Plasma", (), {"drawers": lambda _: [{"id": 39, "config": {}}],
+                                               "desktops_on_screen": lambda _: {"1"}})()
         self.told = []
         self.tidy.tray = type("Tray", (), {"showMessage": lambda _, *a: self.told.append(a[1])})()
         self.version = "6.7.5"
@@ -81,6 +82,14 @@ class Telling(unittest.TestCase):
         Tidy.review_checks(self.tidy)
         self.assertEqual(self.told, [])
         self.assertNotIn("77", self.tidy.checks.drawers)
+
+    def test_a_desktop_without_a_screen_is_left_out(self):
+        # A second screen was unplugged: its desktop stays, with nothing in it to find.
+        Tidy.on_check(self.tidy, "helper", "29", json.dumps({"view": MISSING}))
+        Tidy.on_check(self.tidy, "helper", "1", json.dumps({"view": OK}))
+        Tidy.review_checks(self.tidy)
+        self.assertEqual(self.told, [])
+        self.assertEqual(list(self.tidy.checks.helpers), ["1"])
 
     def test_nothing_when_all_is_well(self):
         self.report({"tasks": OK})

@@ -178,6 +178,15 @@ class Plasma:
             return default
         return found if isinstance(found, type(default)) else default
 
+    def desktops_on_screen(self):
+        """The ids of the desktops that are on a screen now, or None when Plasma did not
+        answer. (The desktop of a screen that was unplugged stays, without a screen.)"""
+        found = self.query("""
+            print(JSON.stringify(desktops().filter(function (d) { return d.screen >= 0; })
+                                           .map(function (d) { return String(d.id); })));""",
+                           [])
+        return set(found) if found else None
+
     def desktop_urls(self):
         found = self.query("""
             var r = {};
