@@ -7,8 +7,8 @@ import os
 import sys
 
 from .consts import (APP_ICON, APP_NAME, DRAWER_DEFAULTS, DRAWER_DIR, DRAWER_ID, DRAWER_PAGE_TEXTS,
-                     FADE_DIR, FADE_ID, ICON_DIR, LICENSE, SYSTEM_ICON, TRAY_ICON, TRAY_ICON_HIDDEN,
-                     VERSION)
+                     FADE_DIR, FADE_ID, ICON_DIR, LICENSE, SYSTEM_ICON, TASKS_PINNED, TRAY_ICON,
+                     TRAY_ICON_HIDDEN, VERSION)
 from .i18n import tr
 from .resources import (DRAWER_CONFIG_MODEL, DRAWER_CONFIG_QML, DRAWER_CONFIG_XML, DRAWER_QML, FADE_CONFIG_XML, FADE_QML, text)
 
@@ -51,6 +51,14 @@ def icon_files():
             f"22x22/apps/{APP_ICON}.svg": text(f"icons/{APP_ICON}-22.svg"),
             f"scalable/apps/{TRAY_ICON}.svg": text(f"icons/{TRAY_ICON}.svg"),
             f"scalable/apps/{TRAY_ICON_HIDDEN}.svg": text(f"icons/{TRAY_ICON_HIDDEN}.svg")}
+
+
+def new_drawer(targets, **more):
+    """The settings a drawer starts with when Tidy adds it. Open programs stay in the panel:
+    only the pinned ones that are not running go into the drawer. (Written out for each new
+    drawer rather than made the widget's own default, so that drawers people have already
+    keep doing what they did.)"""
+    return dict(drawer_texts(), targets=targets, taskMode=TASKS_PINNED, **more)
 
 
 def install_drawer():

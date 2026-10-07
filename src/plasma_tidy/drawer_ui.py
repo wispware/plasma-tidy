@@ -20,7 +20,7 @@ from .consts import (ACTIVE_PLACES, ANIMATIONS, APP_NAME, DISPLAY_POPUP, DISPLAY
                      SCOPE_PANEL, TASKS_ALL, TASKS_PINNED, TASK_PLUGINS)
 from .i18n import tr
 from .plasma import app_icon, panel_widget_name, plasma_balloons
-from .widgets import drawer_texts, install_drawer
+from .widgets import install_drawer, new_drawer
 
 
 class DrawerPage(QWidget):
@@ -683,7 +683,7 @@ class DrawerTab(QWidget):
                        if w["type"] in plugins and str(w["id"]) not in taken]
             if targets:
                 break
-        config = dict(drawer_texts(), targets=targets)
+        config = new_drawer(targets)
         install_drawer()
         new_id = self.plasma.add_drawer(panel["panel"], config)
         if new_id is None:

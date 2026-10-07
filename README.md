@@ -166,7 +166,7 @@ The settings of a drawer come in three parts.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | In this drawer | Which of the panel's widgets the drawer hides | the task manager |
-| Task manager | Hide all programs, open ones too; or only the pinned programs that are not open | all programs |
+| Task manager | Hide only the pinned programs that are not open, so open programs stay in the panel; or all programs, open ones too | only pinned programs that are not open |
 | Open programs | Where open programs stand in the task manager: on their pinned spot, all in front, or all at the back | pinned spot |
 | Programs that go in the drawer | Per program of the task manager: in the drawer, or kept in the panel also while the drawer is closed | all of them |
 

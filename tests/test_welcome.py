@@ -39,6 +39,7 @@ class Plasma:
     def add_drawer(self, panel, config):
         self.added.append((panel, config["targets"]))
         self.closed = config.get("closed")
+        self.mode = config.get("taskMode")
 
     def set_tray_config(self, extra, shown, hidden):
         self.tray = (extra, shown, hidden)
@@ -76,6 +77,7 @@ class Choices(unittest.TestCase):
         dialog.save()
         self.assertEqual(plasma.added, [(2, ["5"])])
         self.assertTrue(plasma.closed)   # the programs are tucked away at once
+        self.assertEqual(plasma.mode, "pinned")   # and the open ones stay in the panel
 
     def test_no_second_drawer_for_the_same_task_manager(self):
         plasma = Plasma(drawers=[{"id": 39, "config": {"targets": ["5"]}}])

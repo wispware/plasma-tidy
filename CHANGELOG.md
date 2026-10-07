@@ -1,5 +1,11 @@
 # Changes
 
+## 0.3.4 — not released yet
+
+- A new drawer leaves open programs in the panel: only the pinned programs that are not open
+  go into it. (It used to take all programs, open ones too; that is still a choice, and the
+  drawers you have keep their setting.)
+
 ## 0.3.3 — 2026-10-07
 
 - *One by one* is no longer slow: the next icon starts while the one before it is still coming,

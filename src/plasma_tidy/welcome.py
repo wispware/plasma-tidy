@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QF
 from .consts import APP, APP_ICON, APP_NAME, MODE_ACTIVITY, MODE_CLICK, TASK_PLUGINS
 from .i18n import tr
 from .tray import remember_tray, tray_app_items, tray_minimal
-from .widgets import drawer_texts, install_drawer
+from .widgets import install_drawer, new_drawer
 
 
 class Welcome(QDialog):
@@ -113,7 +113,7 @@ class Welcome(QDialog):
             a.backup_launchers()  # before a drawer may start holding them
             install_drawer()
             # Closed from the start: tidying the panel is what was asked for.
-            a.plasma.add_drawer(panel, dict(drawer_texts(), targets=targets, closed=True))
+            a.plasma.add_drawer(panel, new_drawer(targets, closed=True))
         tray = a.plasma.tray_config() if self.tray.isChecked() else None
         if tray:
             remember_tray(a.settings, tray)
