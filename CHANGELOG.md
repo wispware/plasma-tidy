@@ -1,6 +1,6 @@
 # Changes
 
-## 0.3.5 — not released yet
+## 0.3.5 — 2026-10-07
 
 - *Add a folder…* in a drawer's settings puts a folder in the panel, in that drawer, for quick
   access. It is Plasma's own Folder View widget. A folder in the list is called after its
