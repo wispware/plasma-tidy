@@ -19,6 +19,9 @@ Tidy keeps your KDE Plasma desktop, panel and system tray clean.
   the panel shows when you point at it: a preview with or without its title, text only, or
   nothing.
 
+Each part is optional: Tidy only changes what you switch on. Out of the box it hides and
+shows the desktop icons and leaves your panels and system tray as they are.
+
 It lives in the system tray as a small icon of three slanted bars and stays out of the way:
 it never steals focus, and it waits while you have a menu open or are editing your desktop.
 
