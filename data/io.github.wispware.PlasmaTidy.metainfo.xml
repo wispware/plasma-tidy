@@ -89,6 +89,11 @@ SPDX-License-Identifier: CC0-1.0
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.3" date="2026-10-07">
+      <description>
+        <p>The one-by-one animation of a drawer is quick and in order, and unplugging a second screen no longer gives a false warning.</p>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-10-06">
       <description>
         <p>Drawers are closed from the first moment the panel shows, and two drawers that open on a click on the panel stay open together.</p>

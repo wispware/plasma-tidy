@@ -1,6 +1,6 @@
 # Changes
 
-## 0.3.3 — not released yet
+## 0.3.3 — 2026-10-07
 
 - *One by one* is no longer slow: the next icon starts while the one before it is still coming,
   and the last icon of a long row starts within 1.2 s. It took 0.2 s and more for each icon,
