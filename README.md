@@ -59,8 +59,8 @@ The same drawer as a pop-up above the panel:
 - A desktop that uses the *Folder View* layout (the Plasma default when you have desktop icons)
 - `python3-pyqt6` and `swayidle`
 
-Tested on Fedora 44 with Plasma 6.7. Other distributions should work with the equivalent
-packages but have not been tested.
+Tested on Fedora 44 with Plasma 6.7, and reported working on an Arch-based system. Other
+distributions should work with the equivalent packages.
 
 **This is a first release, made and tested by one person on one laptop, so expect bugs.** Not
 tried yet, or only a little: a panel on the left, a right-to-left language, and rules that
