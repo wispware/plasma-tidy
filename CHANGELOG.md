@@ -1,6 +1,6 @@
 # Changes
 
-## Not released yet
+## 0.4.1 — not released yet
 
 - *Hide after* can be set to *Never* (0 s): the icons then stay in view until you hide them
   yourself, with a double-click on the desktop, a shortcut or *Hide now*, and come back as
