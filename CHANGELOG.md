@@ -1,6 +1,6 @@
 # Changes
 
-## 0.4.2 — not released yet
+## 0.4.2 — 2026-11-04
 
 - A click on a program's preview, in the pop-up above a drawer, counts as starting a program
   from the drawer: the panel and the drawer stay for the time set at *Panel stays after

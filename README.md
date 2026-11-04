@@ -59,7 +59,8 @@ The same drawer as a pop-up above the panel:
 - A desktop that uses the *Folder View* layout (the Plasma default when you have desktop icons)
 - `python3-pyqt6` and `swayidle`
 
-Tested on Fedora 44 with Plasma 6.7, and reported working on an Arch-based system. Other
+Tested on Fedora 45 with Plasma 6.8 and on Fedora 44 with Plasma 6.7, and reported working on an
+Arch-based system. Other
 distributions should work with the equivalent packages.
 
 **This is a first release, made and tested by one person on one laptop, so expect bugs.** Not
@@ -511,8 +512,8 @@ on a timer while nothing changes.
   screens, a screen of its own choice (*Hide the icons on*), and unplugging and plugging it
   in while the icons were hidden.
 - The drawer and the helper on the desktop depend on how Plasma builds its panel, task
-  manager and desktop, which is not a public interface. They are tested with Plasma 6.7, with
-  the drawer in a panel at the bottom, at the top and on the right.
+  manager and desktop, which is not a public interface. They were tested with Plasma 6.7, with
+  the drawer in a panel at the bottom, at the top and on the right, and checked again on Plasma 6.8.
   Tidy keeps an eye on this itself: the widgets and the KWin script tell Tidy whether they
   find what they reach into. A part that is not there any more is switched off rather than
   half working (the icons are then hidden the safe way, without fading and the double-click),

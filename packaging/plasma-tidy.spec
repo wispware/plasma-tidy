@@ -8,7 +8,7 @@
 %bcond_without tests
 
 Name:           plasma-tidy
-Version:        0.4.1
+Version:        0.4.2
 Release:        1%{?dist}
 Summary:        Keeps the KDE Plasma desktop, panel and system tray tidy
 
@@ -104,6 +104,9 @@ QT_QPA_PLATFORM=offscreen dbus-run-session -- %{python3} -m unittest
 %{_datadir}/icons/hicolor/scalable/apps/io.github.wispware.PlasmaTidy-hidden-symbolic.svg
 
 %changelog
+* Wed Nov 04 2026 Ivar <hallo@wispware.dev> - 0.4.2-1
+- Preview click keeps the panel, icons fade again on Plasma 6.8, panel mode kept on a quick restart; see CHANGELOG.md
+
 * Mon Oct 26 2026 Ivar <hallo@wispware.dev> - 0.4.1-1
 - Hide after can be Never, Show desktop can leave the icons hidden; see CHANGELOG.md
 
