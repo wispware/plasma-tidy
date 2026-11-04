@@ -1,5 +1,14 @@
 # Changes
 
+## 0.4.2 — not released yet
+
+- A click on a program's preview, in the pop-up above a drawer, counts as starting a program
+  from the drawer: the panel and the drawer stay for the time set at *Panel stays after
+  starting a program*, so you can pick another one. Before, they went at once.
+- A panel set to *Windows go below* came back as *Always visible* when Tidy was started again
+  within some ten seconds of being stopped while the icons were hidden. Plasma writes that
+  setting to its file late, and Tidy read the old value.
+
 ## 0.4.1 — 2026-10-26
 
 - *Hide after* can be set to *Never* (0 s): the icons then stay in view until you hide them

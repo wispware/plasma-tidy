@@ -161,12 +161,14 @@ def panel_widget_name(plugin, url=""):
 class Plasma:
     """Talks to plasmashell through its scripting interface."""
 
-    def __init__(self):
+    def __init__(self, memory=None):
         self.iface = QDBusInterface("org.kde.plasmashell", "/PlasmaShell",
                                     "org.kde.PlasmaShell", QDBusConnection.sessionBus())
         # A Plasma that hangs must not make Tidy hang along for long.
         self.iface.setTimeout(3000)
         self.reached = True  # did the last script get to Plasma?
+        # Tidy's settings: the panel modes it set last are kept there (see panel_modes).
+        self.memory = memory
 
     def run(self, script):
         reply = self.iface.call("evaluateScript", script)
@@ -276,12 +278,39 @@ class Plasma:
             panels().forEach(function (p) { r[p.id] = p.hiding; });
             print(JSON.stringify(r));""", {})
         modes = {int(k): v for k, v in found.items()}
-        # Plasma reports "windows go below" as "none". Its own settings file knows better.
+        # Plasma reports "windows go below" as "none". Its own settings file knows better,
+        # but Plasma writes it up to some ten seconds late: for a panel set since then, what
+        # was set counts (Tidy restarted right after putting the panels back, 2026-11).
         if "none" in modes.values():
-            below = panels_below_windows()
-            modes = {k: "windowsgobelow" if v == "none" and k in below else v
-                     for k, v in modes.items()}
+            below, recent = panels_below_windows(), self.recent_modes()
+
+            def real(k, v):
+                if v != "none":
+                    return v
+                below_now = recent[k] == "windowsgobelow" if k in recent else k in below
+                return "windowsgobelow" if below_now else "none"
+
+            modes = {k: real(k, v) for k, v in modes.items()}
         return modes
+
+    def recent_sets(self):
+        """The panel modes Tidy set that Plasma's settings file has not caught up with yet:
+        {panel id as text: [mode, when]}."""
+        if self.memory is None:
+            return {}
+        try:
+            written = os.path.getmtime(os.path.expanduser("~/.config/plasmashellrc"))
+        except OSError:
+            written = 0
+        try:
+            kept = json.loads(self.memory.value("panels_set", "") or "{}")
+            return {str(k): [mode, at] for k, (mode, at) in kept.items()
+                    if isinstance(at, (int, float)) and at > written}
+        except (ValueError, TypeError, AttributeError):
+            return {}
+
+    def recent_modes(self):
+        return {int(k): mode for k, (mode, _) in self.recent_sets().items()}
 
     def tray_config(self):
         """System tray settings: its plasmoids and the shown/hidden lists."""
@@ -315,6 +344,11 @@ class Plasma:
     def set_panel_modes(self, modes):
         self.run("var m = %s;" % json.dumps({str(k): v for k, v in modes.items()}) + """
             panels().forEach(function (p) { if (p.id in m) p.hiding = m[p.id]; });""")
+        if self.reached and self.memory is not None and modes:
+            kept = self.recent_sets()
+            kept.update({str(k): [v, time.time()] for k, v in modes.items()})
+            self.memory.setValue("panels_set", json.dumps(kept))
+            self.memory.sync()
 
     def panel_widgets(self):
         """The panels with their widgets, in the order they have in the panel."""

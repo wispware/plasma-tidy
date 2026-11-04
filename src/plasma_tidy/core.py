@@ -52,7 +52,7 @@ class Tidy(QObject):
         super().__init__()
         self.app = app
         self.settings = QSettings(APP, APP)
-        self.plasma = Plasma()
+        self.plasma = Plasma(self.settings)
         self.kwin = KWin()
         self.hidden = False
         self.focus = False          # focus mode: everything away, and it stays away

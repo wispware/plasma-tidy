@@ -500,7 +500,7 @@ PlasmoidItem {
     // Is anything asked of the programs' pop-ups? Otherwise their icons are not listened to.
     // (Closing by itself asks something too: the drawer stays while such a pop-up is up.)
     readonly property bool tipsWatched: cfg.taskBare || tipsTouched || gapWanted || !cfg.balloons
-                                        || cfg.autoClose
+                                        || cfg.autoClose || cfg.keepPanel > 0
     // The icon whose pop-up the drawer is about to show itself (Plasma's balloons are off).
     property var tipWaiting: null
     Timer {
@@ -648,6 +648,19 @@ PlasmoidItem {
         keepTimer.restart();
     }
     Timer { id: keepTimer; interval: 3000; onTriggered: root.panelKept = false }
+    // A click on a program's pop-up (its preview) brings that window to the front: the same
+    // as starting a program from the drawer, so the panel and the drawer stay as long as is
+    // set, to pick another one. Seen as a window coming to the front while the pop-up of one
+    // of this drawer's programs is up, or just went with the click. A click in the panel
+    // itself is seen in panelTapped().
+    property bool taskTipVisible: false
+    property double taskTipGoneAt: 0
+    function windowActivated() {
+        if (cfg.paused || cfg.closed || leaving || pointerInPanel) return;
+        if (!taskTipVisible && Date.now() - taskTipGoneAt > 600) return;
+        moveNote("preview", [cfg.keepPanel]);
+        keepPanel(cfg.keepPanel);
+    }
     PlasmaCore.Dialog {
         id: panelKeeper
         visualParent: root
@@ -2346,7 +2359,8 @@ PlasmoidItem {
                 function onToolTipVisibleChanged(visible) {
                     root.trimTips();
                     if (root.tipOwner !== th.task) return;
-                    if (!visible) root.tipLeft = Date.now();
+                    root.taskTipVisible = visible;
+                    if (!visible) root.tipLeft = root.taskTipGoneAt = Date.now();
                     root.tipLearn();
                 }
             }
@@ -2685,6 +2699,10 @@ PlasmoidItem {
                 // The pop-up shows the programs in the order they stand in.
                 function onRowsMoved() { listPopup.restart(); }
                 function onModelReset() { listPopup.restart(); }
+            }
+            property Connections fronted: Connections {
+                target: tm.tasksModel
+                function onActiveTaskChanged() { root.windowActivated(); }
             }
             onTasksModelChanged: pinList = listNow()
             Component.onCompleted: pinList = listNow()
