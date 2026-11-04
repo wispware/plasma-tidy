@@ -158,6 +158,12 @@ def panel_widget_name(plugin, url=""):
     return plugin.rsplit(".", 1)[-1]
 
 
+# Is a desktop on a screen now? Since Plasma 6.8 a desktop keeps the number of the screen it
+# was on last after that screen is gone (a TV unplugged), so the number alone does not tell.
+ON_SCREEN = ("function onScreen(d) { return d.screen >= 0 && "
+             "(typeof screenCount !== 'number' || d.screen < screenCount); }\n")
+
+
 class Plasma:
     """Talks to plasmashell through its scripting interface."""
 
@@ -188,8 +194,8 @@ class Plasma:
     def desktops_on_screen(self):
         """The ids of the desktops that are on a screen now, or None when Plasma did not
         answer. (The desktop of a screen that was unplugged stays, without a screen.)"""
-        found = self.query("""
-            print(JSON.stringify(desktops().filter(function (d) { return d.screen >= 0; })
+        found = self.query(ON_SCREEN + """
+            print(JSON.stringify(desktops().filter(onScreen)
                                            .map(function (d) { return String(d.id); })));""",
                            [])
         return set(found) if found else None
@@ -208,13 +214,13 @@ class Plasma:
     def ensure_helpers(self, wanted):
         """Have a helper on every desktop that is on a screen, or none at all. Returns how
         many there are afterwards."""
-        out = self.run("var type = %s, wanted = %s;" % (json.dumps(FADE_ID), json.dumps(wanted)) + """
+        out = self.run(ON_SCREEN + "var type = %s, wanted = %s;" % (json.dumps(FADE_ID), json.dumps(wanted)) + """
             var n = 0;
             desktops().forEach(function (d) {
                 if (d.type != "org.kde.plasma.folder") return;
                 var have = d.widgets().filter(function (w) { return w.type == type; });
                 if (!wanted) { have.forEach(function (w) { w.remove(); }); return; }
-                if (d.screen < 0) return;  // not on a screen now: counted when it is
+                if (!onScreen(d)) return;  // not on a screen now: counted when it is
                 if (!have.length) {
                     var w = d.addWidget(type);
                     if (w && w.id) n++;
@@ -250,10 +256,10 @@ class Plasma:
     def desktop_screens(self):
         """Where each desktop is shown: {desktop id: (x, y, width, height)}; desktops that are
         not on a screen right now are left out."""
-        out = self.run("""
+        out = self.run(ON_SCREEN + """
             var r = {};
             desktops().forEach(function (d) {
-                if (d.type != "org.kde.plasma.folder" || d.screen < 0) return;
+                if (d.type != "org.kde.plasma.folder" || !onScreen(d)) return;
                 var g = screenGeometry(d.screen);
                 r[d.id] = [g.x, g.y, g.width, g.height];
             });

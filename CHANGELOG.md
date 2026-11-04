@@ -5,6 +5,9 @@
 - A click on a program's preview, in the pop-up above a drawer, counts as starting a program
   from the drawer: the panel and the drawer stay for the time set at *Panel stays after
   starting a program*, so you can pick another one. Before, they went at once.
+- The icons fade again on Plasma 6.8 when a second screen (a TV, a monitor) was used before
+  and is unplugged now. Plasma 6.8 keeps telling the screen such a desktop was on last, so Tidy
+  waited for a helper on a screen that is not there and hid the icons without fading.
 - A panel set to *Windows go below* came back as *Always visible* when Tidy was started again
   within some ten seconds of being stopped while the icons were hidden. Plasma writes that
   setting to its file late, and Tidy read the old value.
