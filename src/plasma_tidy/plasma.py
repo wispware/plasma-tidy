@@ -158,8 +158,10 @@ def panel_widget_name(plugin, url=""):
     return plugin.rsplit(".", 1)[-1]
 
 
-# Is a desktop on a screen now? Since Plasma 6.8 a desktop keeps the number of the screen it
-# was on last after that screen is gone (a TV unplugged), so the number alone does not tell.
+# Is a desktop or a panel on a screen now? Since Plasma 6.8 they keep the number of the screen
+# they were on last after that screen is gone (a TV unplugged), so the number alone does not
+# tell. For a panel it matters more: plasmashell 6.8 crashes when a script reads or sets the
+# hiding or lengthMode of a panel whose screen is gone (a dock unplugged, 2026-11).
 ON_SCREEN = ("function onScreen(d) { return d.screen >= 0 && "
              "(typeof screenCount !== 'number' || d.screen < screenCount); }\n")
 
@@ -279,9 +281,9 @@ class Plasma:
             });""")
 
     def panel_modes(self):
-        found = self.query("""
+        found = self.query(ON_SCREEN + """
             var r = {};
-            panels().forEach(function (p) { r[p.id] = p.hiding; });
+            panels().filter(onScreen).forEach(function (p) { r[p.id] = p.hiding; });
             print(JSON.stringify(r));""", {})
         modes = {int(k): v for k, v in found.items()}
         # Plasma reports "windows go below" as "none". Its own settings file knows better,
@@ -348,8 +350,8 @@ class Plasma:
             }); });""")
 
     def set_panel_modes(self, modes):
-        self.run("var m = %s;" % json.dumps({str(k): v for k, v in modes.items()}) + """
-            panels().forEach(function (p) { if (p.id in m) p.hiding = m[p.id]; });""")
+        self.run(ON_SCREEN + "var m = %s;" % json.dumps({str(k): v for k, v in modes.items()}) + """
+            panels().forEach(function (p) { if (p.id in m && onScreen(p)) p.hiding = m[p.id]; });""")
         if self.reached and self.memory is not None and modes:
             kept = self.recent_sets()
             kept.update({str(k): [v, time.time()] for k, v in modes.items()})
@@ -358,11 +360,12 @@ class Plasma:
 
     def panel_widgets(self):
         """The panels with their widgets, in the order they have in the panel."""
-        found = self.query("var folder = %s;" % json.dumps(FOLDER_PLUGIN) + """
+        found = self.query(ON_SCREEN + "var folder = %s;" % json.dumps(FOLDER_PLUGIN) + """
             var r = [];
             panels().forEach(function (p) {
                 // "fit": the panel is as long as its contents, and changes size with them
-                r.push({panel: p.id, location: p.location, fit: p.lengthMode == "fit",
+                // (not asked of a panel whose screen is gone, see ON_SCREEN)
+                r.push({panel: p.id, location: p.location, fit: onScreen(p) && p.lengthMode == "fit",
                         widgets: p.widgets().map(function (w) {
                             var entry = {id: w.id, type: w.type, index: w.index};
                             if (w.type == folder) {   // which folder it shows

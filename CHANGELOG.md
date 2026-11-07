@@ -1,5 +1,13 @@
 # Changes
 
+## Not released yet
+
+- Plasma's desktop and panels no longer crash again and again on Plasma 6.8 when a screen
+  that had a panel on it is unplugged (a monitor on a dock). Plasma 6.8 keeps telling the
+  screen such a panel was on last, and plasmashell crashed when Tidy asked that panel how it
+  hides or how long it is, which Tidy did each time plasmashell started. Tidy now leaves such
+  a panel alone.
+
 ## 0.4.2 — 2026-11-04
 
 - A click on a program's preview, in the pop-up above a drawer, counts as starting a program
